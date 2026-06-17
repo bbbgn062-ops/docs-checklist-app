@@ -95,19 +95,20 @@
   .bundle-body{padding:4px 14px 12px;}
   .subgroup-title{font-size:12.5px;font-weight:800;color:var(--brand);margin:12px 6px 6px;text-transform:none;}
 
-  .item{border:1px solid var(--line);border-left:5px solid var(--line);border-radius:11px;padding:12px 13px;margin:8px 0;background:#fff;}
-  .item.done{background:var(--green-soft);border-color:#c7ecd6;}
+  .item{border:1px solid var(--line);border-left:3px solid transparent;border-radius:12px;padding:13px 14px;margin:8px 0;background:#fff;transition:border-color .15s,background .15s;}
+  .item.done{background:#FCFDFC;border-color:var(--line);}
   .item.st-req{border-left-color:var(--amber);}
   .item.st-notreq{border-left-color:var(--red);}
-  .item.st-self{border-left-color:var(--brand);}
-  .item.st-recv{border-left-color:var(--green);}
-  .item.st-na{border-left-color:var(--gray);opacity:.65;}
-  .item-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-  .chk{width:22px;height:22px;border-radius:6px;border:2px solid var(--line);background:#fff;flex:0 0 auto;
-    display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:900;}
+  .item.st-self{border-left-color:#DDD7CE;}
+  .item.st-recv{border-left-color:#7FC9A6;}
+  .item.st-na{border-left-color:transparent;opacity:.55;}
+  .item-row{display:flex;align-items:center;gap:11px;flex-wrap:wrap;}
+  .chk{width:21px;height:21px;border-radius:6px;border:1.5px solid #D8D2C9;background:#fff;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;line-height:1;transition:all .15s;}
+  .chk:hover{border-color:var(--brand);}
   .item.done .chk{background:var(--green);border-color:var(--green);}
   .item-name{flex:1;min-width:140px;font-weight:700;font-size:15.5px;}
-  .item.done .item-name{text-decoration:line-through;text-decoration-color:#9fd9b8;color:#3f6a51;}
+  .item.done .item-name{color:#6b7280;}
   .item-note{font-size:12px;color:var(--muted);margin-top:2px;font-weight:400;}
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
   .seg button{border:none;background:#fff;color:var(--muted);padding:5px 10px;font-size:12px;font-weight:700;border-right:1px solid var(--line);}
@@ -169,12 +170,14 @@
   .tl-del{border:none;background:none;color:var(--gray);cursor:pointer;font-size:16px;line-height:1;flex:0 0 auto;}
   .tl-del:hover{color:var(--red);}
 
-  /* ===== 토스뱅크 스타일 + 반응형 ===== */
+  /* ===== 토스뱅크/와인 스타일 + 반응형 ===== */
   .cards{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));}
   .card{border-radius:18px;}
   .overall{border-radius:18px;}
   .btn{border-radius:11px;}
   header h1{letter-spacing:-.4px;}
+  .logo{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;
+    background:linear-gradient(145deg,#9B1B33,#C2162A);box-shadow:0 6px 14px rgba(155,27,51,.22);}
   @media(max-width:760px){
     body{font-size:15px;}
     header{padding:10px 14px;gap:8px;flex-wrap:wrap;}
@@ -205,9 +208,12 @@
 </head>
 <body>
 <header>
-  <div>
-    <h1>📁 개인회생 서류 취합 시스템</h1>
-    <div class="sub">법무법인 내부용 · 의뢰인별 서류 체크리스트</div>
+  <div style="display:flex;align-items:center;gap:11px">
+    <div class="logo"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L20 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+    <div>
+      <h1>개인회생 서류 취합 시스템</h1>
+      <div class="sub">법무법인 내부용 · 의뢰인별 서류 체크리스트</div>
+    </div>
   </div>
   <div class="grow"></div>
   <button class="sync-pill" id="syncPill" onclick="openSettings()"><span class="dot"></span><span id="syncText">로컬 저장</span></button>
