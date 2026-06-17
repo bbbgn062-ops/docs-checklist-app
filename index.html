@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>개인회생 서류 취합 시스템</title>
+<style>
+  :root{
+    --bg:#f4f6fb; --panel:#ffffff; --line:#e6e9f2; --ink:#1f2540; --muted:#7a82a3;
+    --brand:#3b5bdb; --brand-soft:#eaf0ff; --green:#1f9d63; --green-soft:#e3f7ec;
+    --amber:#d98a00; --amber-soft:#fff3da; --red:#d64545; --red-soft:#fde8e8;
+    --gray:#8a90a8; --gray-soft:#eef0f6; --shadow:0 2px 10px rgba(31,37,64,.06);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"Malgun Gothic","맑은 고딕",-apple-system,"Apple SD Gothic Neo",sans-serif;
+    background:var(--bg);color:var(--ink);font-size:15.5px;line-height:1.55;}
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;font-size:14px;}
+  .hidden{display:none !important;}
+
+  /* Header */
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:12px 20px;
+    display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:50;}
+  header h1{font-size:18px;margin:0;font-weight:800;letter-spacing:-.3px;}
+  header .sub{color:var(--muted);font-size:12.5px;}
+  .grow{flex:1;}
+  .sync-pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;
+    padding:6px 11px;border-radius:999px;background:var(--gray-soft);color:var(--muted);border:1px solid var(--line);}
+  .sync-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--gray);}
+  .sync-on{background:var(--green-soft);color:var(--green);border-color:#bfe9d0;}
+  .sync-on .dot{background:var(--green);}
+  .sync-err{background:var(--red-soft);color:var(--red);border-color:#f2c4c4;}
+  .sync-err .dot{background:var(--red);}
+
+  .btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:8px 13px;border-radius:9px;
+    font-weight:700;font-size:13.5px;}
+  .btn:hover{background:#f7f8fc;}
+  .btn-primary{background:var(--brand);color:#fff;border-color:var(--brand);}
+  .btn-primary:hover{background:#2f49bf;}
+  .btn-sm{padding:5px 9px;font-size:12.5px;border-radius:8px;}
+  .btn-ghost{border-color:transparent;background:transparent;color:var(--muted);}
+  .btn-danger{color:var(--red);border-color:#f2c4c4;background:var(--red-soft);}
+
+  .wrap{max-width:1080px;margin:0 auto;padding:22px 20px 80px;}
+
+  /* Dashboard */
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap;}
+  .search{flex:1;min-width:200px;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);
+    border-radius:10px;padding:8px 12px;box-shadow:var(--shadow);}
+  .search input{border:none;outline:none;flex:1;font-size:14.5px;background:transparent;}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow);
+    cursor:pointer;transition:transform .08s,box-shadow .12s;}
+  .card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(31,37,64,.1);}
+  .card.arch{opacity:.62;}
+  .card-top{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .card-name{font-size:17px;font-weight:800;letter-spacing:-.3px;}
+  .badge{font-size:11.5px;font-weight:800;padding:3px 9px;border-radius:999px;background:var(--brand-soft);color:var(--brand);}
+  .badge.회생{background:#eaf0ff;color:#3b5bdb;}
+  .badge.파산{background:#f3eaff;color:#7a3bdb;}
+  .badge.기타{background:var(--gray-soft);color:var(--muted);}
+  .meta{font-size:12.5px;color:var(--muted);margin-bottom:12px;}
+  .bar{height:9px;border-radius:999px;background:#eef0f6;overflow:hidden;margin-bottom:6px;}
+  .bar > i{display:block;height:100%;background:var(--green);border-radius:999px;transition:width .25s;}
+  .card-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .chip{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:7px;background:var(--gray-soft);color:var(--muted);}
+  .chip.req{background:var(--amber-soft);color:var(--amber);}
+  .chip.wait{background:var(--brand-soft);color:var(--brand);}
+  .chip.miss{background:var(--red-soft);color:var(--red);}
+  .chip.ok{background:var(--green-soft);color:var(--green);}
+  .empty{text-align:center;color:var(--muted);padding:60px 20px;}
+  .empty .big{font-size:48px;margin-bottom:8px;}
+
+  /* Detail */
+  .back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-weight:700;background:none;border:none;
+    padding:0;margin-bottom:14px;font-size:14px;}
+  .detail-head{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:8px;}
+  .detail-head h2{margin:0;font-size:24px;font-weight:800;letter-spacing:-.4px;}
+  .overall{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:14px 0 18px;box-shadow:var(--shadow);}
+  .overall .pct{font-size:30px;font-weight:800;color:var(--green);}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .fbtn{border:1px solid var(--line);background:#fff;color:var(--muted);padding:6px 12px;border-radius:999px;font-size:12.5px;font-weight:700;}
+  .fbtn.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+
+  .bundle{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:14px;box-shadow:var(--shadow);overflow:hidden;}
+  .bundle-head{display:flex;align-items:center;gap:10px;padding:14px 16px;cursor:pointer;user-select:none;}
+  .bundle-head:hover{background:#fafbff;}
+  .bnum{width:26px;height:26px;border-radius:8px;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:0 0 auto;}
+  .bundle-title{font-size:16px;font-weight:800;flex:1;letter-spacing:-.2px;}
+  .bundle-prog{font-size:12.5px;color:var(--muted);font-weight:700;}
+  .caret{color:var(--muted);transition:transform .15s;}
+  .bundle.collapsed .caret{transform:rotate(-90deg);}
+  .bundle.collapsed .bundle-body{display:none;}
+  .bundle-body{padding:4px 14px 12px;}
+  .subgroup-title{font-size:12.5px;font-weight:800;color:var(--brand);margin:12px 6px 6px;text-transform:none;}
+
+  .item{border:1px solid var(--line);border-left:5px solid var(--line);border-radius:11px;padding:12px 13px;margin:8px 0;background:#fff;}
+  .item.done{background:var(--green-soft);border-color:#c7ecd6;}
+  .item.st-req{border-left-color:var(--amber);}
+  .item.st-notreq{border-left-color:var(--red);}
+  .item.st-self{border-left-color:var(--brand);}
+  .item.st-recv{border-left-color:var(--green);}
+  .item.st-na{border-left-color:var(--gray);opacity:.65;}
+  .item-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .chk{width:22px;height:22px;border-radius:6px;border:2px solid var(--line);background:#fff;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:900;}
+  .item.done .chk{background:var(--green);border-color:var(--green);}
+  .item-name{flex:1;min-width:140px;font-weight:700;font-size:15.5px;}
+  .item.done .item-name{text-decoration:line-through;text-decoration-color:#9fd9b8;color:#3f6a51;}
+  .item-note{font-size:12px;color:var(--muted);margin-top:2px;font-weight:400;}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  .seg button{border:none;background:#fff;color:var(--muted);padding:5px 10px;font-size:12px;font-weight:700;border-right:1px solid var(--line);}
+  .seg button:last-child{border-right:none;}
+  .seg button.on-self{background:var(--brand);color:#fff;}
+  .seg button.on-req{background:var(--amber);color:#fff;}
+  .seg button.on-na{background:var(--gray);color:#fff;}
+  .tags{display:inline-flex;gap:6px;}
+  .tag{border:1px solid var(--line);background:#fff;color:var(--muted);padding:5px 10px;border-radius:999px;font-size:12px;font-weight:800;}
+  .tag.on.t-none{background:var(--gray-soft);color:#586079;border-color:#d5d9e6;}
+  .tag.on.t-req{background:var(--amber);color:#fff;border-color:var(--amber);}
+  .tag.on.t-recv{background:var(--green);color:#fff;border-color:var(--green);}
+  .memo-toggle{font-size:12px;color:var(--brand);font-weight:700;background:none;border:none;padding:4px 2px;}
+  .memo-box{margin-top:8px;}
+  .memo-box textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical;min-height:42px;outline:none;}
+  .memo-box textarea:focus{border-color:var(--brand);}
+  .additem{margin:8px 0 4px;}
+
+  /* Modal */
+  .overlay{position:fixed;inset:0;background:rgba(20,24,45,.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;}
+  .modal{background:#fff;border-radius:16px;padding:22px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);max-height:90vh;overflow:auto;}
+  .modal h3{margin:0 0 4px;font-size:19px;}
+  .modal p.hint{color:var(--muted);font-size:13px;margin:0 0 16px;}
+  .field{margin-bottom:13px;}
+  .field label{display:block;font-size:12.5px;font-weight:800;color:var(--muted);margin-bottom:5px;}
+  .field input,.field select,.field textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none;}
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--brand);}
+  .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;}
+  .steps{font-size:13px;color:var(--ink);}
+  .steps ol{margin:8px 0;padding-left:20px;}
+  .steps li{margin:7px 0;}
+  .steps code{background:#f0f2f8;padding:1px 6px;border-radius:5px;font-size:12.5px;}
+  .note-warn{background:var(--amber-soft);color:#8a5a00;border-radius:9px;padding:10px 12px;font-size:12.5px;margin-top:10px;}
+
+  /* Log */
+  .log-list{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;}
+  .log-row{display:flex;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px;}
+  .log-row:last-child{border-bottom:none;}
+  .log-ts{color:var(--muted);font-size:12px;flex:0 0 150px;}
+  .log-who{font-weight:800;flex:0 0 90px;color:var(--brand);}
+  .log-txt{flex:1;}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+    padding:11px 18px;border-radius:10px;font-weight:700;font-size:13.5px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.25);opacity:0;transition:opacity .2s;}
+  .toast.show{opacity:1;}
+  @media(max-width:560px){
+    .wrap{padding:16px 12px 80px;}
+    .detail-head h2{font-size:20px;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>📁 개인회생 서류 취합 시스템</h1>
+    <div class="sub">법무법인 내부용 · 의뢰인별 서류 체크리스트</div>
+  </div>
+  <div class="grow"></div>
+  <button class="sync-pill" id="syncPill" onclick="openSettings()"><span class="dot"></span><span id="syncText">로컬 저장</span></button>
+  <button class="btn btn-sm" onclick="openLog()">📜 로그</button>
+  <button class="btn btn-sm" onclick="openSettings()">⚙️ 설정</button>
+</header>
+
+<div class="wrap">
+  <!-- DASHBOARD -->
+  <section id="view-dashboard">
+    <div class="toolbar">
+      <div class="search">
+        <span>🔎</span>
+        <input id="searchBox" placeholder="의뢰인 이름·사건번호 검색" oninput="renderDashboard()" />
+      </div>
+      <select id="statusSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
+        <option value="active">진행중(전체)</option>
+        <option value="incomplete">미완료만</option>
+        <option value="remind">리마인더 필요</option>
+        <option value="done">완료</option>
+        <option value="archived">📦 보관함</option>
+      </select>
+      <select id="catSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
+        <option value="">사건 전체</option>
+        <option>개인회생</option><option>개인파산</option><option>일반회생</option><option>파산·면책</option><option>기타</option>
+      </select>
+      <select id="incomeSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
+        <option value="">소득 전체</option>
+        <option>급여소득자</option><option>사업소득자</option><option>연금수령자</option><option>복합(둘 이상)</option><option>미정</option>
+      </select>
+      <select id="sortSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
+        <option value="recent">최근 수정순</option>
+        <option value="name">이름순</option>
+        <option value="progress">완료율 낮은순</option>
+      </select>
+      <button class="btn btn-primary" onclick="openClientModal()">+ 의뢰인 추가</button>
+    </div>
+    <div id="dashStats"></div>
+    <div id="cards" class="cards"></div>
+  </section>
+
+  <!-- DETAIL -->
+  <section id="view-detail" class="hidden"></section>
+</div>
+
+<div id="modalRoot"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   개인회생 서류 취합 시스템  (단일 HTML, 자동저장 + 깃헙 동기화 + 로그)
+   ============================================================ */
+
+/* ---------- 1. 서류 템플릿 (PDF 그대로, 순서 유지) ---------- */
+/* mode 기본값: self=직접발급 가능, request=의뢰인 요청, na=해당없음 */
+const TEMPLATE = [
+  { id:"b1", title:"채무자 기본서류", groups:[
+    { id:"b1g0", title:null, items:[
+      { id:"b1-1", name:"가족관계증명서(상세)", note:"부모·배우자·자녀 확인", mode:"self" },
+      { id:"b1-2", name:"혼인관계증명서(상세)", note:"결혼·이혼일·배우자 확인", mode:"self" },
+      { id:"b1-3", name:"주민등록초본", note:"과거 주소 전부 포함", mode:"self" },
+      { id:"b1-4", name:"주민등록등본", note:"세대원 확인", mode:"self" },
+      { id:"b1-5", name:"채무자 통장사본", note:"압류금액 등 확인", mode:"request" },
+    ]}
+  ]},
+  { id:"b2", title:"채무자 채권등록(채권자 목록) 소명자료", groups:[
+    { id:"b2g0", title:null, items:[
+      { id:"b2-1", name:"부채증명서 전체", note:"채권자·채무잔액·보증기관 확인", mode:"request" },
+      { id:"b2-2", name:"지방세 납세증명서(신청서)", note:"지방세 완납·미납(체납) 확인 — 미납 시 채권자 목록 포함", mode:"self" },
+      { id:"b2-4", name:"건강보험료 미납·체납 내역서", note:"미납·체납이 있는 경우 채권자 목록에 포함", mode:"self" },
+      { id:"b2-5", name:"신용정보조회서 전체 (신용인증요청서)", note:"신용정보 전체 조회", mode:"request" },
+    ]}
+  ]},
+  { id:"b3", title:"채무자 재산 소명자료", groups:[
+    { id:"b3g0", title:"부동산·재산 현황", items:[
+      { id:"b2-3", name:"지방세 세목별 과세증명서", note:"재산세·재산현황(부동산 등) 확인", mode:"self" },
+    ]},
+    { id:"b3g4", title:"부동산 재산 (부동산 보유 시)", items:[
+      { id:"b3-9", name:"부동산 등기부등본(등기사항전부증명서)", note:"보유 부동산 확인", mode:"self" },
+      { id:"b3-10", name:"공시지가 확인서(개별공시지가)", note:"부동산 가액 확인", mode:"self" },
+      { id:"b3-11", name:"지적전산자료(토지대장·임야대장)", note:"토지 현황 확인", mode:"self" },
+    ]},
+    { id:"b3g1", title:"자동차 재산", items:[
+      { id:"b3-1", name:"자동차 보험증서", note:"환가예상액 확인", mode:"request" },
+      { id:"b3-2", name:"자동차등록원부 (오토비아)", note:"", mode:"self" },
+      { id:"b3-3", name:"자동차 시세표 (보험개발원)", note:"", mode:"self" },
+    ]},
+    { id:"b3g2", title:"임차보증금 재산", items:[
+      { id:"b3-4", name:"임대차계약서", note:"임차보증금 확인", mode:"request" },
+      { id:"b3-5", name:"해당 주택 등기사항전부증명서", note:"말소사항 포함", mode:"self" },
+    ]},
+    { id:"b3g3", title:"보험 재산", items:[
+      { id:"b3-6", name:"보험가입 조회결과표", note:"생명보험협회", mode:"self" },
+      { id:"b3-7", name:"보험 해약환급금 증명서", note:"예상보험금액 서류", mode:"request" },
+      { id:"b3-8", name:"계좌통합관리서비스 계좌잔액 상세조회", note:"채무자 명의 소유재산 확인", mode:"self" },
+    ]},
+    { id:"b3g6", title:"사업용 재산 (사업자인 경우)", items:[
+      { id:"b3-12", name:"비품·재고품·설비 시가표", note:"사업용 자산의 시가 정리", mode:"request" },
+    ]},
+    { id:"b3g5", title:"퇴직금·퇴직연금 재산", items:[
+      { id:"b3-13", name:"예상퇴직금 확인서", note:"재직 중인 경우 예상 퇴직금", mode:"request" },
+      { id:"b3-14", name:"퇴직연금 가입확인서", note:"퇴직연금 가입 시", mode:"request" },
+    ]},
+  ]},
+  { id:"b4", title:"채무자 수입·지출 소명자료", groups:[
+    { id:"b4g1", title:"직장·급여 소득자 (회사)", items:[
+      { id:"b4-1", name:"근로계약서", note:"", mode:"request" },
+      { id:"b4-2", name:"급여명세서 / 급여입금내역", note:"전월 급여 등", mode:"request" },
+      { id:"b4-3", name:"재직증명서", note:"", mode:"request" },
+      { id:"b4-4", name:"원천징수영수증", note:"", mode:"request" },
+    ]},
+    { id:"b4g2", title:"사업소득자 (사업)", items:[
+      { id:"b4-5", name:"사업자등록증", note:"", mode:"request" },
+      { id:"b4-6", name:"매입·매출 내역", note:"", mode:"request" },
+      { id:"b4-7", name:"부가가치세 표준증명원", note:"", mode:"self" },
+    ]},
+    { id:"b4g3", title:"연금 수령자", items:[
+      { id:"b4-8", name:"월평균 소득산정표", note:"있다면", mode:"request" },
+      { id:"b4-9", name:"건강보험 자격득실확인서 전체", note:"", mode:"self" },
+      { id:"b4-10", name:"건강·장기요양보험 납부확인서 전체", note:"", mode:"self" },
+      { id:"b4-11", name:"국민연금 가입증명 서류", note:"", mode:"self" },
+      { id:"b4-12", name:"연금산정용 가입내역 확인서", note:"개인회생 신청용 확인서", mode:"self" },
+      { id:"b4-13", name:"납세증명원 전체", note:"", mode:"self" },
+      { id:"b4-14", name:"소득금액증명", note:"", mode:"self" },
+      { id:"b4-15", name:"사실증명(폐업사실증명) 포함", note:"", mode:"self" },
+    ]},
+  ]},
+  { id:"b5", title:"채무자 기타서류", groups:[
+    { id:"b5g0", title:null, items:[
+      { id:"b5-1", name:"사무장 기타 메모서류", note:"", mode:"na" },
+      { id:"b5-2", name:"그 외 서류", note:"메모 참고", mode:"na" },
+    ]}
+  ]},
+  { id:"b6", title:"채무자 통장 거래내역", groups:[
+    { id:"b6g0", title:null, items:[
+      { id:"b6-1", name:"은행 거래내역서", note:"", mode:"request" },
+      { id:"b6-2", name:"카드 거래내역서", note:"", mode:"request" },
+    ]}
+  ]},
+  { id:"b7", title:"채무자 채무증대 경위서", groups:[
+    { id:"b7g0", title:null, items:[
+      { id:"b7-1", name:"채무증대 사실 정리", note:"첨부파일 또는 PDF", mode:"request" },
+      { id:"b7-2", name:"무상거주 사실확인서", note:"최종 소유자가 서명, 본인 아닐 경우", mode:"request" },
+    ]}
+  ]},
+  { id:"b8", title:"법무법인 계약 관리", groups:[
+    { id:"b8g0", title:null, items:[
+      { id:"b8-1", name:"수임시트 작성", note:"이름·전화번호·사건종류·상담자", mode:"self" },
+    ]}
+  ]},
+  { id:"b9", title:"스캔 → 노션 업로드 → 계약관리 구글시트", groups:[
+    { id:"b9g0", title:null, items:[
+      { id:"b9-1", name:"스캔 후 노션 업로드", note:"사건 목록표 작성", mode:"self" },
+      { id:"b9-2", name:"이준 계약관리 구글시트 등록", note:"사건 목록표", mode:"self" },
+    ]}
+  ]},
+];
+
+/* ---------- 1-2. 서류 발급처/발급방법 안내 (id별) ---------- */
+const WHERE = {
+  "b1-1":"정부24 또는 대법원 전자가족관계등록시스템에서 발급",
+  "b1-2":"정부24 또는 대법원 전자가족관계등록시스템에서 발급",
+  "b1-3":"정부24에서 발급(주소이력 '전부' 포함 선택)",
+  "b1-4":"정부24에서 발급(세대원 포함)",
+  "b1-5":"거래은행 앱/창구에서 통장사본(또는 표지+거래내역) 발급",
+  "b2-1":"각 채권사(은행·카드사·캐피탈)에 '부채증명서' 요청",
+  "b2-2":"정부24·위택스에서 지방세 납세증명서 발급",
+  "b2-3":"위택스(또는 정부24)에서 지방세 세목별 과세증명 발급",
+  "b2-4":"국민건강보험공단에서 보험료 납부확인서·체납(미납) 내역 발급",
+  "b2-5":"한국신용정보원/나이스(올크레딧)에서 신용정보조회서 발급",
+  "b3-1":"가입 보험사 앱·고객센터에서 자동차 보험증서 발급",
+  "b3-2":"정부24·자동차민원(또는 오토비아)에서 자동차등록원부 발급",
+  "b3-3":"보험개발원(카히스토리)에서 차량 시세 확인",
+  "b3-4":"보관 중인 임대차계약서 사본 제출",
+  "b3-5":"인터넷등기소에서 등기사항전부증명서(말소사항 포함) 발급",
+  "b3-6":"생명·손해보험협회 '내보험찾아줌'에서 보험가입 조회결과 발급",
+  "b3-7":"가입 보험사에 해약환급금 예상액 증명 요청",
+  "b3-8":"계좌정보통합관리(어카운트인포)에서 계좌잔액 상세조회",
+  "b3-9":"인터넷등기소에서 부동산 등기사항전부증명서(등기부등본) 발급",
+  "b3-10":"부동산공시가격알리미에서 개별공시지가 확인서 발급",
+  "b3-11":"정부24에서 토지대장·임야대장(지적전산자료) 발급",
+  "b3-12":"보유 비품·재고·설비의 시가를 정리한 표(의뢰인 작성·제출)",
+  "b3-13":"근무처(회사)에 예상퇴직금 확인서 요청",
+  "b3-14":"가입 금융기관 또는 통합연금포털에서 퇴직연금 가입확인서 발급",
+  "b4-1":"근무 회사 보관본(근로계약서) 제출",
+  "b4-2":"회사 급여명세서 또는 급여통장 입금내역 제출",
+  "b4-3":"근무 회사에 재직증명서 요청",
+  "b4-4":"회사 또는 홈택스에서 원천징수영수증 발급",
+  "b4-5":"보관본 또는 홈택스에서 사업자등록증 발급",
+  "b4-6":"홈택스에서 매입·매출 내역(부가세 신고자료) 발급",
+  "b4-7":"홈택스에서 부가가치세 표준증명원 발급",
+  "b4-8":"해당 시 월평균 소득산정표 제출",
+  "b4-9":"국민건강보험공단·정부24에서 자격득실확인서 발급",
+  "b4-10":"국민건강보험공단에서 건강·장기요양보험 납부확인서 발급",
+  "b4-11":"국민연금공단에서 가입증명 발급",
+  "b4-12":"국민연금공단에서 연금산정용 가입내역 확인서 발급",
+  "b4-13":"홈택스에서 납세증명원 발급",
+  "b4-14":"홈택스에서 소득금액증명 발급",
+  "b4-15":"홈택스에서 사실증명(폐업사실증명) 발급",
+  "b6-1":"거래은행 앱·창구에서 거래내역서 발급",
+  "b6-2":"카드사 앱·고객센터에서 카드 거래내역서 발급",
+  "b7-1":"채무가 늘어난 경위를 시간순으로 정리(첨부파일/PDF)",
+  "b7-2":"주택 소유자가 서명한 무상거주 사실확인서",
+};
+
+/* ---------- 2. 상태 ---------- */
+const LS_DATA="ksdocs_data_v1", LS_CFG="ksdocs_cfg_v1", LS_DEVICE="ksdocs_device_v1";
+const LS_SNAP="ksdocs_snaps_v1", LS_DATA_BAK="ksdocs_data_bak_v1";
+const SNAP_MAX=20; // 보관할 자동 스냅샷 개수
+let state = { clients:[], log:[], updatedAt:null, updatedBy:null };
+let cfg = { repo:"", owner:"", branch:"main", token:"", path:"data.json", firmName:"법무법인" };
+let deviceName = localStorage.getItem(LS_DEVICE) || "";
+let currentClientId = null;
+let detailFilter = "all";
+let remoteSha = null;          // 깃헙 파일의 최신 버전 식별자
+let saveTimer = null, syncTimer = null, pollTimer = null;
+let syncStatus = "local";       // local | ok | saving | error
+let collapsed = {};             // 묶음 접힘 상태
+
+/* ---------- 3. 유틸 ---------- */
+const $ = (s,el=document)=>el.querySelector(s);
+const now = ()=>new Date().toISOString();
+function fmt(ts){ if(!ts) return "-"; const d=new Date(ts);
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
+function fmtD(ts){ if(!ts) return ""; const d=new Date(ts); return `${d.getMonth()+1}/${d.getDate()}`; }
+function daysAgo(ts){ if(!ts) return null; return Math.floor((Date.now()-new Date(ts).getTime())/86400000); }
+function uid(){ return "c"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),1800); }
+function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function b64encode(str){ return btoa(unescape(encodeURIComponent(str))); }
+function b64decode(b64){ return decodeURIComponent(escape(atob((b64||"").replace(/\n/g,"")))); }
+
+/* 의뢰인별 항목 상태 보장: 템플릿에 있는 모든 항목을 채워준다 */
+function ensureItems(client){
+  if(!client.items) client.items={};
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{
+    if(!client.items[it.id]) client.items[it.id]={ mode:it.mode, reqTag:"none", done:false, memo:"", reqDate:null, recvDate:null, link:"" };
+  })));
+  if(!client.extra) client.extra={}; // 묶음별 추가 항목
+  return client;
+}
+
+/* 소득유형에 따라 수입·지출(b4) 묶음 자동 맞춤 */
+const INCOME_MAP={ "급여소득자":["b4g1"], "사업소득자":["b4g2"], "연금수령자":["b4g3"], "복합(둘 이상)":["b4g1","b4g2","b4g3"] };
+function applyIncomeType(c){
+  const keepArr=INCOME_MAP[c.incomeType]; if(!keepArr) return; // 미정 → 변경 안 함
+  const keep=new Set(keepArr);
+  const b4=TEMPLATE.find(b=>b.id==="b4"); if(!b4) return;
+  b4.groups.forEach(g=>{ const applic=keep.has(g.id); g.items.forEach(it=>{ const s=c.items[it.id]; if(!s) return;
+    if(applic){ if(s.mode==="na") s.mode=it.mode; } else { s.mode="na"; } }); });
+}
+
+/* 완료율 계산 */
+function progress(client){
+  let total=0, done=0, requesting=0, notReq=0, missing=0;
+  const all=[];
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>all.push(it.id))));
+  Object.keys(client.extra||{}).forEach(bid=>(client.extra[bid]||[]).forEach(ex=>all.push(ex.id)));
+  all.forEach(id=>{
+    const s=client.items[id]; if(!s) return;
+    if(s.mode==="na") return;
+    total++;
+    if(s.done){ done++; }
+    else { missing++;
+      if(s.mode==="request"){ if(s.reqTag==="requesting") requesting++; else if(s.reqTag!=="received") notReq++; }
+    }
+  });
+  return { total, done, pct: total? Math.round(done/total*100):0, requesting, notReq, missing };
+}
+
+function getItemState(client,id){ return client.items[id]; }
+function findClient(id){ return state.clients.find(c=>c.id===id); }
+
+/* ---------- 4. 저장 (로컬 + 깃헙) ---------- */
+/* 1단계: 로컬 즉시 저장 (+ 직전본을 이중 보관) */
+function saveLocal(){
+  try{
+    const json=JSON.stringify(state);
+    const prev=localStorage.getItem(LS_DATA);
+    if(prev && prev.length>2) localStorage.setItem(LS_DATA_BAK, prev); // 직전본 백업(파손 대비)
+    localStorage.setItem(LS_DATA, json);
+  }catch(e){ console.error("로컬 저장 실패",e); toast("⚠️ 로컬 저장 실패 — 저장공간을 확인하세요"); }
+}
+function saveCfg(){ try{ localStorage.setItem(LS_CFG, JSON.stringify(cfg)); }catch(_){}}
+
+/* 2단계: 자동 스냅샷 (변경 이력 롤링 보관 → 실수/파손 시 되돌리기) */
+let _lastSnapMin=null;
+function pushSnapshot(){
+  try{
+    let snaps=[]; try{ snaps=JSON.parse(localStorage.getItem(LS_SNAP)||"[]"); }catch(_){ snaps=[]; }
+    const minKey=(state.updatedAt||now()).slice(0,16); // 분 단위 — 같은 분이면 최신으로 교체
+    const entry={ ts:now(), by:state.updatedBy||deviceName||"?", note:(state.log[0]&&state.log[0].text)||"변경", clients:(state.clients||[]).length, data:JSON.stringify(state) };
+    if(snaps.length && _lastSnapMin===minKey){ snaps[0]=entry; } else { snaps.unshift(entry); }
+    _lastSnapMin=minKey;
+    if(snaps.length>SNAP_MAX) snaps.length=SNAP_MAX;
+    localStorage.setItem(LS_SNAP, JSON.stringify(snaps));
+  }catch(e){ console.warn("스냅샷 저장 건너뜀",e); }
+}
+function getSnapshots(){ try{ return JSON.parse(localStorage.getItem(LS_SNAP)||"[]"); }catch(_){ return []; } }
+
+function addLog(text){
+  state.log.unshift({ ts:now(), who:deviceName||"미설정", text });
+  if(state.log.length>1000) state.log.length=1000;
+}
+
+/* 변경 발생 시 호출: 로컬 즉시 저장 + 깃헙 디바운스 저장 */
+function touch(logText){
+  state.updatedAt=now(); state.updatedBy=deviceName||"미설정";
+  if(logText) addLog(logText);
+  saveLocal();      // 1단계
+  pushSnapshot();   // 2단계
+  scheduleSync();   // 3단계
+}
+function scheduleSync(){
+  if(!githubReady()) return;
+  setSync("saving");
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(pushToGithub, 1500); // 1.5초 후 한 번에 업로드
+}
+
+function githubReady(){ return cfg.owner && cfg.repo && cfg.token; }
+function ghUrl(){ return `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}`; }
+function ghHeaders(){ return { "Authorization":"Bearer "+cfg.token, "Accept":"application/vnd.github+json" }; }
+
+function setSync(s,msg){
+  syncStatus=s;
+  const pill=$("#syncPill"), txt=$("#syncText");
+  pill.className="sync-pill";
+  if(s==="local"){ txt.textContent="로컬 저장"; }
+  else if(s==="ok"){ pill.classList.add("sync-on"); txt.textContent="동기화됨 ✓"; }
+  else if(s==="saving"){ pill.classList.add("sync-on"); txt.textContent="저장 중…"; }
+  else if(s==="error"){ pill.classList.add("sync-err"); txt.textContent="동기화 오류"; }
+}
+
+async function pullFromGithub(silent){
+  if(!githubReady()) return false;
+  try{
+    const r=await fetch(ghUrl()+"?ref="+encodeURIComponent(cfg.branch)+"&t="+Date.now(),{headers:ghHeaders()});
+    if(r.status===404){ // 파일 없음 → 최초 업로드
+      remoteSha=null; await pushToGithub(true); return true;
+    }
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const j=await r.json();
+    remoteSha=j.sha;
+    const remote=JSON.parse(b64decode(j.content));
+    // 원격이 더 최신이면 반영
+    if(!state.updatedAt || (remote.updatedAt && remote.updatedAt > state.updatedAt)){
+      state=remote; saveLocal();
+      if(!silent){ rerender(); toast("다른 기기의 변경을 불러왔습니다"); }
+      else rerender();
+    }
+    setSync("ok");
+    return true;
+  }catch(e){ console.warn(e); setSync("error"); return false; }
+}
+
+async function pushToGithub(silent){
+  if(!githubReady()) return;
+  setSync("saving");
+  try{
+    // 먼저 최신본 확인 (충돌·데이터손실 최소화)
+    let remoteClients=null;
+    try{
+      const chk=await fetch(ghUrl()+"?ref="+encodeURIComponent(cfg.branch)+"&t="+Date.now(),{headers:ghHeaders()});
+      if(chk.ok){ const cj=await chk.json();
+        const remote=JSON.parse(b64decode(cj.content));
+        remoteSha=cj.sha; remoteClients=(remote.clients||[]).length;
+      } else if(chk.status===404){ remoteSha=null; }
+    }catch(_){}
+    // 안전장치: 클라우드에 자료가 있는데 지금 화면이 비어있으면 덮어쓰지 않음 (데이터 보호)
+    if(remoteClients>0 && (state.clients||[]).length===0){
+      setSync("error"); if(!silent) toast("⚠️ 안전장치 작동: 빈 데이터로 클라우드를 덮어쓰지 않았습니다");
+      return;
+    }
+    const body={ message:`update ${state.updatedBy||"?"} @ ${fmt(state.updatedAt)} (${(state.log[0]&&state.log[0].text)||"변경"})`,
+      content:b64encode(JSON.stringify(state,null,1)), branch:cfg.branch };
+    if(remoteSha) body.sha=remoteSha;
+    const r=await fetch(ghUrl(),{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify(body)});
+    if(!r.ok){ const t=await r.text(); throw new Error("HTTP "+r.status+" "+t.slice(0,120)); }
+    const j=await r.json(); remoteSha=j.content.sha;
+    state._base=state.updatedAt;
+    setSync("ok");
+    if(!silent) toast("깃헙에 저장됨 ✓");
+    maybeDailyBackup(); // 3단계+: 하루 1회 클라우드 날짜별 백업본
+  }catch(e){ console.error(e); setSync("error"); if(!silent) toast("깃헙 저장 실패: "+e.message); }
+}
+
+/* 3단계+: 깃헙 저장소에 하루 1회 날짜별 백업본(backups/data-YYYY-MM-DD.json) 보관 */
+async function maybeDailyBackup(){
+  if(!githubReady()) return;
+  const day=now().slice(0,10);
+  if(cfg.lastBackupDay===day) return; // 오늘 이미 백업함
+  try{
+    const path=`backups/data-${day}.json`;
+    const url=`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`;
+    let sha=null;
+    try{ const chk=await fetch(url+"?ref="+encodeURIComponent(cfg.branch)+"&t="+Date.now(),{headers:ghHeaders()}); if(chk.ok){ sha=(await chk.json()).sha; } }catch(_){}
+    const body={ message:`daily backup ${day}`, content:b64encode(JSON.stringify(state,null,1)), branch:cfg.branch };
+    if(sha) body.sha=sha;
+    const r=await fetch(url,{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify(body)});
+    if(r.ok){ cfg.lastBackupDay=day; saveCfg(); }
+  }catch(e){ console.warn("일일 백업 건너뜀",e); }
+}
+
+function startPolling(){
+  clearInterval(pollTimer);
+  if(githubReady()) pollTimer=setInterval(()=>{ if(syncStatus!=="saving") pullFromGithub(true); }, 20000); // 20초마다 확인
+}
+
+/* ---------- 5. 렌더 ---------- */
+function rerender(){
+  if(currentClientId && findClient(currentClientId)) renderDetail(currentClientId);
+  else { currentClientId=null; renderDashboard(); }
+}
+function showDashboard(){ currentClientId=null; $("#view-detail").classList.add("hidden"); $("#view-dashboard").classList.remove("hidden"); renderDashboard(); }
+
+function isRemindNeeded(c){
+  let need=false;
+  const check=(s)=>{ if(s && s.mode==="request" && s.reqTag==="requesting" && !s.done){ const da=daysAgo(s.reqDate); if(da===null||da>=5) need=true; } };
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>check(c.items[it.id]))));
+  Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>check(c.items[ex.id])));
+  return need;
+}
+function renderDashboard(){
+  const q=($("#searchBox").value||"").trim().toLowerCase();
+  const sort=$("#sortSel").value;
+  const statusF=($("#statusSel")&&$("#statusSel").value)||"active";
+  const catF=($("#catSel")&&$("#catSel").value)||"";
+  const incF=($("#incomeSel")&&$("#incomeSel").value)||"";
+  let list=state.clients.map(ensureItems).filter(c=>{
+    if(!q){} else if(!((c.name||"").toLowerCase().includes(q) || (c.caseNo||"").toLowerCase().includes(q))) return false;
+    // 보관함/진행중 구분
+    if(statusF==="archived"){ if(!c.archived) return false; }
+    else { if(c.archived) return false;
+      const p=progress(c);
+      if(statusF==="incomplete" && p.pct>=100) return false;
+      if(statusF==="done" && p.pct<100) return false;
+      if(statusF==="remind" && !isRemindNeeded(c)) return false;
+    }
+    if(catF && (c.caseType||"개인회생")!==catF) return false;
+    if(incF && (c.incomeType||"미정")!==incF) return false;
+    return true;
+  });
+  list.sort((a,b)=>{
+    if((b.pinned?1:0)!==(a.pinned?1:0)) return (b.pinned?1:0)-(a.pinned?1:0); // 고정 우선
+    if(sort==="name") return (a.name||"").localeCompare(b.name||"","ko");
+    if(sort==="progress") return progress(a).pct - progress(b).pct;
+    return (b.updatedAt||"").localeCompare(a.updatedAt||"");
+  });
+  // 전체 통계
+  const stat=$("#dashStats");
+  if(state.clients.length>0){
+    let tReq=0,tNot=0,avg=0,doneAll=0;
+    state.clients.forEach(c=>{ const p=progress(c); tReq+=p.requesting; tNot+=p.notReq; avg+=p.pct; if(p.pct===100)doneAll++; });
+    avg=Math.round(avg/state.clients.length);
+    stat.innerHTML=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <div class="card" style="cursor:default;flex:1;min-width:120px;padding:12px 14px"><div style="font-size:12px;color:var(--muted);font-weight:700">의뢰인</div><div style="font-size:22px;font-weight:800">${state.clients.length}명</div></div>
+      <div class="card" style="cursor:default;flex:1;min-width:120px;padding:12px 14px"><div style="font-size:12px;color:var(--muted);font-weight:700">평균 완료율</div><div style="font-size:22px;font-weight:800;color:var(--green)">${avg}%</div></div>
+      <div class="card" style="cursor:default;flex:1;min-width:120px;padding:12px 14px"><div style="font-size:12px;color:var(--muted);font-weight:700">요청중(회신대기)</div><div style="font-size:22px;font-weight:800;color:var(--amber)">${tReq}건</div></div>
+      <div class="card" style="cursor:default;flex:1;min-width:120px;padding:12px 14px"><div style="font-size:12px;color:var(--muted);font-weight:700">미요청(요청필요)</div><div style="font-size:22px;font-weight:800;color:var(--red)">${tNot}건</div></div>
+    </div>`;
+  } else stat.innerHTML="";
+  const root=$("#cards");
+  if(list.length===0){
+    root.innerHTML=`<div class="empty" style="grid-column:1/-1"><div class="big">🗂️</div>
+      <div style="font-weight:800;font-size:17px;margin-bottom:4px">${q?"검색 결과가 없습니다":"등록된 의뢰인이 없습니다"}</div>
+      <div>오른쪽 위 <b>+ 의뢰인 추가</b> 버튼으로 시작하세요.</div></div>`;
+    return;
+  }
+  root.innerHTML=list.map(c=>{
+    const p=progress(c);
+    const kind=(c.caseType||"개인회생").includes("파산")?"파산":(c.caseType||"").includes("회생")&&!(c.caseType||"").includes("개인")?"회생":(c.caseType||"기타");
+    const badgeClass = c.caseType?.includes("파산")?"파산":(c.caseType?.includes("회생")?"회생":"기타");
+    const remind=isRemindNeeded(c);
+    return `<div class="card ${c.archived?'arch':''}" onclick="openDetail('${c.id}')">
+      <div class="card-top"><span class="card-name">${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</span>
+        <span class="badge ${badgeClass}">${esc(c.caseType||"개인회생")}</span></div>
+      <div class="meta">${c.caseNo?("사건 "+esc(c.caseNo)+" · "):""}${(c.incomeType&&c.incomeType!=="미정")?(esc(c.incomeType)+" · "):""}수정 ${fmt(c.updatedAt)}</div>
+      <div class="bar"><i style="width:${p.pct}%"></i></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);font-weight:700">
+        <span>${p.done}/${p.total} 확보</span><span style="color:var(--green)">${p.pct}%</span></div>
+      <div class="card-stats">
+        ${remind?`<span class="chip miss">⏰ 리마인더</span>`:""}
+        ${p.requesting?`<span class="chip wait">요청중 ${p.requesting}</span>`:""}
+        ${p.notReq?`<span class="chip req">미요청 ${p.notReq}</span>`:""}
+        ${p.missing-p.requesting-p.notReq>0?`<span class="chip miss">확인필요 ${p.missing-p.requesting-p.notReq}</span>`:""}
+        ${p.missing===0?`<span class="chip ok">전부 확보 ✓</span>`:""}
+      </div></div>`;
+  }).join("");
+}
+
+function openDetail(id){ currentClientId=id; renderDetail(id); window.scrollTo(0,0); }
+function renderDetail(id){
+  const c=ensureItems(findClient(id)); if(!c) return showDashboard();
+  $("#view-dashboard").classList.add("hidden");
+  const v=$("#view-detail"); v.classList.remove("hidden");
+  const p=progress(c);
+  let html=`<button class="back" onclick="showDashboard()">← 의뢰인 목록</button>
+    <div class="detail-head">
+      <h2>${esc(c.name||"이름 없음")}</h2>
+      <span class="badge ${c.caseType?.includes('파산')?'파산':(c.caseType?.includes('회생')?'회생':'기타')}">${esc(c.caseType||"개인회생")}</span>
+      <div class="grow"></div>
+      <button class="btn btn-sm btn-primary" onclick="openRequestMsg('${c.id}')">📨 요청 메시지</button>
+      <button class="btn btn-sm" onclick="openReminder('${c.id}')">⏰ 리마인더</button>
+      <button class="btn btn-sm" onclick="copySummary('${c.id}')">📋 진행상황 복사</button>
+      <button class="btn btn-sm" onclick="printChecklist('${c.id}')">🖨️ 인쇄/PDF</button>
+      <button class="btn btn-sm" onclick="togglePin('${c.id}')">${c.pinned?'📌 고정해제':'📌 고정'}</button>
+      <button class="btn btn-sm" onclick="toggleArchive('${c.id}')">${c.archived?'📦 보관해제':'📦 보관'}</button>
+      <button class="btn btn-sm" onclick="openClientModal('${c.id}')">✏️ 정보수정</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteClient('${c.id}')">삭제</button>
+    </div>
+    <div class="meta" style="margin-bottom:4px">${c.caseNo?("사건번호 "+esc(c.caseNo)+" · "):""}${c.phone?("☎ "+esc(c.phone)+" · "):""}수정 ${fmt(c.updatedAt)}</div>`;
+
+  // 의뢰인 메모
+  html+=`<div class="overall">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div><div class="pct">${p.pct}%</div><div style="font-size:12px;color:var(--muted);font-weight:700">${p.done}/${p.total} 확보</div></div>
+        <div style="flex:1;min-width:160px"><div class="bar" style="height:12px"><i style="width:${p.pct}%"></i></div>
+          <div class="card-stats">
+            ${p.requesting?`<span class="chip wait">요청중 ${p.requesting}</span>`:""}
+            ${p.notReq?`<span class="chip req">미요청 ${p.notReq}</span>`:""}
+            ${p.missing===0?`<span class="chip ok">전부 확보 ✓</span>`:""}
+          </div></div>
+      </div>
+      <div class="field" style="margin:12px 0 0">
+        <label>📝 의뢰인 메모 (상황·특이사항)</label>
+        <textarea id="clientMemo" rows="2" placeholder="예: 배우자 명의 차량 있음 / 전세보증금 확인 필요 / 사업자 폐업"
+          oninput="onClientMemo('${c.id}')">${esc(c.memo||"")}</textarea>
+      </div>
+    </div>`;
+
+  // 필터
+  const filters=[["all","전체"],["missing","미확보만"],["request","요청 서류"],["requesting","요청중"],["received","받음"],["self","직접발급"],["haslink","링크있음"],["hasmemo","메모있음"]];
+  html+=`<div class="filters">`+filters.map(f=>`<button class="fbtn ${detailFilter===f[0]?'active':''}" onclick="setFilter('${f[0]}')">${f[1]}</button>`).join("")+`</div>`;
+  html+=`<div class="filters" style="margin-top:-6px">
+    <button class="fbtn" onclick="bulkRequesting('${c.id}')">📤 미요청 전부 요청중으로</button>
+    <button class="fbtn" onclick="bulkReceived('${c.id}')">✅ 표시 항목 전부 받음</button>
+  </div>`;
+
+  // 묶음들
+  TEMPLATE.forEach((b,bi)=>{
+    const items=collectBundleItems(c,b);
+    const visItems = items.filter(x=>passFilter(c.items[x.id]));
+    const bp = bundleProgress(c,b);
+    const isCol = collapsed[c.id+b.id];
+    if(detailFilter!=="all" && visItems.length===0) return; // 필터 시 빈 묶음 숨김
+    html+=`<div class="bundle ${isCol?'collapsed':''}">
+      <div class="bundle-head" onclick="toggleBundle('${c.id}','${b.id}')">
+        <div class="bnum">${bi+1}</div>
+        <div class="bundle-title">${esc(b.title)}</div>
+        <div class="bundle-prog">${bp.done}/${bp.total}</div>
+        <div class="caret">▾</div>
+      </div>
+      <div class="bundle-body">`;
+    b.groups.forEach(g=>{
+      const gItems=g.items.filter(it=>passFilter(c.items[it.id]));
+      if(detailFilter!=="all" && gItems.length===0) return;
+      if(g.title) html+=`<div class="subgroup-title">— ${esc(g.title)}</div>`;
+      (detailFilter==="all"?g.items:gItems).forEach(it=>{ html+=itemHtml(c,it,false); });
+    });
+    // 추가 항목
+    (c.extra[b.id]||[]).forEach(ex=>{ if(detailFilter!=="all" && !passFilter(c.items[ex.id])) return; html+=itemHtml(c,ex,true,b.id); });
+    html+=`<div class="additem"><button class="btn btn-sm btn-ghost" onclick="addExtra('${c.id}','${b.id}')">+ 이 묶음에 서류 추가</button></div>`;
+    html+=`</div></div>`;
+  });
+
+  v.innerHTML=html;
+}
+
+function collectBundleItems(c,b){ let arr=[]; b.groups.forEach(g=>g.items.forEach(it=>arr.push(it))); (c.extra[b.id]||[]).forEach(ex=>arr.push(ex)); return arr; }
+function bundleProgress(c,b){ let total=0,done=0; collectBundleItems(c,b).forEach(it=>{ const s=c.items[it.id]; if(!s||s.mode==="na")return; total++; if(s.done)done++; }); return {total,done}; }
+function passFilter(s){
+  if(!s) return true;
+  if(detailFilter==="all") return true;
+  if(detailFilter==="missing") return s.mode!=="na" && !s.done;
+  if(detailFilter==="request") return s.mode==="request";
+  if(detailFilter==="requesting") return s.mode==="request" && s.reqTag==="requesting";
+  if(detailFilter==="received") return s.done;
+  if(detailFilter==="self") return s.mode==="self";
+  if(detailFilter==="haslink") return !!s.link;
+  if(detailFilter==="hasmemo") return !!(s.memo && s.memo.trim());
+  return true;
+}
+function setFilter(f){ detailFilter=f; renderDetail(currentClientId); }
+function toggleBundle(cid,bid){ collapsed[cid+bid]=!collapsed[cid+bid]; renderDetail(cid); }
+
+function itemHtml(c,it,isExtra,bid){
+  const s=c.items[it.id]||{mode:"request",reqTag:"none",done:false,memo:"",link:""};
+  const showTags = s.mode==="request";
+  const stClass = s.done?"st-recv":(s.mode==="na"?"st-na":(s.mode==="self"?"st-self":(s.reqTag==="requesting"?"st-req":"st-notreq")));
+  return `<div class="item ${s.done?'done':''} ${stClass}">
+    <div class="item-row">
+      <button class="chk" onclick="toggleDone('${c.id}','${it.id}')">${s.done?'✓':''}</button>
+      <div class="item-name">${esc(it.name)}
+        ${it.note?`<div class="item-note">${esc(it.note)}</div>`:""}
+        ${WHERE[it.id]?`<div class="item-note">📍 ${esc(WHERE[it.id])}</div>`:""}
+        ${s.link?`<div class="item-note"><a href="${esc(s.link)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700">🔗 첨부 파일 열기</a></div>`:""}
+        ${(function(){ let d=[]; if(s.reqDate&&!s.done) d.push(`요청 ${fmtD(s.reqDate)}${daysAgo(s.reqDate)>=3?` · ${daysAgo(s.reqDate)}일 경과`:''}`); if(s.recvDate&&s.done) d.push(`받음 ${fmtD(s.recvDate)}`); return d.length?`<div class="item-note" style="color:${(!s.done&&daysAgo(s.reqDate)>=7)?'var(--red)':'var(--brand)'}">🕒 ${d.join(" · ")}</div>`:""; })()}
+        ${isExtra?`<button class="btn-ghost btn-sm" style="font-size:11px;color:var(--red);padding:2px 4px" onclick="removeExtra('${c.id}','${bid}','${it.id}')">삭제</button>`:""}
+      </div>
+      <div class="seg">
+        <button class="${s.mode==='self'?'on-self':''}" onclick="setMode('${c.id}','${it.id}','self')">직접발급</button>
+        <button class="${s.mode==='request'?'on-req':''}" onclick="setMode('${c.id}','${it.id}','request')">의뢰인요청</button>
+        <button class="${s.mode==='na'?'on-na':''}" onclick="setMode('${c.id}','${it.id}','na')">해당없음</button>
+      </div>
+      ${showTags?`<div class="tags">
+        <button class="tag ${s.reqTag==='none'?'on t-none':''}" onclick="setTag('${c.id}','${it.id}','none')">미요청</button>
+        <button class="tag ${s.reqTag==='requesting'?'on t-req':''}" onclick="setTag('${c.id}','${it.id}','requesting')">요청중</button>
+        <button class="tag ${s.reqTag==='received'?'on t-recv':''}" onclick="setTag('${c.id}','${it.id}','received')">받음</button>
+      </div>`:""}
+      <button class="memo-toggle" onclick="setLink('${c.id}','${it.id}')">${s.link?'🔗 링크':'＋ 링크'}</button>
+      <button class="memo-toggle" onclick="toggleMemo('${it.id}')">${s.memo?'📝 메모':'＋ 메모'}</button>
+    </div>
+    <div class="memo-box ${s.memo?'':'hidden'}" id="memo-${it.id}">
+      <textarea rows="1" placeholder="이 서류 관련 메모 (예: 3/12 문자로 요청함)" oninput="onItemMemo('${c.id}','${it.id}')">${esc(s.memo||"")}</textarea>
+    </div>
+  </div>`;
+}
+
+/* ---------- 6. 항목 조작 ---------- */
+function toggleDone(cid,id){ const c=findClient(cid); const s=c.items[id]; s.done=!s.done;
+  if(s.done){ s.recvDate=now(); if(s.mode==="request") s.reqTag="received"; } else { s.recvDate=null; if(s.reqTag==="received") s.reqTag="requesting"; }
+  touch(`[${c.name}] '${itemName(id,c)}' ${s.done?"확보 완료":"미확보로 변경"}`); renderDetail(cid); }
+function setMode(cid,id,mode){ const c=findClient(cid); c.items[id].mode=mode;
+  touch(`[${c.name}] '${itemName(id,c)}' 구분→${mode==='self'?'직접발급':mode==='request'?'의뢰인요청':'해당없음'}`); renderDetail(cid); }
+function setTag(cid,id,tag){ const c=findClient(cid); const s=c.items[id]; s.reqTag=tag;
+  if(tag==="received"){ s.done=true; s.recvDate=now(); }
+  else { if(s.done) s.done=false; s.recvDate=null; if(tag==="requesting" && !s.reqDate) s.reqDate=now(); if(tag==="none") s.reqDate=null; }
+  touch(`[${c.name}] '${itemName(id,c)}' 요청태그→${tag==='none'?'미요청':tag==='requesting'?'요청중':'받음'}`); renderDetail(cid); }
+function toggleMemo(id){ const el=$("#memo-"+id); if(el) el.classList.toggle("hidden"); }
+function setLink(cid,id){ const c=findClient(cid); const s=c.items[id];
+  const url=prompt("스캔본/파일 링크를 붙여넣으세요 (구글드라이브·노션 등). 비우면 삭제됩니다.", s.link||"");
+  if(url===null) return; s.link=url.trim();
+  touch(`[${c.name}] '${itemName(id,c)}' 링크 ${s.link?"등록":"삭제"}`); renderDetail(cid); }
+function onItemMemo(cid,id){ const c=findClient(cid); const ta=event.target; c.items[id].memo=ta.value;
+  saveLocal(); state.updatedAt=now(); debounceLogSync(); }
+function onClientMemo(cid){ const c=findClient(cid); c.memo=event.target.value; saveLocal(); state.updatedAt=now(); debounceLogSync(); }
+function debounceLogSync(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ state.updatedBy=deviceName||"미설정"; scheduleSync(); }, 1200); }
+function itemName(id,c){ let n=null; TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{if(it.id===id)n=it.name;}))); if(!n){ Object.values(c.extra||{}).forEach(arr=>arr.forEach(ex=>{if(ex.id===id)n=ex.name;})); } return n||id; }
+
+function addExtra(cid,bid){
+  const name=prompt("추가할 서류 이름을 입력하세요");
+  if(!name) return;
+  const c=findClient(cid); if(!c.extra[bid]) c.extra[bid]=[];
+  const id="x"+Date.now().toString(36);
+  c.extra[bid].push({id,name,note:"추가 서류"});
+  c.items[id]={mode:"request",reqTag:"none",done:false,memo:"",reqDate:null,recvDate:null,link:""};
+  touch(`[${c.name}] 서류 추가 '${name}'`); renderDetail(cid);
+}
+function removeExtra(cid,bid,id){
+  if(!confirm("이 추가 서류를 삭제할까요?")) return;
+  const c=findClient(cid); c.extra[bid]=(c.extra[bid]||[]).filter(x=>x.id!==id); delete c.items[id];
+  touch(`[${c.name}] 추가 서류 삭제`); renderDetail(cid);
+}
+
+/* ---------- 7. 의뢰인 추가/수정/삭제 ---------- */
+function openClientModal(id){
+  const c=id?findClient(id):null;
+  modal(`
+    <h3>${c?"의뢰인 정보 수정":"새 의뢰인 추가"}</h3>
+    <div class="field"><label>이름 *</label><input id="m_name" value="${c?esc(c.name):""}" placeholder="홍길동"/></div>
+    <div class="field"><label>사건 종류</label>
+      <select id="m_type">
+        ${["개인회생","개인파산","일반회생","파산·면책","기타"].map(t=>`<option ${c&&c.caseType===t?"selected":""}>${t}</option>`).join("")}
+      </select></div>
+    <div class="field"><label>소득 유형 (선택 시 해당 서류만 자동 표시)</label>
+      <select id="m_income">
+        ${["미정","급여소득자","사업소득자","연금수령자","복합(둘 이상)"].map(t=>`<option ${c&&c.incomeType===t?"selected":""}>${t}</option>`).join("")}
+      </select></div>
+    <div class="field"><label>사건번호 (선택)</label><input id="m_caseno" value="${c?esc(c.caseNo||''):""}" placeholder="2026개회12345"/></div>
+    <div class="field"><label>연락처 (선택)</label><input id="m_phone" value="${c?esc(c.phone||''):""}" placeholder="010-0000-0000"/></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">취소</button>
+      <button class="btn btn-primary" onclick="saveClient(${c?`'${c.id}'`:"null"})">저장</button>
+    </div>`);
+  setTimeout(()=>$("#m_name")&&$("#m_name").focus(),50);
+}
+function saveClient(id){
+  const name=$("#m_name").value.trim(); if(!name){ alert("이름을 입력하세요"); return; }
+  const data={ name, caseType:$("#m_type").value, incomeType:$("#m_income").value, caseNo:$("#m_caseno").value.trim(), phone:$("#m_phone").value.trim() };
+  if(id){ const c=findClient(id); Object.assign(c,data); applyIncomeType(c); touch(`[${name}] 정보 수정`); }
+  else{ const c=ensureItems({id:uid(),...data,memo:"",createdAt:now(),updatedAt:now()}); applyIncomeType(c); state.clients.push(c); touch(`의뢰인 추가 '${name}' (${data.incomeType})`); }
+  closeModal();
+  if(id) renderDetail(id); else renderDashboard();
+}
+function deleteClient(id){
+  const c=findClient(id); if(!confirm(`'${c.name}' 의뢰인을 삭제할까요? 되돌릴 수 없습니다.`)) return;
+  state.clients=state.clients.filter(x=>x.id!==id); touch(`의뢰인 삭제 '${c.name}'`); showDashboard();
+}
+function togglePin(id){ const c=findClient(id); c.pinned=!c.pinned; touch(`[${c.name}] ${c.pinned?'중요 고정':'고정 해제'}`); renderDetail(id); }
+function toggleArchive(id){ const c=findClient(id); c.archived=!c.archived; touch(`[${c.name}] ${c.archived?'보관(아카이브)':'보관 해제'}`); if(c.archived){ toast("보관함으로 이동했습니다"); showDashboard(); } else renderDetail(id); }
+function bulkRequesting(cid){ const c=findClient(cid);
+  if(!confirm("모든 '의뢰인요청' 미수령 서류를 '요청중'으로 표시할까요?")) return;
+  let n=0; Object.keys(c.items).forEach(id=>{ const s=c.items[id]; if(s.mode==="request" && !s.done && s.reqTag==="none"){ s.reqTag="requesting"; if(!s.reqDate)s.reqDate=now(); n++; } });
+  touch(`[${c.name}] 일괄 요청중 처리 (${n}건)`); renderDetail(cid); toast(n+"건 요청중으로 표시");
+}
+function bulkReceived(cid){ const c=findClient(cid);
+  if(!confirm("지금 화면에 보이는 항목을 모두 '받음(확보)'으로 처리할까요?")) return;
+  let n=0; const apply=(id)=>{ const s=c.items[id]; if(!s||s.mode==="na"||s.done||!passFilter(s)) return; s.done=true; s.recvDate=now(); if(s.mode==="request") s.reqTag="received"; n++; };
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>apply(it.id))));
+  Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>apply(ex.id)));
+  touch(`[${c.name}] 일괄 받음 처리 (${n}건)`); renderDetail(cid); toast(n+"건 받음 처리");
+}
+
+/* ---------- 7b. 요청 메시지 / 진행상황 복사 ---------- */
+function copyText(t){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(t).then(()=>true).catch(()=>fallbackCopy(t));
+  }
+  return Promise.resolve(fallbackCopy(t));
+}
+function fallbackCopy(t){ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0";
+  document.body.appendChild(ta); ta.focus(); ta.select(); let ok=false; try{ok=document.execCommand("copy");}catch(_){} document.body.removeChild(ta); return ok; }
+
+let _msgCtx=null;
+function reqOpenItems(c){
+  const list=[];
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{ const s=c.items[it.id];
+    if(s && s.mode==="request" && s.reqTag!=="received" && !s.done) list.push({id:it.id,name:it.name}); })));
+  Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>{ const s=c.items[ex.id];
+    if(s && s.mode==="request" && s.reqTag!=="received" && !s.done) list.push({id:ex.id,name:ex.name}); }));
+  return list;
+}
+function openRequestMsg(cid){
+  const c=ensureItems(findClient(cid));
+  const list=reqOpenItems(c);
+  if(list.length===0){
+    modal(`<h3>📨 서류 요청 메시지</h3>
+      <p class="hint">지금 '의뢰인요청'으로 표시된 <b>미수령 서류가 없습니다.</b></p>
+      <p style="font-size:13.5px;color:#555">상세 화면에서 서류를 <b>의뢰인요청</b>으로 지정하면, 여기서 자동으로 요청 메시지를 만들어 드립니다.</p>
+      <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">닫기</button></div>`);
+    return;
+  }
+  _msgCtx={ cid, list, sel:new Set(list.map(x=>x.id)), tone:"formal", how:true, kind:"request" };
+  renderMsgModal();
+}
+function reqRequestingItems(c){
+  const list=[];
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{ const s=c.items[it.id];
+    if(s && s.mode==="request" && s.reqTag==="requesting" && !s.done) list.push({id:it.id,name:it.name}); })));
+  Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>{ const s=c.items[ex.id];
+    if(s && s.mode==="request" && s.reqTag==="requesting" && !s.done) list.push({id:ex.id,name:ex.name}); }));
+  return list;
+}
+function openReminder(cid){
+  const c=ensureItems(findClient(cid));
+  const list=reqRequestingItems(c);
+  if(list.length===0){
+    modal(`<h3>⏰ 미수령 리마인더</h3>
+      <p class="hint">현재 <b>'요청중'(요청했지만 아직 못 받은) 서류가 없습니다.</b></p>
+      <p style="font-size:13.5px;color:#555">요청 메시지를 보낸 뒤 '요청중'으로 표시된 서류가 있어야 리마인더를 만들 수 있어요.</p>
+      <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">닫기</button></div>`);
+    return;
+  }
+  _msgCtx={ cid, list, sel:new Set(list.map(x=>x.id)), tone:"formal", how:false, kind:"reminder" };
+  renderMsgModal();
+}
+function renderMsgModal(){
+  const isRemind = _msgCtx.kind==="reminder";
+  const checks=_msgCtx.list.map(x=>`<label style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:13.5px;cursor:pointer">
+    <input type="checkbox" ${_msgCtx.sel.has(x.id)?"checked":""} onchange="toggleMsgSel('${x.id}')"> ${esc(x.name)}</label>`).join("");
+  modal(`<h3>${isRemind?"⏰ 미수령 리마인더 메시지":"📨 서류 요청 메시지 만들기"}</h3>
+    <p class="hint">${isRemind?"아직 못 받은(요청중) 서류만 모았습니다. 정중한 리마인더를 보내세요.":"보낼 서류를 고르고 말투를 선택한 뒤, 복사해서 문자·카톡에 붙여넣으세요."}</p>
+    <div class="field"><label>포함할 서류 (<span id="msgCount">${_msgCtx.sel.size}</span>개)</label>
+      <div style="max-height:140px;overflow:auto;border:1px solid var(--line);border-radius:9px;padding:6px 10px">${checks}</div></div>
+    <div class="field"><label>말투</label>
+      <select id="msgTone" onchange="_msgCtx.tone=this.value;regenMsg()">
+        <option value="formal">정중한 안내문 (문자·메일)</option>
+        <option value="simple">간단 요약</option>
+        <option value="kakao">카카오톡 친근체</option>
+      </select></div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13.5px;margin-bottom:10px;cursor:pointer">
+      <input type="checkbox" id="msgHow" checked onchange="_msgCtx.how=this.checked;regenMsg()"> 발급처·발급방법 안내 포함</label>
+    <div class="field"><label>미리보기 (직접 수정 가능)</label>
+      <textarea id="msgText" rows="9" style="font-size:13px;line-height:1.6"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">닫기</button>
+      <button class="btn" onclick="copyRequestMsg(false)">복사만</button>
+      <button class="btn btn-primary" onclick="copyRequestMsg(true)">복사 + 요청중 표시</button>
+    </div>`,540);
+  regenMsg();
+}
+function toggleMsgSel(id){ if(_msgCtx.sel.has(id)) _msgCtx.sel.delete(id); else _msgCtx.sel.add(id);
+  const cnt=$("#msgCount"); if(cnt) cnt.textContent=_msgCtx.sel.size; regenMsg(); }
+function buildRequestText(){
+  const c=findClient(_msgCtx.cid);
+  const firm=(cfg.firmName||"법무법인").trim();
+  const name=(c.name||"").trim();
+  const items=_msgCtx.list.filter(x=>_msgCtx.sel.has(x.id));
+  const how=_msgCtx.how;
+  if(items.length===0) return "(포함할 서류를 1개 이상 선택하세요)";
+  const remind = _msgCtx.kind==="reminder";
+  let t="";
+  if(_msgCtx.tone==="formal"){
+    t+= remind
+      ? `[${firm}] 안녕하세요, ${name}님.\n지난번에 요청드린 아래 서류가 아직 도착하지 않아 다시 안내드립니다. 번거로우시겠지만 준비되는 대로 보내주시면 감사하겠습니다.\n\n`
+      : `[${firm}] 안녕하세요, ${name}님.\n개인회생 사건 진행을 위해 아래 서류가 필요합니다. 준비되는 대로 보내주시면 감사하겠습니다.\n\n`;
+    items.forEach((x,i)=>{ t+=`${i+1}. ${x.name}\n`; if(how && WHERE[x.id]) t+=`   ↳ ${WHERE[x.id]}\n`; });
+    t+=`\n사진 또는 파일(PDF)로 보내주시면 됩니다. 문의사항은 편하게 연락 주세요.\n감사합니다.`;
+  } else if(_msgCtx.tone==="simple"){
+    t+= remind ? `${name}님, 지난번 요청드린 서류 중 아직 못 받은 항목입니다.\n\n` : `${name}님, 개인회생 진행에 필요한 서류입니다.\n\n`;
+    items.forEach(x=>{ t+=`- ${x.name}`; if(how && WHERE[x.id]) t+=` (${WHERE[x.id]})`; t+=`\n`; });
+    t+=`\n준비되는 대로 보내주세요. 감사합니다. - ${firm}`;
+  } else { // kakao
+    t+= remind ? `${name}님 안녕하세요 😊\n지난번에 부탁드린 서류 중 아직 안 온 것들이에요! 확인 부탁드려요 🙏\n\n` : `${name}님 안녕하세요 😊\n개인회생 준비로 아래 서류가 필요해요!\n\n`;
+    items.forEach(x=>{ t+=`✅ ${x.name}`; if(how && WHERE[x.id]) t+=`\n   → ${WHERE[x.id]}`; t+=`\n`; });
+    t+=`\n준비되면 사진이나 파일로 보내주시면 됩니다 🙏\n- ${firm}`;
+  }
+  return t;
+}
+function regenMsg(){ const ta=$("#msgText"); if(ta) ta.value=buildRequestText(); }
+function copyRequestMsg(mark){
+  const ta=$("#msgText"); const text=ta?ta.value:"";
+  copyText(text).then(ok=>{
+    if(mark){
+      const c=findClient(_msgCtx.cid); let n=0;
+      _msgCtx.sel.forEach(id=>{ const s=c.items[id]; if(s && s.reqTag!=="received"){ s.reqTag="requesting"; if(!s.reqDate) s.reqDate=now(); n++; } });
+      touch(`[${c.name}] ${_msgCtx.kind==="reminder"?"리마인더":"요청 메시지"} 발송 (${n}건 요청중)`);
+      renderDetail(_msgCtx.cid);
+    }
+    closeModal();
+    toast(ok?(mark?"복사 완료 · 요청중으로 표시했습니다 ✓":"메시지를 복사했습니다 ✓"):"복사 실패 — 메시지를 직접 선택해 복사하세요");
+  });
+}
+function copySummary(cid){
+  const c=ensureItems(findClient(cid)); const p=progress(c);
+  const buckets={recv:[],reqing:[],notreq:[],self:[]};
+  const push=(it)=>{ const s=c.items[it.id]; if(!s||s.mode==="na") return;
+    if(s.done) buckets.recv.push(it.name);
+    else if(s.mode==="request"){ if(s.reqTag==="requesting") buckets.reqing.push(it.name); else buckets.notreq.push(it.name); }
+    else buckets.self.push(it.name); };
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(push)));
+  Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(push));
+  let t=`[${c.name}] 개인회생 서류 진행상황 (${fmtD(now())})\n`;
+  t+=`사건: ${c.caseType||"개인회생"}${c.caseNo?(" "+c.caseNo):""}\n`;
+  t+=`확보 ${p.done}/${p.total} (${p.pct}%)\n\n`;
+  if(buckets.reqing.length) t+=`■ 요청중(회신 대기): ${buckets.reqing.join(", ")}\n`;
+  if(buckets.notreq.length) t+=`■ 미요청(요청 필요): ${buckets.notreq.join(", ")}\n`;
+  if(buckets.self.length) t+=`■ 직접발급 예정: ${buckets.self.join(", ")}\n`;
+  if(buckets.recv.length) t+=`■ 확보 완료: ${buckets.recv.join(", ")}\n`;
+  if(c.memo) t+=`\n[메모] ${c.memo}\n`;
+  copyText(t).then(ok=>toast(ok?"진행상황을 복사했습니다 ✓ (노션·시트에 붙여넣기)":"복사 실패"));
+}
+
+/* ---------- 7d. 인쇄 / PDF 출력 ---------- */
+function printChecklist(cid){
+  const c=ensureItems(findClient(cid)); const p=progress(c);
+  const stTxt=(s)=>{ if(s.done) return "☑ 확보완료"+(s.recvDate?` (${fmtD(s.recvDate)})`:""); if(s.mode==="na") return "— 해당없음"; if(s.mode==="self") return "☐ 직접발급"; if(s.reqTag==="requesting") return "☐ 요청중"+(s.reqDate?` (${fmtD(s.reqDate)})`:""); return "☐ 요청필요"; };
+  let rows="";
+  TEMPLATE.forEach((b,bi)=>{
+    rows+=`<tr class="bh"><td colspan="3">${bi+1}. ${esc(b.title)}</td></tr>`;
+    b.groups.forEach(g=>{ if(g.title) rows+=`<tr class="gh"><td colspan="3">— ${esc(g.title)}</td></tr>`;
+      g.items.forEach(it=>{ const s=c.items[it.id]; if(!s) return; rows+=`<tr><td>${esc(it.name)}</td><td>${stTxt(s)}</td><td>${esc(s.memo||"")}</td></tr>`; }); });
+    (c.extra[b.id]||[]).forEach(ex=>{ const s=c.items[ex.id]; if(!s) return; rows+=`<tr><td>${esc(ex.name)} (추가)</td><td>${stTxt(s)}</td><td>${esc(s.memo||"")}</td></tr>`; });
+  });
+  const w=window.open("","_blank"); if(!w){ toast("팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요"); return; }
+  w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${esc(c.name)} 서류 체크리스트</title>
+   <style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;padding:24px;color:#1f2540}h1{font-size:20px;margin:0 0 4px}.sub{color:#555;font-size:13px;margin-bottom:6px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}td,th{border:1px solid #c5c9d6;padding:6px 9px;vertical-align:top;text-align:left}tr.bh td{background:#3b5bdb;color:#fff;font-weight:800}tr.gh td{background:#eef0f6;font-weight:700;color:#2f49bf}th{background:#f0f2f8}@media print{.noprint{display:none}}</style></head>
+   <body><h1>${esc(c.name)} — 개인회생 서류 체크리스트</h1>
+   <div class="sub">${esc(c.caseType||"개인회생")}${c.caseNo?(" · "+esc(c.caseNo)):""}${(c.incomeType&&c.incomeType!=="미정")?(" · "+esc(c.incomeType)):""} · 확보 ${p.done}/${p.total} (${p.pct}%) · 출력일 ${fmtD(now())}</div>
+   ${c.memo?`<div class="sub">메모: ${esc(c.memo)}</div>`:""}
+   <button class="noprint" onclick="window.print()" style="margin:10px 0;padding:9px 16px;font-size:14px;font-weight:700;border:1px solid #3b5bdb;background:#3b5bdb;color:#fff;border-radius:8px;cursor:pointer">🖨️ 인쇄 / PDF로 저장</button>
+   <table><thead><tr><th style="width:45%">서류</th><th style="width:25%">상태</th><th>메모</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+  w.document.close();
+  setTimeout(()=>{ try{ w.focus(); w.print(); }catch(_){} }, 500);
+}
+
+/* ---------- 7c. 데이터 백업 / 복원 ---------- */
+function exportData(){
+  const blob=new Blob([JSON.stringify(state,null,1)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="서류취합_백업_"+fmtD(now()).replace("/","-")+".json"; a.click();
+  toast("백업 파일을 내려받았습니다");
+}
+function importData(){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=".json,application/json";
+  inp.onchange=()=>{ const f=inp.files[0]; if(!f) return; const r=new FileReader();
+    r.onload=()=>{ try{ const d=JSON.parse(r.result);
+      if(!confirm("현재 데이터를 이 백업으로 교체할까요? (되돌릴 수 없습니다)")) return;
+      state=d; if(!state.clients)state.clients=[]; if(!state.log)state.log=[]; state.clients.forEach(ensureItems);
+      touch("백업 파일에서 데이터 복원"); showDashboard(); toast("복원 완료 ✓");
+    }catch(e){ toast("올바른 백업 파일이 아닙니다"); } };
+    r.readAsText(f); };
+  inp.click();
+}
+
+function openSnapshots(){
+  const snaps=getSnapshots();
+  const rows=snaps.length? snaps.map((s,i)=>`<div class="log-row">
+    <div class="log-ts">${fmt(s.ts)}</div>
+    <div class="log-who">${esc(s.by||'?')}</div>
+    <div class="log-txt">${esc(s.note||'')} <span style="color:var(--muted)">· 의뢰인 ${s.clients}명</span></div>
+    <button class="btn btn-sm" onclick="restoreSnapshot(${i})">되돌리기</button></div>`).join("")
+    : `<div class="log-row"><div class="log-txt" style="color:var(--muted)">아직 스냅샷이 없습니다.</div></div>`;
+  modal(`<h3>🕘 스냅샷에서 되돌리기</h3>
+    <p class="hint">변경할 때마다 자동 저장된 시점입니다. 실수로 지웠거나 잘못 바꿨을 때 그 시점으로 되돌립니다.</p>
+    <div class="log-list" style="max-height:55vh;overflow:auto">${rows}</div>
+    <div class="modal-actions"><button class="btn" onclick="openSettings()">← 설정</button><button class="btn" onclick="closeModal()">닫기</button></div>`,660);
+}
+function restoreSnapshot(i){
+  const snaps=getSnapshots(); const s=snaps[i]; if(!s) return;
+  if(!confirm(`${fmt(s.ts)} 시점(의뢰인 ${s.clients}명)으로 되돌릴까요? 지금 내용은 스냅샷에 백업됩니다.`)) return;
+  pushSnapshot();
+  try{ state=JSON.parse(s.data); }catch(e){ toast("스냅샷 복구 실패"); return; }
+  if(!state.clients)state.clients=[]; if(!state.log)state.log=[]; state.clients.forEach(ensureItems);
+  touch("스냅샷 복구: "+fmt(s.ts)); showDashboard(); toast("되돌렸습니다 ✓");
+}
+
+/* ---------- 8. 설정 (깃헙) ---------- */
+function openSettings(){
+  modal(`
+    <h3>⚙️ 설정 · 깃헙 동기화</h3>
+    <p class="hint">여러 기기에서 같이 보고, 자동저장·로그가 남도록 비공개 저장소에 연결합니다.</p>
+    <div class="field"><label>이 기기/사용자 이름 (로그에 표시)</label>
+      <input id="s_device" value="${esc(deviceName)}" placeholder="예: 혜림-사무실PC"/></div>
+    <div class="field"><label>사무소 이름 (요청 메시지에 표시)</label>
+      <input id="s_firm" value="${esc(cfg.firmName||'법무법인')}" placeholder="예: 법무법인 이준"/></div>
+    <div class="field"><label>데이터 안전 (3단계 저장)</label>
+      <div style="font-size:12.5px;color:var(--muted);background:var(--gray-soft);border-radius:9px;padding:8px 11px;line-height:1.7">
+        ① 로컬 즉시저장 <b>켜짐</b> · ② 자동 스냅샷 <b>${getSnapshots().length}개</b> 보관<br>
+        ③ 깃헙 클라우드: <b>${githubReady()?"연결됨 ✓":"미연결"}</b>${state.updatedAt?` · 최근 ${fmt(state.updatedAt)}`:""}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="exportData()">📥 백업 내려받기</button>
+        <button class="btn btn-sm" onclick="importData()">📤 백업 불러오기</button>
+        <button class="btn btn-sm" onclick="openSnapshots()">🕘 스냅샷 되돌리기</button>
+      </div></div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0"/>
+    <div class="field"><label>깃헙 사용자명 (owner)</label><input id="s_owner" value="${esc(cfg.owner)}" placeholder="예: lawfirm-leejun"/></div>
+    <div class="field"><label>저장소 이름 (repo)</label><input id="s_repo" value="${esc(cfg.repo)}" placeholder="예: docs-checklist"/></div>
+    <div class="field"><label>브랜치</label><input id="s_branch" value="${esc(cfg.branch||'main')}" placeholder="main"/></div>
+    <div class="field"><label>액세스 토큰 (Personal Access Token)</label><input id="s_token" type="password" value="${esc(cfg.token)}" placeholder="github_pat_..."/></div>
+    <div class="note-warn">토큰은 이 기기 브라우저에만 저장되며 외부로 전송되지 않습니다(깃헙 외). 기기마다 한 번씩 입력하면 됩니다.</div>
+    <div style="margin-top:10px"><button class="btn btn-sm btn-ghost" onclick="showGuide()">❓ 저장소·토큰 만드는 방법 (처음이라면)</button></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">닫기</button>
+      <button class="btn" onclick="disconnectGithub()">연결 해제</button>
+      <button class="btn btn-primary" onclick="connectGithub()">연결 / 저장</button>
+    </div>`);
+}
+function showGuide(){
+  modal(`
+    <h3>📘 깃헙 비공개 저장소 + 토큰 만들기</h3>
+    <div class="steps">
+    <b>1단계 · 비공개 저장소 만들기</b>
+    <ol>
+      <li><code>github.com/new</code> 접속</li>
+      <li>Repository name 에 <code>docs-checklist</code> 입력</li>
+      <li><b>Private</b> 선택 (꼭! 비공개)</li>
+      <li>"Add a README" 체크 후 <b>Create repository</b></li>
+    </ol>
+    <b>2단계 · 액세스 토큰 발급</b>
+    <ol>
+      <li><code>github.com/settings/tokens</code> → <b>Fine-grained tokens</b> → Generate new token</li>
+      <li>이름 입력, 만료일 길게(또는 No expiration)</li>
+      <li>Repository access → <b>Only select repositories</b> → 방금 만든 저장소 선택</li>
+      <li>Permissions → <b>Contents</b> 를 <b>Read and write</b> 로 설정</li>
+      <li>Generate token → 나온 <code>github_pat_...</code> 복사 (한 번만 보임!)</li>
+    </ol>
+    <b>3단계 · 앱에 입력</b>
+    <ol>
+      <li>설정 화면에 owner(사용자명), repo(저장소명), 토큰 붙여넣기 → <b>연결</b></li>
+      <li>다른 기기에서도 같은 owner/repo/토큰 입력하면 같은 자료를 봅니다</li>
+    </ol>
+    </div>
+    <div class="note-warn">사무실 직원이 각자 토큰을 만들면 "누가 바꿨는지" 로그가 더 정확합니다. 기기 이름도 각각 다르게 적어주세요.</div>
+    <div class="modal-actions"><button class="btn btn-primary" onclick="openSettings()">← 설정으로</button></div>`);
+}
+async function connectGithub(){
+  deviceName=$("#s_device").value.trim(); localStorage.setItem(LS_DEVICE,deviceName);
+  cfg.firmName=$("#s_firm").value.trim()||"법무법인";
+  cfg.owner=$("#s_owner").value.trim(); cfg.repo=$("#s_repo").value.trim();
+  cfg.branch=$("#s_branch").value.trim()||"main"; cfg.token=$("#s_token").value.trim();
+  saveCfg();
+  if(!githubReady()){ updateSyncPill(); toast("저장됨 · 깃헙 동기화는 owner/repo/토큰을 모두 입력하세요"); return; }
+  setSync("saving"); toast("연결 확인 중…");
+  const ok=await pullFromGithub(false);
+  if(ok){ await pushToGithub(true); startPolling(); closeModal(); toast("깃헙 연결 완료 ✓"); }
+  else { toast("연결 실패 — 입력값/권한을 확인하세요"); }
+  updateSyncPill();
+}
+function disconnectGithub(){ cfg={repo:"",owner:"",branch:"main",token:"",path:"data.json",firmName:cfg.firmName||"법무법인"}; saveCfg(); clearInterval(pollTimer); setSync("local"); closeModal(); toast("연결을 해제했습니다 (로컬 저장)"); }
+function updateSyncPill(){ setSync(githubReady()?(syncStatus==="error"?"error":"ok"):"local"); }
+
+/* ---------- 9. 로그 ---------- */
+function openLog(){
+  const rows=state.log.length? state.log.map(l=>`<div class="log-row">
+    <div class="log-ts">${fmt(l.ts)}</div><div class="log-who">${esc(l.who)}</div><div class="log-txt">${esc(l.text)}</div></div>`).join("")
+    : `<div class="log-row"><div class="log-txt" style="color:var(--muted)">아직 기록이 없습니다.</div></div>`;
+  modal(`
+    <h3>📜 활동 로그 (${state.log.length})</h3>
+    <p class="hint">누가·언제·무엇을 바꿨는지 자동 기록됩니다. 깃헙 연결 시 저장소 커밋 내역에도 영구 보관됩니다.</p>
+    <div class="log-list" style="max-height:55vh;overflow:auto">${rows}</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="exportLog()">📥 로그 내려받기(.csv)</button>
+      <button class="btn" onclick="closeModal()">닫기</button>
+    </div>`,640);
+}
+function exportLog(){
+  const csv="시각,사용자,내용\n"+state.log.map(l=>`"${l.ts}","${(l.who||'').replace(/"/g,'""')}","${(l.text||'').replace(/"/g,'""')}"`).join("\n");
+  const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="활동로그.csv"; a.click();
+}
+
+/* ---------- 10. 모달 ---------- */
+function modal(html,maxw){ $("#modalRoot").innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal" style="${maxw?'max-width:'+maxw+'px':''}">${html}</div></div>`; }
+function closeModal(){ $("#modalRoot").innerHTML=""; }
+
+/* ---------- 11. 시작 ---------- */
+function boot(){
+  let loaded=false;
+  try{ const d=localStorage.getItem(LS_DATA); if(d){ state=JSON.parse(d); loaded=true; } }catch(_){}
+  if(!loaded){ // 1차 복구: 직전본
+    try{ const b=localStorage.getItem(LS_DATA_BAK); if(b){ state=JSON.parse(b); loaded=true; toast("직전 저장본에서 복구했습니다"); } }catch(_){}
+  }
+  if(!loaded){ // 2차 복구: 최신 스냅샷
+    try{ const snaps=getSnapshots(); if(snaps.length){ state=JSON.parse(snaps[0].data); loaded=true; toast("자동 스냅샷에서 복구했습니다"); } }catch(_){}
+  }
+  try{ const c=localStorage.getItem(LS_CFG); if(c) cfg=Object.assign(cfg,JSON.parse(c)); }catch(_){}
+  if(!state.clients) state.clients=[]; if(!state.log) state.log=[];
+  state.clients.forEach(ensureItems);
+  updateSyncPill();
+  renderDashboard();
+  if(githubReady()){ pullFromGithub(true).then(()=>startPolling()); }
+}
+window.addEventListener("DOMContentLoaded",boot);
+window.addEventListener("beforeunload",()=>{ saveLocal(); });
+</script>
+</body>
+</html>
