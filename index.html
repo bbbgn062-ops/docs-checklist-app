@@ -443,6 +443,8 @@ let remoteSha = null;          // 깃헙 파일의 최신 버전 식별자
 let saveTimer = null, syncTimer = null, pollTimer = null;
 let syncStatus = "local";       // local | ok | saving | error
 let collapsed = {};             // 묶음 접힘 상태
+let selMode = false;            // 선택 모드
+let selSet = new Set();         // 선택된 항목 id
 
 /* ---------- 3. 유틸 ---------- */
 const $ = (s,el=document)=>el.querySelector(s);
@@ -461,7 +463,8 @@ function b64decode(b64){ return decodeURIComponent(escape(atob((b64||"").replace
 function ensureItems(client){
   if(!client.items) client.items={};
   TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{
-    if(!client.items[it.id]) client.items[it.id]={ mode:it.mode, reqTag:"none", done:false, memo:"", reqDate:null, recvDate:null, link:"", rejected:false, rejectReason:"" };
+    if(!client.items[it.id]) client.items[it.id]={ mode:it.mode, reqTag:"none", done:false, memo:"", reqDate:null, recvDate:null, link:"", rejected:false, rejectReason:"", files:[] };
+    else if(!client.items[it.id].files) client.items[it.id].files=[];
   })));
   if(!client.extra) client.extra={}; // 묶음별 추가 항목
   if(!client.timeline) client.timeline=[]; // 상담/연락 기록
@@ -579,6 +582,7 @@ async function pullFromGithub(silent){
     const remote=JSON.parse(b64decode(j.content));
     // 원격이 더 최신이면 반영
     if(!state.updatedAt || (remote.updatedAt && remote.updatedAt > state.updatedAt)){
+      if(isEditing()){ setSync("ok"); return true; } // 입력 중에는 덮어쓰지 않음(메모 보호)
       state=remote; saveLocal();
       if(!silent){ rerender(); toast("다른 기기의 변경을 불러왔습니다"); }
       else rerender();
@@ -638,7 +642,7 @@ async function maybeDailyBackup(){
 
 function startPolling(){
   clearInterval(pollTimer);
-  if(githubReady()) pollTimer=setInterval(()=>{ if(syncStatus!=="saving") pullFromGithub(true); }, 20000); // 20초마다 확인
+  if(githubReady()) pollTimer=setInterval(()=>{ if(syncStatus!=="saving" && !isEditing()) pullFromGithub(true); }, 20000); // 20초마다 확인 (입력 중엔 건너뜀)
 }
 
 /* ---------- 5. 렌더 ---------- */
@@ -830,9 +834,22 @@ function renderDetail(id){
   const filters=[["all","전체"],["missing","미확보만"],["request","요청 서류"],["requesting","요청중"],["received","받음"],["self","직접발급"],["haslink","링크있음"],["hasmemo","메모있음"]];
   html+=`<div class="filters">`+filters.map(f=>`<button class="fbtn ${detailFilter===f[0]?'active':''}" onclick="setFilter('${f[0]}')">${f[1]}</button>`).join("")+`</div>`;
   html+=`<div class="filters" style="margin-top:-6px">
+    <button class="fbtn ${selMode?'active':''}" onclick="toggleSelMode('${c.id}')">${selMode?'✓ 선택 모드 켜짐':'☑ 선택 모드'}</button>
     <button class="fbtn" onclick="bulkRequesting('${c.id}')">📤 미요청 전부 요청중으로</button>
     <button class="fbtn" onclick="bulkReceived('${c.id}')">✅ 표시 항목 전부 받음</button>
   </div>`;
+  if(selMode){
+    html+=`<div class="overall" style="margin-top:-4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 14px">
+      <b style="font-size:13.5px">선택 ${selSet.size}개</b>
+      <button class="btn btn-sm" onclick="selAllVisible('${c.id}')">표시 전체 선택</button>
+      <button class="btn btn-sm" onclick="selClear('${c.id}')">해제</button>
+      <div class="grow"></div>
+      <button class="btn btn-sm" onclick="batchSel('${c.id}','requesting')">요청중</button>
+      <button class="btn btn-sm" onclick="batchSel('${c.id}','received')">받음</button>
+      <button class="btn btn-sm" onclick="batchSel('${c.id}','reject')">⚠ 보완필요</button>
+      <button class="btn btn-sm" onclick="batchSel('${c.id}','none')">미요청</button>
+    </div>`;
+  }
 
   // 묶음들
   TEMPLATE.forEach((b,bi)=>{
@@ -888,12 +905,14 @@ function itemHtml(c,it,isExtra,bid){
   const stClass = s.rejected?"st-notreq":(s.done?"st-recv":(s.mode==="na"?"st-na":(s.mode==="self"?"st-self":(s.reqTag==="requesting"?"st-req":"st-notreq"))));
   return `<div class="item ${s.done&&!s.rejected?'done':''} ${stClass}">
     <div class="item-row">
+      ${selMode?`<button class="chk" style="border-radius:50%;${selSet.has(it.id)?'background:var(--brand);border-color:var(--brand)':''}" onclick="toggleSel('${it.id}')" title="선택">${selSet.has(it.id)?'✓':''}</button>`:""}
       <button class="chk" onclick="toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?'✓':''}</button>
       <div class="item-name">${esc(it.name)}
         ${s.rejected?`<div class="item-note" style="color:var(--red);font-weight:700">⚠ 보완필요${s.rejectReason?` — ${esc(s.rejectReason)}`:""}</div>`:""}
         ${it.note?`<div class="item-note">${esc(it.note)}</div>`:""}
         ${WHERE[it.id]?`<div class="item-note">📍 ${esc(WHERE[it.id])}</div>`:""}
-        ${s.link?`<div class="item-note"><a href="${esc(s.link)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700">🔗 첨부 파일 열기</a></div>`:""}
+        ${s.link?`<div class="item-note"><a href="${esc(s.link)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700">🔗 링크 열기</a></div>`:""}
+        ${(s.files&&s.files.length)?`<div class="item-note">${s.files.map((f,fi)=>`📎 <a href="#" onclick="event.preventDefault();event.stopPropagation();openFile('${c.id}','${it.id}',${fi})" style="color:var(--brand);font-weight:700">${esc(f.name)}</a> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span> <button onclick="event.stopPropagation();removeFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px">×</button>`).join("<br>")}</div>`:""}
         ${(function(){ let d=[]; if(s.reqDate&&!s.done) d.push(`요청 ${fmtD(s.reqDate)}${daysAgo(s.reqDate)>=3?` · ${daysAgo(s.reqDate)}일 경과`:''}`); if(s.recvDate&&s.done) d.push(`받음 ${fmtD(s.recvDate)}`); return d.length?`<div class="item-note" style="color:${(!s.done&&daysAgo(s.reqDate)>=7)?'var(--red)':'var(--brand)'}">🕒 ${d.join(" · ")}</div>`:""; })()}
         ${isExtra?`<button class="btn-ghost btn-sm" style="font-size:11px;color:var(--red);padding:2px 4px" onclick="removeExtra('${c.id}','${bid}','${it.id}')">삭제</button>`:""}
       </div>
@@ -907,6 +926,7 @@ function itemHtml(c,it,isExtra,bid){
         <button class="tag ${s.reqTag==='requesting'?'on t-req':''}" onclick="setTag('${c.id}','${it.id}','requesting')">요청중</button>
         <button class="tag ${s.reqTag==='received'?'on t-recv':''}" onclick="setTag('${c.id}','${it.id}','received')">받음</button>
       </div>`:""}
+      <button class="memo-toggle" onclick="attachFiles('${c.id}','${it.id}')">📎 파일${(s.files&&s.files.length)?` ${s.files.length}`:""}</button>
       <button class="memo-toggle" onclick="setLink('${c.id}','${it.id}')">${s.link?'🔗 링크':'＋ 링크'}</button>
       <button class="memo-toggle" onclick="toggleMemo('${it.id}')">${s.memo?'📝 메모':'＋ 메모'}</button>
       <button class="memo-toggle" style="color:${s.rejected?'var(--red)':'var(--muted)'};font-weight:${s.rejected?'800':'400'}" onclick="toggleReject('${c.id}','${it.id}')">${s.rejected?'⚠ 보완해제':'⚠ 보완'}</button>
@@ -932,10 +952,67 @@ function setLink(cid,id){ const c=findClient(cid); const s=c.items[id];
   const url=prompt("스캔본/파일 링크를 붙여넣으세요 (구글드라이브·노션 등). 비우면 삭제됩니다.", s.link||"");
   if(url===null) return; s.link=url.trim();
   touch(`[${c.name}] '${itemName(id,c)}' 링크 ${s.link?"등록":"삭제"}`); renderDetail(cid); }
+
+/* ---------- 6b. 서류 파일 첨부 (깃헙 저장소 동기화) ---------- */
+function fileSizeStr(n){ return n<1024*1024 ? Math.max(1,Math.round(n/1024))+"KB" : (n/1048576).toFixed(1)+"MB"; }
+function arrayBufferToBase64(buf){ const bytes=new Uint8Array(buf); let bin=""; const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk){ bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk)); } return btoa(bin); }
+function ghContentsUrl(path){ return `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}`; }
+function attachFiles(cid,id){
+  if(!githubReady()){ toast("파일 첨부는 ⚙️설정에서 깃헙 연결 후 가능합니다 (기기 간 공유를 위해)"); return; }
+  const inp=document.createElement("input"); inp.type="file"; inp.multiple=true;
+  inp.onchange=async()=>{
+    const files=[...inp.files]; if(!files.length) return;
+    const c=findClient(cid); const s=c.items[id]; if(!s.files) s.files=[];
+    let okN=0;
+    for(const f of files){
+      if(f.size>100*1024*1024){ toast(`${f.name}: 100MB 초과 — 건너뜀`); continue; }
+      if(f.size>25*1024*1024 && !confirm(`${f.name} (${fileSizeStr(f.size)})는 큰 파일이라 업로드가 느리거나 실패할 수 있어요. 계속할까요? (큰 파일은 🔗링크 권장)`)) continue;
+      setSync("saving"); toast(`${f.name} 업로드 중…`);
+      try{
+        const buf=await f.arrayBuffer(); const b64=arrayBufferToBase64(buf);
+        const safe=(f.name||"file").replace(/[^\w.\-가-힣]/g,"_");
+        const path=`files/${cid}/${id}/${Date.now()}_${safe}`;
+        const r=await fetch(ghContentsUrl(path),{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),
+          body:JSON.stringify({message:`attach ${f.name}`,content:b64,branch:cfg.branch})});
+        if(!r.ok){ const t=await r.text(); throw new Error("HTTP "+r.status+" "+t.slice(0,80)); }
+        const j=await r.json();
+        s.files.push({name:f.name,size:f.size,path,sha:j.content.sha,by:deviceName||"미설정",ts:now()});
+        okN++;
+      }catch(e){ console.error(e); toast(`${f.name} 업로드 실패: ${e.message}`); setSync("error"); }
+    }
+    if(okN){ touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부`); toast(`${okN}개 첨부 완료 ✓`); }
+    renderDetail(cid);
+  };
+  inp.click();
+}
+async function openFile(cid,id,idx){
+  const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
+  if(!githubReady()){ toast("깃헙 연결 후 첨부파일을 열 수 있습니다"); return; }
+  toast("파일 여는 중…");
+  try{
+    const r=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/git/blobs/${f.sha}`,{headers:ghHeaders()});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const j=await r.json(); const bin=atob((j.content||"").replace(/\n/g,""));
+    const bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    const blob=new Blob([bytes]); const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=f.name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),15000);
+  }catch(e){ console.error(e); toast("파일 열기 실패: "+e.message); }
+}
+async function removeFile(cid,id,idx){
+  const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
+  if(!confirm(`'${f.name}' 첨부를 삭제할까요?`)) return;
+  if(githubReady()){ try{ await fetch(ghContentsUrl(f.path),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),
+    body:JSON.stringify({message:`delete ${f.name}`,sha:f.sha,branch:cfg.branch})}); }catch(e){ console.warn(e); } }
+  c.items[id].files.splice(idx,1); touch(`[${c.name}] 첨부 삭제`); renderDetail(cid);
+}
 function onItemMemo(cid,id){ const c=findClient(cid); const ta=event.target; c.items[id].memo=ta.value;
-  saveLocal(); state.updatedAt=now(); debounceLogSync(); }
-function onClientMemo(cid){ const c=findClient(cid); c.memo=event.target.value; saveLocal(); state.updatedAt=now(); debounceLogSync(); }
-function debounceLogSync(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ state.updatedBy=deviceName||"미설정"; scheduleSync(); }, 1200); }
+  state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
+function onClientMemo(cid){ const c=findClient(cid); c.memo=event.target.value;
+  state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
+function debounceLogSync(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ state.updatedBy=deviceName||"미설정"; pushSnapshot(); scheduleSync(); }, 1200); }
+function isEditing(){ const a=document.activeElement; return !!(a && (a.tagName==="TEXTAREA" || a.tagName==="INPUT" || a.isContentEditable)); }
 function itemName(id,c){ let n=null; TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{if(it.id===id)n=it.name;}))); if(!n){ Object.values(c.extra||{}).forEach(arr=>arr.forEach(ex=>{if(ex.id===id)n=ex.name;})); } return n||id; }
 
 function addExtra(cid,bid){
@@ -944,7 +1021,7 @@ function addExtra(cid,bid){
   const c=findClient(cid); if(!c.extra[bid]) c.extra[bid]=[];
   const id="x"+Date.now().toString(36);
   c.extra[bid].push({id,name,note:"추가 서류"});
-  c.items[id]={mode:"request",reqTag:"none",done:false,memo:"",reqDate:null,recvDate:null,link:"",rejected:false,rejectReason:""};
+  c.items[id]={mode:"request",reqTag:"none",done:false,memo:"",reqDate:null,recvDate:null,link:"",rejected:false,rejectReason:"",files:[]};
   touch(`[${c.name}] 서류 추가 '${name}'`); renderDetail(cid);
 }
 function removeExtra(cid,bid,id){
@@ -1012,6 +1089,22 @@ function bulkReceived(cid){ const c=findClient(cid);
   Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>apply(ex.id)));
   touch(`[${c.name}] 일괄 받음 처리 (${n}건)`); renderDetail(cid); toast(n+"건 받음 처리");
 }
+function toggleSelMode(cid){ selMode=!selMode; selSet.clear(); renderDetail(cid); }
+function toggleSel(id){ if(selSet.has(id)) selSet.delete(id); else selSet.add(id); renderDetail(currentClientId); }
+function selClear(cid){ selSet.clear(); renderDetail(cid); }
+function selAllVisible(cid){ const c=findClient(cid);
+  const add=(id)=>{ const s=c.items[id]; if(s && s.mode!=="na" && passFilter(s)) selSet.add(id); };
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>add(it.id))));
+  Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>add(ex.id)));
+  renderDetail(cid); }
+function batchSel(cid,action){ const c=findClient(cid); if(selSet.size===0){ toast("선택된 항목이 없습니다"); return; }
+  let n=0; selSet.forEach(id=>{ const s=c.items[id]; if(!s) return; n++;
+    if(action==="requesting"){ s.mode="request"; s.reqTag="requesting"; if(!s.reqDate)s.reqDate=now(); s.done=false; s.rejected=false; }
+    else if(action==="received"){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request")s.reqTag="received"; }
+    else if(action==="reject"){ s.rejected=true; s.done=false; if(s.mode==="request"&&s.reqTag==="received")s.reqTag="requesting"; }
+    else if(action==="none"){ s.reqTag="none"; s.done=false; s.reqDate=null; }
+  });
+  touch(`[${c.name}] 선택 ${n}개 일괄 처리`); renderDetail(cid); toast(`${n}개 처리됨 ✓`); }
 function setStage(cid,stage){ const c=findClient(cid); if(c.stage===stage) return; c.stage=stage; touch(`[${c.name}] 단계 → ${stage}`); renderDetail(cid); }
 function addTimeline(cid){ const c=findClient(cid); const t=prompt("상담·연락 내용 (예: 3/12 통화 — 통장사본 요청함)"); if(!t||!t.trim()) return;
   if(!c.timeline) c.timeline=[]; c.timeline.unshift({ts:now(), by:deviceName||"미설정", text:t.trim()});
