@@ -86,6 +86,38 @@
   .fbtn:hover{border-color:rgba(155,27,51,.3);}
   .fbtn.active{background:var(--brand);color:#fff;border-color:var(--brand);box-shadow:0 3px 10px rgba(155,27,51,.22);}
 
+  /* ── 상세: 컨트롤바 · 2단 레이아웃 · 묶음 탭 · 목록형 ── */
+  .ctrlbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;background:#fff;border:1px solid var(--line);border-radius:13px;padding:8px 10px;box-shadow:var(--shadow);}
+  .iconbtn{border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;font-size:13px;padding:8px 13px;border-radius:9px;transition:all .12s;}
+  .iconbtn:hover{background:var(--gray-soft);}
+  .iconbtn.on{background:var(--brand);color:#fff;border-color:var(--brand);}
+  .segview{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;}
+  .segview button{border:none;background:#fff;color:var(--muted);font-weight:700;font-size:13px;padding:8px 13px;border-right:1px solid var(--line);}
+  .segview button:last-child{border-right:none;}
+  .segview button.on{background:var(--ink);color:#fff;}
+  .ctrl-sel{border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-weight:700;font-size:13px;background:#fff;color:var(--ink);min-width:120px;}
+  .selbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--brand-soft);border:1px solid #ECD2DA;border-radius:13px;padding:10px 13px;margin-bottom:12px;font-size:13.5px;}
+  .detail-grid{display:grid;grid-template-columns:236px 1fr;gap:16px;align-items:start;}
+  .detail-grid.navclosed{grid-template-columns:1fr;}
+  .detail-grid.navclosed .bnav{display:none;}
+  .bnav{position:sticky;top:78px;display:flex;flex-direction:column;gap:3px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:7px;box-shadow:var(--shadow);max-height:calc(100vh - 96px);overflow:auto;}
+  .bnav-item{display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;border:none;background:none;border-radius:10px;padding:9px 10px;font-size:12.5px;font-weight:700;color:var(--ink);cursor:pointer;line-height:1.3;}
+  .bnav-item:hover{background:var(--gray-soft);}
+  .bnav-item.on{background:var(--brand-soft);color:var(--brand);}
+  .bnav-item > span:first-child{display:flex;align-items:center;min-width:0;}
+  .bnav-item .bn{display:inline-flex;width:18px;height:18px;border-radius:5px;background:var(--gray-soft);color:var(--muted);align-items:center;justify-content:center;font-size:11px;font-weight:800;margin-right:7px;flex:0 0 auto;}
+  .bnav-item.on .bn{background:var(--brand);color:#fff;}
+  .bnp{font-size:11.5px;color:var(--muted);font-weight:800;flex:0 0 auto;}
+  .bnp.fdone{color:var(--green);}
+  .checklist{min-width:0;}
+  .bundle-body.listmode{padding:2px 10px 8px;}
+  .lrow{display:flex;align-items:center;gap:11px;padding:9px 6px;border-top:1px solid var(--line);}
+  .lrow:first-child{border-top:none;}
+  .lrow.done{background:#E7F7EC;border-radius:8px;border-top-color:transparent;}
+  .lname{flex:1;min-width:0;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .lrow.done .lname{color:#2C6B48;font-weight:700;}
+  .lstat{flex:0 0 auto;font-size:12px;font-weight:800;}
+
   .bundle{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:14px;box-shadow:var(--shadow);overflow:hidden;}
   .bundle-head{display:flex;align-items:center;gap:10px;padding:14px 16px;cursor:pointer;user-select:none;}
   .bundle-head:hover{background:#fafbff;}
@@ -204,6 +236,10 @@
     .modal{border-radius:18px 18px 0 0;align-self:flex-end;max-height:94vh;}
     .overlay{align-items:flex-end;padding:0;}
     .tl-date{flex-basis:70px;}
+    .detail-grid{grid-template-columns:1fr;}
+    .bnav{position:static;max-height:none;flex-direction:row;flex-wrap:wrap;}
+    .bnav-item{flex:1 1 calc(50% - 4px);}
+    .ctrl-sel{flex:1 1 100%;}
   }
   @media(max-width:560px){
     .detail-head h2{font-size:19px;}
@@ -457,6 +493,9 @@ let syncStatus = "local";       // local | ok | saving | error
 let collapsed = {};             // 묶음 접힘 상태
 let selMode = false;            // 선택 모드
 let selSet = new Set();         // 선택된 항목 id
+let viewMode = "card";          // 보기 모드: card | list
+let focusBundle = "";           // 좌측 탭에서 고른 묶음(빈값=전체)
+let navOpen = (typeof window!=="undefined" && window.innerWidth>900); // 좌측 묶음 탭 열림
 
 /* ---------- 3. 유틸 ---------- */
 const $ = (s,el=document)=>el.querySelector(s);
@@ -841,34 +880,49 @@ function renderDetail(id){
       ${(c.timeline&&c.timeline.length)?`<div class="tl">`+c.timeline.map((t,i)=>`<div class="tl-row"><span class="tl-date">${fmt(t.ts)}</span><span class="tl-who">${esc(t.by||'')}</span><span class="tl-txt">${esc(t.text)}</span><button class="tl-del" onclick="delTimeline('${c.id}',${i})">×</button></div>`).join("")+`</div>`:`<div style="font-size:12.5px;color:var(--muted)">아직 기록이 없습니다. "+기록 추가"로 상담·통화 내용을 남기세요.</div>`}
     </div>`;
 
-  // 필터
-  const filters=[["all","전체"],["missing","미확보만"],["request","요청 서류"],["requesting","요청중"],["received","받음"],["self","직접발급"],["haslink","링크있음"],["hasmemo","메모있음"]];
-  html+=`<div class="filters">`+filters.map(f=>`<button class="fbtn ${detailFilter===f[0]?'active':''}" onclick="setFilter('${f[0]}')">${f[1]}</button>`).join("")+`</div>`;
-  html+=`<div class="filters" style="margin-top:-6px">
-    <button class="fbtn ${selMode?'active':''}" onclick="toggleSelMode('${c.id}')">${selMode?'✓ 선택 모드 켜짐':'☑ 선택 모드'}</button>
-    <button class="fbtn" onclick="bulkRequesting('${c.id}')">📤 미요청 전부 요청중으로</button>
-    <button class="fbtn" onclick="bulkReceived('${c.id}')">✅ 표시 항목 전부 받음</button>
+  // 컨트롤 바 (묶음탭·보기·필터·선택)
+  const filtOpts=[["all","전체 보기"],["missing","미확보만"],["request","요청 서류"],["requesting","요청중"],["received","받음"],["rejected","보완필요"],["self","직접발급"],["haslink","링크있음"],["hasmemo","메모있음"]];
+  html+=`<div class="ctrlbar">
+    <button class="iconbtn ${navOpen?'on':''}" onclick="toggleNav()">☰ 묶음</button>
+    <div class="segview">
+      <button class="${viewMode==='card'?'on':''}" onclick="setView('card')">🗂 카드</button>
+      <button class="${viewMode==='list'?'on':''}" onclick="setView('list')">☰ 목록</button>
+    </div>
+    <select class="ctrl-sel" onchange="setFilter(this.value)">
+      ${filtOpts.map(f=>`<option value="${f[0]}" ${detailFilter===f[0]?'selected':''}>${f[1]}</option>`).join("")}
+    </select>
+    <div class="grow"></div>
+    <button class="iconbtn ${selMode?'on':''}" onclick="toggleSelMode('${c.id}')">☑ 선택</button>
   </div>`;
   if(selMode){
-    html+=`<div class="overall" style="margin-top:-4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 14px">
-      <b style="font-size:13.5px">선택 ${selSet.size}개</b>
+    html+=`<div class="selbar">
+      <b>선택 ${selSet.size}개</b>
       <button class="btn btn-sm" onclick="selAllVisible('${c.id}')">표시 전체 선택</button>
       <button class="btn btn-sm" onclick="selClear('${c.id}')">해제</button>
       <div class="grow"></div>
       <button class="btn btn-sm" onclick="batchSel('${c.id}','requesting')">요청중</button>
       <button class="btn btn-sm" onclick="batchSel('${c.id}','received')">받음</button>
-      <button class="btn btn-sm" onclick="batchSel('${c.id}','reject')">⚠ 보완필요</button>
+      <button class="btn btn-sm" onclick="batchSel('${c.id}','reject')">⚠ 보완</button>
       <button class="btn btn-sm" onclick="batchSel('${c.id}','none')">미요청</button>
     </div>`;
   }
 
-  // 묶음들
+  // 2단 레이아웃: 좌측 묶음 탭 + 우측 체크리스트
+  html+=`<div class="detail-grid ${navOpen?'':'navclosed'}">`;
+  html+=`<aside class="bnav">
+    <button class="bnav-item ${focusBundle===''?'on':''}" onclick="focusBundleSet('')"><span>📋 전체 보기</span><span class="bnp">${p.done}/${p.total}</span></button>`;
+  TEMPLATE.forEach((b,bi)=>{ const bp=bundleProgress(c,b); const full=bp.total>0&&bp.done===bp.total;
+    html+=`<button class="bnav-item ${focusBundle===b.id?'on':''}" onclick="focusBundleSet('${b.id}')"><span><span class="bn">${bi+1}</span>${esc(b.title)}</span><span class="bnp ${full?'fdone':''}">${bp.done}/${bp.total}</span></button>`; });
+  html+=`</aside>`;
+
+  html+=`<div class="checklist">`;
   TEMPLATE.forEach((b,bi)=>{
+    if(focusBundle && focusBundle!==b.id) return;
     const items=collectBundleItems(c,b);
     const visItems = items.filter(x=>passFilter(c.items[x.id]));
     const bp = bundleProgress(c,b);
     const isCol = collapsed[c.id+b.id];
-    if(detailFilter!=="all" && visItems.length===0) return; // 필터 시 빈 묶음 숨김
+    if(detailFilter!=="all" && visItems.length===0) return;
     html+=`<div class="bundle ${isCol?'collapsed':''}">
       <div class="bundle-head" onclick="toggleBundle('${c.id}','${b.id}')">
         <div class="bnum">${bi+1}</div>
@@ -876,18 +930,18 @@ function renderDetail(id){
         <div class="bundle-prog">${bp.done}/${bp.total}</div>
         <div class="caret">▾</div>
       </div>
-      <div class="bundle-body">`;
+      <div class="bundle-body ${viewMode==='list'?'listmode':''}">`;
     b.groups.forEach(g=>{
       const gItems=g.items.filter(it=>passFilter(c.items[it.id]));
       if(detailFilter!=="all" && gItems.length===0) return;
       if(g.title) html+=`<div class="subgroup-title">— ${esc(g.title)}</div>`;
-      (detailFilter==="all"?g.items:gItems).forEach(it=>{ html+=itemHtml(c,it,false); });
+      (detailFilter==="all"?g.items:gItems).forEach(it=>{ html+=(viewMode==='list'?itemRow(c,it,false):itemHtml(c,it,false)); });
     });
-    // 추가 항목
-    (c.extra[b.id]||[]).forEach(ex=>{ if(detailFilter!=="all" && !passFilter(c.items[ex.id])) return; html+=itemHtml(c,ex,true,b.id); });
-    html+=`<div class="additem"><button class="btn btn-sm btn-ghost" onclick="addExtra('${c.id}','${b.id}')">+ 이 묶음에 서류 추가</button></div>`;
+    (c.extra[b.id]||[]).forEach(ex=>{ if(detailFilter!=="all" && !passFilter(c.items[ex.id])) return; html+=(viewMode==='list'?itemRow(c,ex,true,b.id):itemHtml(c,ex,true,b.id)); });
+    if(viewMode==='card') html+=`<div class="additem"><button class="btn btn-sm btn-ghost" onclick="addExtra('${c.id}','${b.id}')">+ 이 묶음에 서류 추가</button></div>`;
     html+=`</div></div>`;
   });
+  html+=`</div></div>`; // .checklist + .detail-grid
 
   v.innerHTML=html;
 }
@@ -907,7 +961,28 @@ function passFilter(s){
   return true;
 }
 function setFilter(f){ detailFilter=f; renderDetail(currentClientId); }
+function setView(m){ viewMode=m; renderDetail(currentClientId); }
+function toggleNav(){ navOpen=!navOpen; renderDetail(currentClientId); }
+function focusBundleSet(bid){ focusBundle=bid; if(window.innerWidth<=760) navOpen=false; renderDetail(currentClientId); window.scrollTo({top:0,behavior:"smooth"}); }
 function toggleBundle(cid,bid){ collapsed[cid+bid]=!collapsed[cid+bid]; renderDetail(cid); }
+
+/* 목록형(컴팩트) 행 — 텍스트 체크리스트 */
+function itemRow(c,it,isExtra,bid){
+  const s=c.items[it.id]||{mode:"request",reqTag:"none",done:false,rejected:false};
+  let label="미요청", col="var(--muted)";
+  if(s.rejected){ label="보완필요"; col="var(--red)"; }
+  else if(s.done){ label="받음"; col="var(--green)"; }
+  else if(s.mode==="na"){ label="해당없음"; col="var(--gray)"; }
+  else if(s.mode==="self"){ label="직접발급"; col="var(--brand)"; }
+  else if(s.reqTag==="requesting"){ label="요청중"; col="var(--amber)"; }
+  const stClass=s.rejected?"st-rej":(s.done?"st-recv":(s.mode==="na"?"st-na":(s.reqTag==="requesting"?"st-req":"")));
+  return `<div class="lrow ${s.done&&!s.rejected?'done':''} ${stClass}">
+    ${selMode?`<button class="chk" style="border-radius:50%;${selSet.has(it.id)?'background:var(--brand);border-color:var(--brand)':''}" onclick="toggleSel('${it.id}')">${selSet.has(it.id)?'✓':''}</button>`:""}
+    <button class="chk" onclick="toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?'✓':''}</button>
+    <span class="lname">${esc(it.name)}${(s.files&&s.files.length)?` <span style="color:var(--brand)">📎${s.files.length}</span>`:""}${s.memo?` <span style="color:var(--muted)">📝</span>`:""}</span>
+    <span class="lstat" style="color:${col}">${label}</span>
+  </div>`;
+}
 
 function passFilterReject(s){ return s && s.rejected; }
 function itemHtml(c,it,isExtra,bid){
