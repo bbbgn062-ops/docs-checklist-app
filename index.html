@@ -371,13 +371,13 @@ const TEMPLATE = [
     ]}
   ]},
   { id:"b3", title:"채무자 재산 소명자료", groups:[
-    { id:"b3g0", title:"부동산·재산 현황", items:[
+    { id:"b3g0", title:"부동산·재산 현황 (공통 필수)", items:[
       { id:"b2-3", name:"지방세 세목별 과세증명서", note:"재산세·재산현황(부동산 등) 확인", mode:"self" },
+      { id:"b3-11", name:"지적전산자료(토지대장·임야대장)", note:"부동산 유무와 무관하게 항상 필요 (토지 현황 확인)", mode:"self" },
     ]},
     { id:"b3g4", title:"부동산 재산 (부동산 보유 시)", items:[
       { id:"b3-9", name:"부동산 등기부등본(등기사항전부증명서)", note:"보유 부동산 확인", mode:"self" },
       { id:"b3-10", name:"공시지가 확인서(개별공시지가)", note:"부동산 가액 확인", mode:"self" },
-      { id:"b3-11", name:"지적전산자료(토지대장·임야대장)", note:"토지 현황 확인", mode:"self" },
     ]},
     { id:"b3g1", title:"자동차 재산", items:[
       { id:"b3-1", name:"자동차 보험증서", note:"환가예상액 확인", mode:"request" },
@@ -574,10 +574,10 @@ function applyTags(c){
   const anyTag = !!TAG_GROUPS.income[c.incomeType] || !!TAG_GROUPS.housing[c.housing] || ((c.assets||[]).length>0) || (c.housing==="무상거주");
   if(anyTag){ const active=activeGroups(c);
     TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!TAG_CONTROLLED.includes(g.id)) return; const on=active.has(g.id);
-      g.items.forEach(it=>{ const s=c.items[it.id]; if(!s) return; if(on){ if(s.mode==="na") s.mode=it.mode; } else s.mode="na"; }); }));
+      g.items.forEach(it=>{ const s=c.items[it.id]; if(!s||s.manual) return; if(on){ if(s.mode==="na") s.mode=it.mode; } else s.mode="na"; }); }));
   }
-  // 무상거주 사실확인서(b7-2): 무상거주일 때만 표시
-  const s2=c.items["b7-2"]; if(s2){ if(c.housing==="무상거주"){ if(s2.mode==="na") s2.mode="request"; } else if(c.housing && c.housing!=="미정") s2.mode="na"; }
+  // 무상거주 사실확인서(b7-2): 무상거주일 때만 표시 (단, 수동 변경했으면 유지)
+  const s2=c.items["b7-2"]; if(s2 && !s2.manual){ if(c.housing==="무상거주"){ if(s2.mode==="na") s2.mode="request"; } else if(c.housing && c.housing!=="미정") s2.mode="na"; }
 }
 function applyIncomeType(c){ applyTags(c); } // 하위호환
 /* 기존 데이터 복원 (한 번만): 공통 묶음이 과거 소득로직으로 '해당없음'에 갇힌 것 되살림 + 옛 소득유형 명칭 변환 */
@@ -588,11 +588,11 @@ function migrateV2(){
   state.clients.forEach(c=>{ if(!c.items) return;
     if(remap[c.incomeType]) c.incomeType=remap[c.incomeType];
     TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(controlled.has(g.id)) return; // 공통 묶음만
-      g.items.forEach(it=>{ const s=c.items[it.id]; if(s && s.mode==="na" && it.mode!=="na") s.mode=it.mode; }); }));
+      g.items.forEach(it=>{ const s=c.items[it.id]; if(s && !s.manual && s.mode==="na" && it.mode!=="na") s.mode=it.mode; }); }));
     applyTags(c); // 상황태그 정합성 재적용
   });
 }
-function migrateIfNeeded(){ if(state._ver>=3) return false; state.clients.forEach(ensureItems); migrateV2(); state._ver=3; return true; }
+function migrateIfNeeded(){ if(state._ver>=4) return false; state.clients.forEach(ensureItems); migrateV2(); state._ver=4; return true; }
 
 /* 완료율 계산 */
 function progress(client){
@@ -1178,7 +1178,7 @@ function itemHtml(c,it,isExtra,bid){
 function toggleDone(cid,id){ const c=findClient(cid); const s=c.items[id]; s.done=!s.done;
   if(s.done){ s.recvDate=now(); if(s.mode==="request") s.reqTag="received"; } else { s.recvDate=null; if(s.reqTag==="received") s.reqTag="requesting"; }
   touch(`[${c.name}] '${itemName(id,c)}' ${s.done?"확보 완료":"미확보로 변경"}`); renderDetail(cid); }
-function setMode(cid,id,mode){ const c=findClient(cid); c.items[id].mode=mode;
+function setMode(cid,id,mode){ const c=findClient(cid); c.items[id].mode=mode; c.items[id].manual=true; // 수동 변경 → 재산유형 저장 시에도 유지(자동으로 안 덮어씀)
   touch(`[${c.name}] '${itemName(id,c)}' 구분→${mode==='self'?'직접발급':mode==='request'?'의뢰인요청':'해당없음'}`); renderDetail(cid); }
 function setTag(cid,id,tag){ const c=findClient(cid); const s=c.items[id]; s.reqTag=tag;
   if(tag==="received"){ s.done=true; s.recvDate=now(); }
@@ -1218,7 +1218,7 @@ function attachFiles(cid,id){
         okN++;
       }catch(e){ console.error(e); toast(`${f.name} 업로드 실패: ${e.message}`); setSync("error"); }
     }
-    if(okN){ if(s.mode!=="na" && !s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; }
+    if(okN){ s.manual=true; if(s.mode!=="na" && !s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; }
       touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부·받음`); toast(`${okN}개 첨부 완료 · '받음' 처리 ✓`); }
     renderDetail(cid);
   };
@@ -1447,8 +1447,8 @@ function openClientModal(id){
         ${["미정","임차","무상거주","자가"].map(t=>`<option ${((c&&c.housing)||"미정")===t?"selected":""}>${t}</option>`).join("")}
       </select></div>
     <div class="field"><label>재산 유형 (있는 것만 체크 → 관련 서류 자동 표시)</label>
-      <div style="display:flex;flex-wrap:wrap;gap:7px">
-        ${ASSET_OPTS.map(a=>`<label style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12.5px;cursor:pointer"><input type="checkbox" class="m_asset" value="${a}" ${(c&&(c.assets||[]).includes(a))?"checked":""}> ${a}</label>`).join("")}
+      <div style="display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;padding-bottom:5px;-webkit-overflow-scrolling:touch">
+        ${ASSET_OPTS.map(a=>`<label style="flex:none;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:12px;cursor:pointer"><input type="checkbox" class="m_asset" value="${a}" ${(c&&(c.assets||[]).includes(a))?"checked":""}> ${a}</label>`).join("")}
       </div></div>
     <div class="field"><label>마감일 (보정기한·접수예정일 등)</label>
       <div style="display:flex;gap:8px">
