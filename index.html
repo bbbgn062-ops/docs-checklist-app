@@ -547,6 +547,7 @@ function ensureItems(client){
   if(!Array.isArray(client.assets)) client.assets=[];       // 재산유형(다중)
   if(!client.cert) client.cert={ files:[], pw:"" };         // 공동인증서
   if(!Array.isArray(client.cert.files)) client.cert.files=[];
+  if(!client.firm) client.firm=(typeof cfg!=="undefined"&&cfg.firmName)?cfg.firmName:FIRMS[0]; // 소속 사무소
   return client;
 }
 function formatPhone(v){ const d=(v||"").replace(/\D/g,"").slice(0,11);
@@ -565,6 +566,10 @@ const TAG_GROUPS={
 };
 const TAG_CONTROLLED=["b4g1","b4g2","b3g5","b3g6","b3g1","b3g2","b3g3","b3g4"];
 const ASSET_OPTS=["자가","임차보증금","차량","토지","보험환급금","사업용재산","기타재산"];
+const FIRMS=["법무법인 이준 서초분사무소","법률사무소 블루"]; // 소속 사무소 구분 (요청 메시지·태그에 반영)
+function firmShort(f){ if(!f) return "사무소"; if(f.includes("블루")) return "블루"; if(f.includes("이준")) return "이준"; return f.length>6?f.slice(0,6):f; }
+function firmColor(f){ return (f&&f.includes("블루"))?"#2563EB":"#9B1B33"; }
+function firmChip(c){ const f=(c&&c.firm)||""; return `<span class="tagchip" style="background:${firmColor(f)};color:#fff;font-weight:800">🏛 ${esc(firmShort(f))}</span>`; }
 function activeGroups(c){ const set=new Set();
   (TAG_GROUPS.income[c.incomeType]||[]).forEach(g=>set.add(g));
   (TAG_GROUPS.housing[c.housing]||[]).forEach(g=>set.add(g));
@@ -592,7 +597,7 @@ function migrateV2(){
     applyTags(c); // 상황태그 정합성 재적용
   });
 }
-function migrateIfNeeded(){ if(state._ver>=4) return false; state.clients.forEach(ensureItems); migrateV2(); state._ver=4; return true; }
+function migrateIfNeeded(){ if(state._ver>=4) return false; state.clients.forEach(ensureItems); migrateV2(); state._ver=4; state.updatedAt=now(); state.updatedBy=deviceName||state.updatedBy||"미설정"; return true; }
 
 /* 완료율 계산 */
 function progress(client){
@@ -752,8 +757,8 @@ async function pullFromGithub(silent){
     saveLocal();
     const mergedIds=(state.clients||[]).map(x=>x.id).sort().join(",");
     const changed = (mergedIds!==beforeIds) || (state.updatedAt!==beforeU);
-    // 합치는 과정에서 원격에 없던 의뢰인을 살렸다면 원격에도 올려서 양쪽을 같게 맞춤
-    if(mergedIds!==remoteIds || migrated){ pushToGithub(true); }
+    // 합치는 과정에서 원격에 없던 의뢰인을 살렸거나, 로컬이 더 최신(마이그레이션 포함)이면 원격에도 올려 양쪽을 맞춤
+    if(mergedIds!==remoteIds || migrated || (state.updatedAt||"") > (remote.updatedAt||"")){ pushToGithub(true); }
     if(changed){ rerender(); if(!silent && mergedIds!==beforeIds) toast("다른 기기의 변경을 불러왔습니다"); }
     clearBanner();
     setSync("ok");
@@ -935,7 +940,8 @@ function renderDashboard(){
     return `<div class="card ${c.archived?'arch':''}" onclick="openDetail('${c.id}')">
       <div class="card-top"><span class="card-name">${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</span>
         <span class="badge ${badgeClass}">${esc(c.caseType||"개인회생")}</span>
-        <span class="badge" style="background:${stgColor}1a;color:${stgColor}">${stg}</span></div>
+        <span class="badge" style="background:${stgColor}1a;color:${stgColor}">${stg}</span>
+        <span class="badge" style="background:${firmColor(c.firm)};color:#fff">🏛 ${esc(firmShort(c.firm))}</span></div>
       <div class="meta">${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?("사건 "+esc(c.caseNo)+" · "):""}${(c.incomeType&&c.incomeType!=="미정")?(esc(c.incomeType)+" · "):""}수정 ${fmt(c.updatedAt)}</div>
       <div class="bar"><i style="width:${p.pct}%;background:${p.rejected>0?'linear-gradient(90deg,#f87171,#dc2626)':(p.pct===100?'#059669':'linear-gradient(90deg,#e14b6f,#9B1B33)')}"></i></div>
       <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);font-weight:700">
@@ -977,6 +983,7 @@ function renderDetail(id){
     </div>
     <div class="meta" style="margin-bottom:8px">${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?("사건번호 "+esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}수정 ${fmt(c.updatedAt)}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+      ${firmChip(c)}
       ${(c.incomeType&&c.incomeType!=="미정")?`<span class="tagchip">💼 ${esc(c.incomeType)}</span>`:""}
       ${(c.housing&&c.housing!=="미정")?`<span class="tagchip">🏠 ${esc(c.housing)}</span>`:""}
       ${(c.assets||[]).map(a=>`<span class="tagchip">📦 ${esc(a)}</span>`).join("")}
@@ -1430,6 +1437,10 @@ function openClientModal(id){
   modal(`
     <h3>${c?"의뢰인 정보 수정":"새 의뢰인 추가"}</h3>
     <div class="field"><label>이름 *</label><input id="m_name" value="${c?esc(c.name):""}" placeholder="홍길동"/></div>
+    <div class="field"><label>소속 사무소 (요청 메시지·태그에 표시)</label>
+      <select id="m_firm">
+        ${FIRMS.map(f=>`<option ${((c&&c.firm)||cfg.firmName||FIRMS[0])===f?"selected":""}>${f}</option>`).join("")}
+      </select></div>
     <div class="field"><label>사건 종류</label>
       <select id="m_type">
         ${["개인회생","회복","개인파산"].map(t=>`<option ${(c&&c.caseType===t)?"selected":""}>${t}</option>`).join("")}
@@ -1468,7 +1479,7 @@ function saveClient(id){
   const name=$("#m_name").value.trim(); if(!name){ alert("이름을 입력하세요"); return; }
   const dl=$("#m_deadline").value;
   const assets=[...document.querySelectorAll(".m_asset:checked")].map(x=>x.value);
-  const data={ name, caseType:$("#m_type").value, stage:$("#m_stage").value, assignee:$("#m_assignee").value.trim(),
+  const data={ name, firm:$("#m_firm").value, caseType:$("#m_type").value, stage:$("#m_stage").value, assignee:$("#m_assignee").value.trim(),
     incomeType:$("#m_income").value, housing:$("#m_housing").value, assets,
     deadlineLabel:$("#m_dlabel").value.trim()||"보정기한", deadline:dl?dl:null, caseNo:$("#m_caseno").value.trim(), phone:formatPhone($("#m_phone").value) };
   if(id){ const c=findClient(id); Object.assign(c,data); applyTags(c); touch(`[${name}] 정보 수정`); }
@@ -1596,12 +1607,10 @@ function renderMsgModal(){
     <p class="hint">${isRemind?"아직 못 받은(요청중) 서류만 모았습니다. 정중한 리마인더를 보내세요.":"보낼 서류를 고르고 말투를 선택한 뒤, 복사해서 문자·카톡에 붙여넣으세요."}</p>
     <div class="field"><label>포함할 서류 (<span id="msgCount">${_msgCtx.sel.size}</span>개)</label>
       <div style="max-height:140px;overflow:auto;border:1px solid var(--line);border-radius:9px;padding:6px 10px">${checks}</div></div>
-    <div class="field"><label>말투</label>
-      <select id="msgTone" onchange="_msgCtx.tone=this.value;regenMsg()">
-        <option value="formal">정중한 안내문 (문자·메일)</option>
-        <option value="simple">간단 요약</option>
-        <option value="kakao">카카오톡 친근체</option>
-      </select></div>
+    <div class="field"><label>시안 선택 (3가지 — 누르면 아래 미리보기가 바뀝니다)</label>
+      <div style="display:flex;gap:6px">
+        ${["formal","simple","kakao"].map((t,i)=>`<button type="button" onclick="setMsgTone('${t}')" style="flex:1;padding:8px 4px;border-radius:9px;border:1px solid ${_msgCtx.tone===t?'var(--brand)':'var(--line)'};font-weight:800;font-size:12px;cursor:pointer;background:${_msgCtx.tone===t?'var(--brand)':'#fff'};color:${_msgCtx.tone===t?'#fff':'var(--ink)'}">${['정중한 안내문','간단 요약','카톡 친근체'][i]}</button>`).join("")}
+      </div></div>
     <label style="display:flex;gap:8px;align-items:center;font-size:13.5px;margin-bottom:10px;cursor:pointer">
       <input type="checkbox" id="msgHow" checked onchange="_msgCtx.how=this.checked;regenMsg()"> 발급처·발급방법 안내 포함</label>
     <div class="field"><label>미리보기 (직접 수정 가능)</label>
@@ -1617,7 +1626,7 @@ function toggleMsgSel(id){ if(_msgCtx.sel.has(id)) _msgCtx.sel.delete(id); else 
   const cnt=$("#msgCount"); if(cnt) cnt.textContent=_msgCtx.sel.size; regenMsg(); }
 function buildRequestText(){
   const c=findClient(_msgCtx.cid);
-  const firm=(cfg.firmName||"법무법인").trim();
+  const firm=(c.firm||cfg.firmName||"법무법인").trim();
   const name=(c.name||"").trim();
   const items=_msgCtx.list.filter(x=>_msgCtx.sel.has(x.id));
   const how=_msgCtx.how;
@@ -1642,6 +1651,7 @@ function buildRequestText(){
   return t;
 }
 function regenMsg(){ const ta=$("#msgText"); if(ta) ta.value=buildRequestText(); }
+function setMsgTone(t){ _msgCtx.tone=t; renderMsgModal(); }
 function copyRequestMsg(mark){
   const ta=$("#msgText"); const text=ta?ta.value:"";
   copyText(text).then(ok=>{
