@@ -976,10 +976,11 @@ function renderDetail(id){
       <button class="btn btn-sm" onclick="openMore('${c.id}')">⋯ 더보기</button>
     </div>
     <div class="meta" style="margin-bottom:8px">${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?("사건번호 "+esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}수정 ${fmt(c.updatedAt)}</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
       ${(c.incomeType&&c.incomeType!=="미정")?`<span class="tagchip">💼 ${esc(c.incomeType)}</span>`:""}
       ${(c.housing&&c.housing!=="미정")?`<span class="tagchip">🏠 ${esc(c.housing)}</span>`:""}
       ${(c.assets||[]).map(a=>`<span class="tagchip">📦 ${esc(a)}</span>`).join("")}
+      <button class="tagchip" style="border:1px dashed var(--brand);background:#FBEEF0;color:var(--brand);cursor:pointer;font-weight:800" onclick="openClientModal('${c.id}')">✏ 사건유형·소득·재산 수정</button>
     </div>`;
 
   // 사건 단계 스텝퍼
