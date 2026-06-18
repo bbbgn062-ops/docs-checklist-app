@@ -119,6 +119,26 @@
   .lrow.done .lname{color:#2C6B48;font-weight:700;}
   .lstat{flex:0 0 auto;font-size:12px;font-weight:800;}
 
+  /* 빠른 버튼 / 태그칩 / CTA / 검색 */
+  .qbtn{border:1px solid var(--line);background:#fff;color:var(--brand);font-weight:700;font-size:11.5px;padding:5px 10px;border-radius:8px;}
+  .qbtn:hover{background:var(--brand-soft);}
+  .tagchip{font-size:11.5px;font-weight:700;background:var(--gray-soft);color:var(--ink);padding:4px 10px;border-radius:999px;}
+  .cta{display:flex;align-items:center;gap:10px;background:linear-gradient(135deg,#FFF5F7,#FFFDF8);border:1px solid #F0DDE3;border-radius:14px;padding:13px 16px;margin-bottom:12px;}
+  .cta b{font-size:14.5px;}
+  .docsearch{display:flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:6px 10px;}
+  .docsearch input{border:none;outline:none;font-size:13px;width:130px;background:transparent;}
+
+  .bnav-title{font-size:11px;font-weight:800;color:var(--muted);padding:6px 10px 5px;letter-spacing:.3px;}
+  /* 드로어 backdrop (모바일 바텀시트용) — 데스크톱에선 숨김 */
+  .drawer-back{position:fixed;inset:0;background:rgba(20,16,14,.4);z-index:80;display:none;}
+
+  /* 인터랙션: 카드 등장/누름 */
+  @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  .card{animation:fadeUp .28s ease both;}
+  .card:active{transform:scale(.99);}
+  .btn:active,.qbtn:active,.fbtn:active,.iconbtn:active,.stage-step:active{transform:scale(.97);}
+  .bnav-item:active{transform:scale(.99);}
+
   .bundle{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:14px;box-shadow:var(--shadow);overflow:hidden;}
   .bundle-head{display:flex;align-items:center;gap:10px;padding:14px 16px;cursor:pointer;user-select:none;}
   .bundle-head:hover{background:#fafbff;}
@@ -238,8 +258,12 @@
     .overlay{align-items:flex-end;padding:0;}
     .tl-date{flex-basis:70px;}
     .detail-grid{grid-template-columns:1fr;}
-    .bnav{position:static;max-height:none;flex-direction:row;flex-wrap:wrap;}
-    .bnav-item{flex:1 1 calc(50% - 4px);}
+    .detail-grid .bnav{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:90;max-height:72vh;width:auto;
+      border-radius:20px 20px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.18);
+      transform:translateY(102%);transition:transform .28s cubic-bezier(.2,.8,.2,1);flex-direction:column;}
+    .detail-grid.navopen .bnav{display:flex;transform:translateY(0);}
+    .detail-grid.navclosed .bnav{display:flex;transform:translateY(102%);}
+    .drawer-back.show{display:block;}
     .ctrl-sel{flex:1 1 100%;}
   }
   @media(max-width:560px){
@@ -296,7 +320,7 @@
       </select>
       <select id="incomeSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
         <option value="">소득 전체</option>
-        <option>근로자(월급수령자)</option><option>사업자</option><option>둘 다(겸업)</option><option>미정</option>
+        <option>직장인</option><option>자영업자</option><option>이중소득</option><option>미정</option>
       </select>
       <select id="sortSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
         <option value="recent">최근 수정순</option>
@@ -485,6 +509,7 @@ let selMode = false;            // 선택 모드
 let selSet = new Set();         // 선택된 항목 id
 let viewMode = "card";          // 보기 모드: card | list
 let showNa = false;             // 해당없음 서류 표시 여부(기본 숨김 → 더보기로 표시)
+let docSearch = "";             // 서류 탭 내 서류명 검색어
 let focusBundle = "";           // 좌측 탭에서 고른 묶음(빈값=전체)
 let navOpen = (typeof window!=="undefined" && window.innerWidth>900); // 좌측 묶음 탭 열림
 
@@ -515,30 +540,56 @@ function ensureItems(client){
   if(client.assignee===undefined) client.assignee="";
   if(client.deadline===undefined) client.deadline=null;
   if(client.deadlineLabel===undefined) client.deadlineLabel="보정기한";
+  if(client.housing===undefined) client.housing="미정";   // 주거유형
+  if(!Array.isArray(client.assets)) client.assets=[];       // 재산유형(다중)
+  if(!client.cert) client.cert={ files:[], pw:"" };         // 공동인증서
+  if(!Array.isArray(client.cert.files)) client.cert.files=[];
   return client;
 }
+function formatPhone(v){ const d=(v||"").replace(/\D/g,"").slice(0,11);
+  if(d.length<4) return d;
+  if(d.startsWith("02")){ if(d.length<6) return d.replace(/(\d{2})(\d+)/,"$1-$2"); if(d.length<10) return d.replace(/(\d{2})(\d{3,4})(\d+)/,"$1-$2-$3"); return d.replace(/(\d{2})(\d{4})(\d{4})/,"$1-$2-$3"); }
+  if(d.length<8) return d.replace(/(\d{3})(\d+)/,"$1-$2");
+  if(d.length<11) return d.replace(/(\d{3})(\d{3,4})(\d+)/,"$1-$2-$3");
+  return d.replace(/(\d{3})(\d{4})(\d{4})/,"$1-$2-$3"); }
 
 /* 소득유형에 따라 수입·지출(b4) 묶음 자동 맞춤 */
-const INCOME_MAP={ "근로자(월급수령자)":["b4g1","b3g5"], "사업자":["b4g2","b3g6"], "둘 다(겸업)":["b4g1","b4g2","b3g5","b3g6"] };
-const INCOME_CONTROLLED=["b4g1","b4g2","b3g5","b3g6"]; // 소득유형에 따라 켜고 끄는 묶음(근로/사업/퇴직/사업용재산)
-function applyIncomeType(c){
-  const keepArr=INCOME_MAP[c.incomeType]; if(!keepArr) return; // 미정 → 변경 안 함
-  const keep=new Set(keepArr);
-  TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!INCOME_CONTROLLED.includes(g.id)) return; const applic=keep.has(g.id);
-    g.items.forEach(it=>{ const s=c.items[it.id]; if(!s) return; if(applic){ if(s.mode==="na") s.mode=it.mode; } else s.mode="na"; }); }));
+/* 상황태그 → 관련 서류 묶음 자동 표시 엔진 */
+const TAG_GROUPS={
+  income:{ "직장인":["b4g1","b3g5"], "자영업자":["b4g2","b3g6"], "이중소득":["b4g1","b4g2","b3g5","b3g6"] },
+  housing:{ "임차":["b3g2"], "자가":["b3g4"] },
+  assets:{ "자가":["b3g4"], "임차보증금":["b3g2"], "차량":["b3g1"], "토지":["b3g4"], "보험환급금":["b3g3"], "사업용재산":["b3g6"] }
+};
+const TAG_CONTROLLED=["b4g1","b4g2","b3g5","b3g6","b3g1","b3g2","b3g3","b3g4"];
+const ASSET_OPTS=["자가","임차보증금","차량","토지","보험환급금","사업용재산","기타재산"];
+function activeGroups(c){ const set=new Set();
+  (TAG_GROUPS.income[c.incomeType]||[]).forEach(g=>set.add(g));
+  (TAG_GROUPS.housing[c.housing]||[]).forEach(g=>set.add(g));
+  (c.assets||[]).forEach(a=>(TAG_GROUPS.assets[a]||[]).forEach(g=>set.add(g)));
+  return set; }
+function applyTags(c){
+  const anyTag = !!TAG_GROUPS.income[c.incomeType] || !!TAG_GROUPS.housing[c.housing] || ((c.assets||[]).length>0) || (c.housing==="무상거주");
+  if(anyTag){ const active=activeGroups(c);
+    TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!TAG_CONTROLLED.includes(g.id)) return; const on=active.has(g.id);
+      g.items.forEach(it=>{ const s=c.items[it.id]; if(!s) return; if(on){ if(s.mode==="na") s.mode=it.mode; } else s.mode="na"; }); }));
+  }
+  // 무상거주 사실확인서(b7-2): 무상거주일 때만 표시
+  const s2=c.items["b7-2"]; if(s2){ if(c.housing==="무상거주"){ if(s2.mode==="na") s2.mode="request"; } else if(c.housing && c.housing!=="미정") s2.mode="na"; }
 }
+function applyIncomeType(c){ applyTags(c); } // 하위호환
 /* 기존 데이터 복원 (한 번만): 공통 묶음이 과거 소득로직으로 '해당없음'에 갇힌 것 되살림 + 옛 소득유형 명칭 변환 */
 function migrateV2(){
-  const remap={"급여소득자":"근로자(월급수령자)","사업소득자":"사업자","연금수령자":"미정","복합(둘 이상)":"둘 다(겸업)"};
-  const controlled=new Set(INCOME_CONTROLLED);
+  const remap={"급여소득자":"직장인","사업소득자":"자영업자","연금수령자":"미정","복합(둘 이상)":"이중소득",
+    "근로자(월급수령자)":"직장인","사업자":"자영업자","둘 다(겸업)":"이중소득"};
+  const controlled=new Set(TAG_CONTROLLED);
   state.clients.forEach(c=>{ if(!c.items) return;
     if(remap[c.incomeType]) c.incomeType=remap[c.incomeType];
     TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(controlled.has(g.id)) return; // 공통 묶음만
       g.items.forEach(it=>{ const s=c.items[it.id]; if(s && s.mode==="na" && it.mode!=="na") s.mode=it.mode; }); }));
-    applyIncomeType(c); // 근로/사업 묶음 정합성 재적용
+    applyTags(c); // 상황태그 정합성 재적용
   });
 }
-function migrateIfNeeded(){ if(state._ver>=2) return false; state.clients.forEach(ensureItems); migrateV2(); state._ver=2; return true; }
+function migrateIfNeeded(){ if(state._ver>=3) return false; state.clients.forEach(ensureItems); migrateV2(); state._ver=3; return true; }
 
 /* 완료율 계산 */
 function progress(client){
@@ -829,7 +880,11 @@ function renderDashboard(){
         ${p.notReq?`<span class="chip req">미요청 ${p.notReq}</span>`:""}
         ${p.missing===0&&p.rejected===0?`<span class="chip ok">전부 확보 ✓</span>`:""}
       </div>
-      ${c.phone?`<div style="margin-top:8px"><a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()" style="font-size:12px;color:var(--brand);font-weight:700;text-decoration:none">📞 ${esc(c.phone)}</a></div>`:""}
+      <div style="display:flex;align-items:center;gap:6px;margin-top:9px;flex-wrap:wrap">
+        ${c.phone?`<a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()" style="font-size:12px;color:var(--brand);font-weight:700;text-decoration:none">📞 ${esc(c.phone)}</a><span style="flex:1"></span>`:`<span style="flex:1"></span>`}
+        <button class="qbtn" onclick="event.stopPropagation();openRequestMsg('${c.id}')">📨 요청</button>
+        <button class="qbtn" onclick="event.stopPropagation();openReminder('${c.id}')">⏰ 리마인더</button>
+      </div>
       </div>`;
   }).join("");
 }
@@ -840,25 +895,33 @@ function renderDetail(id){
   $("#view-dashboard").classList.add("hidden");
   const v=$("#view-detail"); v.classList.remove("hidden");
   const p=progress(c);
+  const hasCert=(c.cert&&c.cert.files&&c.cert.files.length>0);
   let html=`<button class="back" onclick="showDashboard()">← 의뢰인 목록</button>
     <div class="detail-head">
-      <h2>${esc(c.name||"이름 없음")}</h2>
+      <h2>${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</h2>
       <span class="badge ${c.caseType?.includes('파산')?'파산':(c.caseType?.includes('회생')?'회생':'기타')}">${esc(c.caseType||"개인회생")}</span>
+      <span class="badge" style="background:${hasCert?'var(--green-soft)':'var(--gray-soft)'};color:${hasCert?'var(--green)':'var(--muted)'};cursor:pointer" onclick="openCert('${c.id}')">${hasCert?'🔐 공동인증서':'🔓 인증서 없음'}</span>
       <div class="grow"></div>
       <button class="btn btn-sm btn-primary" onclick="openRequestMsg('${c.id}')">📨 요청 메시지</button>
       <button class="btn btn-sm" onclick="openReminder('${c.id}')">⏰ 리마인더</button>
-      <button class="btn btn-sm" onclick="copySummary('${c.id}')">📋 진행상황 복사</button>
-      <button class="btn btn-sm" onclick="printChecklist('${c.id}')">🖨️ 인쇄/PDF</button>
-      <button class="btn btn-sm" onclick="openDownload('${c.id}')">📥 파일 다운로드</button>
-      <button class="btn btn-sm" onclick="togglePin('${c.id}')">${c.pinned?'📌 고정해제':'📌 고정'}</button>
-      <button class="btn btn-sm" onclick="toggleArchive('${c.id}')">${c.archived?'📦 보관해제':'📦 보관'}</button>
-      <button class="btn btn-sm" onclick="openClientModal('${c.id}')">✏️ 정보수정</button>
-      <button class="btn btn-sm btn-danger" onclick="deleteClient('${c.id}')">삭제</button>
+      <button class="btn btn-sm" onclick="openDownload('${c.id}')">📥 다운로드</button>
+      <button class="btn btn-sm" onclick="openMore('${c.id}')">⋯ 더보기</button>
     </div>
-    <div class="meta" style="margin-bottom:10px">${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?("사건번호 "+esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}수정 ${fmt(c.updatedAt)}</div>`;
+    <div class="meta" style="margin-bottom:8px">${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?("사건번호 "+esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}수정 ${fmt(c.updatedAt)}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      ${(c.incomeType&&c.incomeType!=="미정")?`<span class="tagchip">💼 ${esc(c.incomeType)}</span>`:""}
+      ${(c.housing&&c.housing!=="미정")?`<span class="tagchip">🏠 ${esc(c.housing)}</span>`:""}
+      ${(c.assets||[]).map(a=>`<span class="tagchip">📦 ${esc(a)}</span>`).join("")}
+    </div>`;
 
   // 사건 단계 스텝퍼
   html+=`<div class="stage-bar">`+STAGES.map(s=>{const on=clientStage(c)===s; return `<button class="stage-step ${on?'on':''}" style="${on?`background:${STAGE_COLOR[s]};border-color:${STAGE_COLOR[s]}`:''}" onclick="setStage('${c.id}','${s}')">${s}</button>`;}).join("")+`</div>`;
+
+  // 지금 할 일 CTA (한눈에 다음 행동 안내)
+  if(p.rejected>0) html+=`<div class="cta"><span style="font-size:20px">⚠️</span><div style="flex:1"><b>보완 필요한 서류 ${p.rejected}건</b><div style="font-size:12px;color:var(--muted)">미흡한 서류를 확인하고 다시 요청하세요</div></div><button class="btn btn-sm btn-primary" onclick="setFilter('rejected')">보완 서류 보기</button></div>`;
+  else if(p.notReq>0) html+=`<div class="cta"><span style="font-size:20px">📨</span><div style="flex:1"><b>아직 요청 안 한 서류 ${p.notReq}건</b><div style="font-size:12px;color:var(--muted)">의뢰인에게 요청 메시지를 보내세요</div></div><button class="btn btn-sm btn-primary" onclick="openRequestMsg('${c.id}')">요청 메시지</button></div>`;
+  else if(p.requesting>0) html+=`<div class="cta"><span style="font-size:20px">⏰</span><div style="flex:1"><b>회신 대기 중 ${p.requesting}건</b><div style="font-size:12px;color:var(--muted)">아직 안 온 서류를 리마인더로 챙기세요</div></div><button class="btn btn-sm btn-primary" onclick="openReminder('${c.id}')">리마인더</button></div>`;
+  else if(p.total>0 && p.missing===0 && clientStage(c)==="서류수집") html+=`<div class="cta"><span style="font-size:20px">✅</span><div style="flex:1"><b>필요한 서류를 모두 받았어요</b><div style="font-size:12px;color:var(--muted)">다음 단계로 넘길 수 있어요</div></div><button class="btn btn-sm btn-primary" onclick="setStage('${c.id}','검토')">단계 '검토'로</button></div>`;
 
   // 종합 박스
   const dd=dDay(c);
@@ -901,6 +964,7 @@ function renderDetail(id){
     <select class="ctrl-sel" onchange="setFilter(this.value)">
       ${filtOpts.map(f=>`<option value="${f[0]}" ${detailFilter===f[0]?'selected':''}>${f[1]}</option>`).join("")}
     </select>
+    <div class="docsearch">🔎<input id="docSearchInput" placeholder="서류 검색" value="${esc(docSearch)}" oninput="onDocSearch(this.value)"></div>
     <div class="grow"></div>
     <button class="iconbtn ${selMode?'on':''}" onclick="toggleSelMode('${c.id}')">☑ 선택</button>
   </div>`;
@@ -917,9 +981,11 @@ function renderDetail(id){
     </div>`;
   }
 
-  // 2단 레이아웃: 좌측 묶음 탭 + 우측 체크리스트
-  html+=`<div class="detail-grid ${navOpen?'':'navclosed'}">`;
+  // 2단 레이아웃: 좌측 묶음 드로어 + 우측 체크리스트
+  html+=`<div class="drawer-back ${navOpen?'show':''}" onclick="toggleNav()"></div>`;
+  html+=`<div class="detail-grid ${navOpen?'navopen':'navclosed'}">`;
   html+=`<aside class="bnav">
+    <div class="bnav-title">📂 서류 묶음</div>
     <button class="bnav-item ${focusBundle===''?'on':''}" onclick="focusBundleSet('')"><span>📋 전체 보기</span><span class="bnp">${p.done}/${p.total}</span></button>`;
   TEMPLATE.forEach((b,bi)=>{ const bp=bundleProgress(c,b); const full=bp.total>0&&bp.done===bp.total;
     html+=`<button class="bnav-item ${focusBundle===b.id?'on':''}" onclick="focusBundleSet('${b.id}')"><span><span class="bn">${bi+1}</span>${esc(b.title)}</span><span class="bnp ${full?'fdone':''}">${bp.done}/${bp.total}</span></button>`; });
@@ -928,7 +994,7 @@ function renderDetail(id){
   html+=`<div class="checklist">`;
   TEMPLATE.forEach((b,bi)=>{
     if(focusBundle && focusBundle!==b.id) return;
-    const showItem=(id)=>{ const s=c.items[id]; if(!s) return false; if(s.mode==="na" && !showNa) return false; if(detailFilter!=="all" && !passFilter(s)) return false; return true; };
+    const showItem=(id)=>{ const s=c.items[id]; if(!s) return false; if(s.mode==="na" && !showNa) return false; if(detailFilter!=="all" && !passFilter(s)) return false; if(docSearch && !itemName(id,c).toLowerCase().includes(docSearch.toLowerCase())) return false; return true; };
     let naHidden=0; collectBundleItems(c,b).forEach(it=>{ const s=c.items[it.id]; if(s && s.mode==="na" && !showNa && (detailFilter==="all"||passFilter(s))) naHidden++; });
     const anyVis = collectBundleItems(c,b).some(it=>showItem(it.id));
     const hasNa = collectBundleItems(c,b).some(it=>{ const s=c.items[it.id]; return s && s.mode==="na"; });
@@ -978,6 +1044,7 @@ function passFilter(s){
 function setFilter(f){ detailFilter=f; renderDetail(currentClientId); }
 function setView(m){ viewMode=m; renderDetail(currentClientId); }
 function toggleShowNa(){ showNa=!showNa; renderDetail(currentClientId); }
+function onDocSearch(v){ docSearch=v; renderDetail(currentClientId); const el=$("#docSearchInput"); if(el){ el.focus(); try{ el.setSelectionRange(el.value.length,el.value.length); }catch(_){} } }
 function toggleNav(){ navOpen=!navOpen; renderDetail(currentClientId); }
 function focusBundleSet(bid){ focusBundle=bid; if(window.innerWidth<=760) navOpen=false; renderDetail(currentClientId); window.scrollTo({top:0,behavior:"smooth"}); }
 function toggleBundle(cid,bid){ collapsed[cid+bid]=!collapsed[cid+bid]; renderDetail(cid); }
@@ -1014,7 +1081,7 @@ function itemHtml(c,it,isExtra,bid){
         ${it.note?`<div class="item-note">${esc(it.note)}</div>`:""}
         ${WHERE[it.id]?`<div class="item-note">📍 ${esc(WHERE[it.id])}</div>`:""}
         ${s.link?`<div class="item-note"><a href="${esc(s.link)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700">🔗 링크 열기</a></div>`:""}
-        ${(s.files&&s.files.length)?`<div class="item-note">${s.files.map((f,fi)=>`📎 <a href="#" onclick="event.preventDefault();event.stopPropagation();openFile('${c.id}','${it.id}',${fi})" style="color:var(--brand);font-weight:700">${esc(f.name)}</a> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span> <button onclick="event.stopPropagation();removeFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px">×</button>`).join("<br>")}</div>`:""}
+        ${(s.files&&s.files.length)?`<div class="item-note">${s.files.map((f,fi)=>`📎 <a href="#" onclick="event.preventDefault();event.stopPropagation();openPreview('${c.id}','${it.id}',${fi})" style="color:var(--brand);font-weight:700" title="미리보기">${esc(f.name)}</a> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span> <button onclick="event.stopPropagation();openFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="다운로드">⤓</button> <button onclick="event.stopPropagation();removeFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px" title="삭제">×</button>`).join("<br>")}</div>`:""}
         ${(function(){ let d=[]; if(s.reqDate&&!s.done) d.push(`요청 ${fmtD(s.reqDate)}${daysAgo(s.reqDate)>=3?` · ${daysAgo(s.reqDate)}일 경과`:''}`); if(s.recvDate&&s.done) d.push(`받음 ${fmtD(s.recvDate)}`); return d.length?`<div class="item-note" style="color:${(!s.done&&daysAgo(s.reqDate)>=7)?'var(--red)':'var(--brand)'}">🕒 ${d.join(" · ")}</div>`:""; })()}
         ${isExtra?`<button class="btn-ghost btn-sm" style="font-size:11px;color:var(--red);padding:2px 4px" onclick="removeExtra('${c.id}','${bid}','${it.id}')">삭제</button>`:""}
       </div>
@@ -1083,10 +1150,24 @@ function attachFiles(cid,id){
         okN++;
       }catch(e){ console.error(e); toast(`${f.name} 업로드 실패: ${e.message}`); setSync("error"); }
     }
-    if(okN){ touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부`); toast(`${okN}개 첨부 완료 ✓`); }
+    if(okN){ if(s.mode!=="na" && !s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; }
+      touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부·받음`); toast(`${okN}개 첨부 완료 · '받음' 처리 ✓`); }
     renderDetail(cid);
   };
   inp.click();
+}
+async function openPreview(cid,id,idx){
+  const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
+  if(!githubReady()){ toast("깃헙 연결 후 미리보기가 가능합니다"); return; }
+  const ext=extOf(f.name).toLowerCase();
+  let type="application/octet-stream";
+  if(ext===".pdf")type="application/pdf"; else if(ext===".png")type="image/png"; else if(ext===".jpg"||ext===".jpeg")type="image/jpeg"; else if(ext===".gif")type="image/gif"; else if(ext===".webp")type="image/webp";
+  const previewable=(type==="application/pdf"||type.indexOf("image/")===0);
+  toast(previewable?"미리보기 여는 중…":"파일 받는 중…");
+  try{ const bytes=await fetchFileBytes(f); const blob=new Blob([bytes],{type}); const url=URL.createObjectURL(blob);
+    if(previewable){ const w=window.open(url,"_blank"); if(!w){ toast("팝업 차단됨 — 허용 후 다시"); } setTimeout(()=>URL.revokeObjectURL(url),60000); }
+    else { const a=document.createElement("a"); a.href=url; a.download=f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),20000); }
+  }catch(e){ console.error(e); toast("열기 실패: "+e.message); }
 }
 async function openFile(cid,id,idx){
   const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
@@ -1222,6 +1303,58 @@ function removeExtra(cid,bid,id){
   touch(`[${c.name}] 추가 서류 삭제`); renderDetail(cid);
 }
 
+/* ---------- 6d. 더보기 메뉴 / 공동인증서 ---------- */
+function openMore(cid){ const c=findClient(cid);
+  modal(`<h3>⋯ 더보기</h3>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn" onclick="closeModal();copySummary('${c.id}')">📋 진행상황 복사</button>
+      <button class="btn" onclick="closeModal();printChecklist('${c.id}')">🖨️ 인쇄 / PDF</button>
+      <button class="btn" onclick="closeModal();openCert('${c.id}')">🔐 공동인증서 관리</button>
+      <button class="btn" onclick="closeModal();openClientModal('${c.id}')">✏️ 정보 수정</button>
+      <button class="btn" onclick="closeModal();togglePin('${c.id}')">${c.pinned?'📌 고정 해제':'📌 중요 고정'}</button>
+      <button class="btn" onclick="closeModal();toggleArchive('${c.id}')">${c.archived?'📦 보관 해제':'📦 보관함으로'}</button>
+      <button class="btn btn-danger" onclick="closeModal();deleteClient('${c.id}')">🗑️ 의뢰인 삭제</button>
+    </div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">닫기</button></div>`);
+}
+function openCert(cid){ const c=ensureItems(findClient(cid)); if(!c.cert) c.cert={files:[],pw:""};
+  const files=(c.cert.files||[]).map((f,i)=>`<div class="item-note" style="display:flex;align-items:center;gap:6px">🔐 <b>${esc(f.name)}</b> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span> ${githubReady()?`<button class="memo-toggle" onclick="openCertFile('${c.id}',${i})">열기</button>`:""} <button class="memo-toggle" style="color:var(--red)" onclick="removeCertFile('${c.id}',${i})">삭제</button></div>`).join("");
+  modal(`<h3>🔐 공동인증서 관리</h3>
+    <div class="note-warn">⚠️ 공동인증서와 비밀번호는 본인 인증이 가능한 <b>매우 민감한 정보</b>입니다. 비밀번호는 비공개 저장소에 함께 저장되며(설정에 따름), 외부 유출이 없도록 토큰·저장소를 안전하게 관리하세요.</div>
+    <div class="field" style="margin-top:12px"><label>인증서 파일 (공동인증서 폴더를 zip으로 묶어 올리길 권장)</label>
+      <button class="btn btn-sm" onclick="attachCertFiles('${c.id}')">📎 인증서 파일 첨부</button>
+      <div style="margin-top:6px">${files||'<span style="font-size:12.5px;color:var(--muted)">첨부된 인증서 파일이 없습니다.</span>'}</div>
+    </div>
+    <div class="field"><label>인증서 비밀번호 메모</label>
+      <div style="display:flex;gap:8px">
+        <input id="cert_pw" type="password" value="${esc(c.cert.pw||'')}" placeholder="비밀번호" oninput="onCertPw('${c.id}')" style="flex:1"/>
+        <button class="btn btn-sm" onclick="(function(){const e=document.getElementById('cert_pw');e.type=e.type==='password'?'text':'password';})()">보기</button>
+      </div></div>
+    <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal();renderDetail('${c.id}')">완료</button></div>`,460);
+}
+function onCertPw(cid){ const c=findClient(cid); if(!c.cert)c.cert={files:[],pw:""}; c.cert.pw=event.target.value; state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
+function attachCertFiles(cid){
+  if(!githubReady()){ toast("인증서 파일 첨부는 깃헙 연결 후 가능합니다"); return; }
+  const inp=document.createElement("input"); inp.type="file"; inp.multiple=true;
+  inp.onchange=async()=>{ const files=[...inp.files]; if(!files.length) return; const c=findClient(cid); if(!c.cert)c.cert={files:[],pw:""};
+    for(const f of files){ if(f.size>100*1024*1024){ toast(`${f.name}: 100MB 초과`); continue; }
+      setSync("saving"); toast(`${f.name} 업로드 중…`);
+      try{ const buf=await f.arrayBuffer(); const b64=arrayBufferToBase64(buf); const safe=(f.name||"cert").replace(/[^\w.\-가-힣]/g,"_"); const path=`files/${cid}/_cert/${Date.now()}_${safe}`;
+        const r=await fetch(ghContentsUrl(path),{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify({message:`attach cert ${f.name}`,content:b64,branch:cfg.branch})});
+        if(!r.ok) throw new Error("HTTP "+r.status); const j=await r.json();
+        c.cert.files.push({name:f.name,size:f.size,path,sha:j.content.sha,ts:now()});
+      }catch(e){ toast(`${f.name} 실패: ${e.message}`); setSync("error"); } }
+    touch(`[${c.name}] 공동인증서 첨부`); openCert(cid);
+  };
+  inp.click();
+}
+async function openCertFile(cid,idx){ const c=findClient(cid); const f=(c.cert.files||[])[idx]; if(!f) return; await downloadBlobBySha(f); }
+async function removeCertFile(cid,idx){ const c=findClient(cid); const f=(c.cert.files||[])[idx]; if(!f) return; if(!confirm(`'${f.name}' 인증서 파일을 삭제할까요?`)) return;
+  if(githubReady()){ try{ await fetch(ghContentsUrl(f.path),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify({message:`delete cert ${f.name}`,sha:f.sha,branch:cfg.branch})}); }catch(_){} }
+  c.cert.files.splice(idx,1); touch(`[${c.name}] 인증서 삭제`); openCert(cid);
+}
+async function downloadBlobBySha(f){ toast("파일 여는 중…"); try{ const bytes=await fetchFileBytes(f); dlBlob(new Blob([bytes]), f.name); }catch(e){ toast("열기 실패: "+e.message); } }
+
 /* ---------- 7. 의뢰인 추가/수정/삭제 ---------- */
 function openClientModal(id){
   const c=id?findClient(id):null;
@@ -1230,24 +1363,32 @@ function openClientModal(id){
     <div class="field"><label>이름 *</label><input id="m_name" value="${c?esc(c.name):""}" placeholder="홍길동"/></div>
     <div class="field"><label>사건 종류</label>
       <select id="m_type">
-        ${["개인회생","개인파산","일반회생","파산·면책","기타"].map(t=>`<option ${c&&c.caseType===t?"selected":""}>${t}</option>`).join("")}
+        ${["개인회생","회복","개인파산"].map(t=>`<option ${(c&&c.caseType===t)?"selected":""}>${t}</option>`).join("")}
       </select></div>
     <div class="field"><label>사건 단계</label>
       <select id="m_stage">
         ${STAGES.map(t=>`<option ${((c&&clientStage(c))||"서류수집")===t?"selected":""}>${t}</option>`).join("")}
       </select></div>
     <div class="field"><label>담당자 (사무장·상담자)</label><input id="m_assignee" value="${c?esc(c.assignee||''):""}" placeholder="예: 김사무장"/></div>
-    <div class="field"><label>소득 유형 (근로자/사업자 선택 시 필요한 서류만 자동 표시)</label>
+    <div class="field"><label>소득 유형 (선택 시 관련 서류만 자동 표시)</label>
       <select id="m_income">
-        ${["미정","근로자(월급수령자)","사업자","둘 다(겸업)"].map(t=>`<option ${c&&c.incomeType===t?"selected":""}>${t}</option>`).join("")}
+        ${["미정","직장인","자영업자","이중소득"].map(t=>`<option ${(c&&c.incomeType===t)?"selected":""}>${t}</option>`).join("")}
       </select></div>
+    <div class="field"><label>주거 유형</label>
+      <select id="m_housing">
+        ${["미정","임차","무상거주","자가"].map(t=>`<option ${((c&&c.housing)||"미정")===t?"selected":""}>${t}</option>`).join("")}
+      </select></div>
+    <div class="field"><label>재산 유형 (있는 것만 체크 → 관련 서류 자동 표시)</label>
+      <div style="display:flex;flex-wrap:wrap;gap:7px">
+        ${ASSET_OPTS.map(a=>`<label style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12.5px;cursor:pointer"><input type="checkbox" class="m_asset" value="${a}" ${(c&&(c.assets||[]).includes(a))?"checked":""}> ${a}</label>`).join("")}
+      </div></div>
     <div class="field"><label>마감일 (보정기한·접수예정일 등)</label>
       <div style="display:flex;gap:8px">
         <input id="m_dlabel" value="${c?esc(c.deadlineLabel||'보정기한'):'보정기한'}" placeholder="보정기한" style="flex:0 0 38%"/>
         <input id="m_deadline" type="date" value="${c&&c.deadline?esc(c.deadline.slice(0,10)):''}" style="flex:1"/>
       </div></div>
     <div class="field"><label>사건번호 (선택)</label><input id="m_caseno" value="${c?esc(c.caseNo||''):""}" placeholder="2026개회12345"/></div>
-    <div class="field"><label>연락처 (선택)</label><input id="m_phone" value="${c?esc(c.phone||''):""}" placeholder="010-0000-0000"/></div>
+    <div class="field"><label>연락처 (선택)</label><input id="m_phone" value="${c?esc(c.phone||''):""}" placeholder="010-0000-0000" oninput="this.value=formatPhone(this.value)"/></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">취소</button>
       <button class="btn btn-primary" onclick="saveClient(${c?`'${c.id}'`:"null"})">저장</button>
@@ -1257,9 +1398,12 @@ function openClientModal(id){
 function saveClient(id){
   const name=$("#m_name").value.trim(); if(!name){ alert("이름을 입력하세요"); return; }
   const dl=$("#m_deadline").value;
-  const data={ name, caseType:$("#m_type").value, stage:$("#m_stage").value, assignee:$("#m_assignee").value.trim(), incomeType:$("#m_income").value, deadlineLabel:$("#m_dlabel").value.trim()||"보정기한", deadline:dl?dl:null, caseNo:$("#m_caseno").value.trim(), phone:$("#m_phone").value.trim() };
-  if(id){ const c=findClient(id); Object.assign(c,data); applyIncomeType(c); touch(`[${name}] 정보 수정`); }
-  else{ const c=ensureItems({id:uid(),...data,memo:"",createdAt:now(),updatedAt:now()}); applyIncomeType(c); state.clients.push(c); touch(`의뢰인 추가 '${name}' (${data.incomeType})`); }
+  const assets=[...document.querySelectorAll(".m_asset:checked")].map(x=>x.value);
+  const data={ name, caseType:$("#m_type").value, stage:$("#m_stage").value, assignee:$("#m_assignee").value.trim(),
+    incomeType:$("#m_income").value, housing:$("#m_housing").value, assets,
+    deadlineLabel:$("#m_dlabel").value.trim()||"보정기한", deadline:dl?dl:null, caseNo:$("#m_caseno").value.trim(), phone:formatPhone($("#m_phone").value) };
+  if(id){ const c=findClient(id); Object.assign(c,data); applyTags(c); touch(`[${name}] 정보 수정`); }
+  else{ const c=ensureItems({id:uid(),...data,memo:"",createdAt:now(),updatedAt:now()}); applyTags(c); state.clients.push(c); touch(`의뢰인 추가 '${name}'`); }
   closeModal();
   if(id) renderDetail(id); else renderDashboard();
 }
