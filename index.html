@@ -597,7 +597,7 @@ function migrateV2(){
     applyTags(c); // 상황태그 정합성 재적용
   });
 }
-function migrateIfNeeded(){ if(state._ver>=4) return false; state.clients.forEach(ensureItems); migrateV2(); state._ver=4; state.updatedAt=now(); state.updatedBy=deviceName||state.updatedBy||"미설정"; return true; }
+function migrateIfNeeded(){ if(state._ver>=5) return false; state.clients.forEach(ensureItems); migrateV2(); state._ver=5; state.updatedAt=now(); state.updatedBy=deviceName||state.updatedBy||"미설정"; return true; }
 
 /* 완료율 계산 */
 function progress(client){
