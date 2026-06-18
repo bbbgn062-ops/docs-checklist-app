@@ -849,6 +849,7 @@ function renderDetail(id){
       <button class="btn btn-sm" onclick="openReminder('${c.id}')">⏰ 리마인더</button>
       <button class="btn btn-sm" onclick="copySummary('${c.id}')">📋 진행상황 복사</button>
       <button class="btn btn-sm" onclick="printChecklist('${c.id}')">🖨️ 인쇄/PDF</button>
+      <button class="btn btn-sm" onclick="openDownload('${c.id}')">📥 파일 다운로드</button>
       <button class="btn btn-sm" onclick="togglePin('${c.id}')">${c.pinned?'📌 고정해제':'📌 고정'}</button>
       <button class="btn btn-sm" onclick="toggleArchive('${c.id}')">${c.archived?'📦 보관해제':'📦 보관'}</button>
       <button class="btn btn-sm" onclick="openClientModal('${c.id}')">✏️ 정보수정</button>
@@ -1107,6 +1108,90 @@ async function removeFile(cid,id,idx){
   if(githubReady()){ try{ await fetch(ghContentsUrl(f.path),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),
     body:JSON.stringify({message:`delete ${f.name}`,sha:f.sha,branch:cfg.branch})}); }catch(e){ console.warn(e); } }
   c.items[id].files.splice(idx,1); touch(`[${c.name}] 첨부 삭제`); renderDetail(cid);
+}
+
+/* ---------- 6c. 첨부 파일 다운로드 (선택/일괄, 묶음 ZIP / 파일별) ---------- */
+let _dlCtx=null;
+function loadJSZip(){ return new Promise((res,rej)=>{ if(window.JSZip) return res(window.JSZip);
+  const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+  s.onload=()=>res(window.JSZip); s.onerror=()=>rej(new Error("ZIP 라이브러리 로드 실패(인터넷 필요)")); document.head.appendChild(s); }); }
+async function fetchFileBytes(f){
+  const r=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/git/blobs/${f.sha}`,{headers:ghHeaders()});
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  const j=await r.json(); const bin=atob((j.content||"").replace(/\n/g,""));
+  const bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i); return bytes;
+}
+function extOf(name){ const i=(name||"").lastIndexOf("."); return i>0?name.slice(i):""; }
+function safeName(s){ return (s||"").replace(/[^\w가-힣().\- ]/g,"").trim().replace(/\s+/g,"_"); }
+function dlBlob(blob,filename){ const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),20000); }
+function fileGroups(c){
+  const out=[];
+  TEMPLATE.forEach((b,bi)=>{ const items=[];
+    const collect=(id,name)=>{ const s=c.items[id]; if(s&&s.files&&s.files.length) items.push({id,name,files:s.files.map((f,idx)=>({f,idx}))}); };
+    b.groups.forEach(g=>g.items.forEach(it=>collect(it.id,it.name)));
+    (c.extra[b.id]||[]).forEach(ex=>collect(ex.id,ex.name));
+    if(items.length) out.push({bid:b.id,btitle:b.title,bi,items});
+  });
+  return out;
+}
+function openDownload(cid){
+  if(!githubReady()){ toast("파일 다운로드는 깃헙 연결 후 가능합니다"); return; }
+  const c=ensureItems(findClient(cid));
+  const groups=fileGroups(c);
+  if(groups.length===0){ modal(`<h3>📥 파일 다운로드</h3><p class="hint">아직 첨부된 파일이 없습니다. 각 서류의 <b>📎 파일</b>로 업로드한 뒤 이용하세요.</p><div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">닫기</button></div>`); return; }
+  const sel=new Set(); groups.forEach(g=>g.items.forEach(it=>it.files.forEach(fo=>sel.add(g.bid+"|"+it.id+"|"+fo.idx))));
+  _dlCtx={cid, groups, sel, mode:"zip"};
+  renderDownloadModal();
+}
+function renderDownloadModal(){
+  const total=_dlCtx.sel.size;
+  let body="";
+  _dlCtx.groups.forEach(g=>{
+    body+=`<div style="margin:9px 0 3px;font-weight:800;font-size:12.5px;color:var(--brand)">${g.bi+1}. ${esc(g.btitle)}</div>`;
+    g.items.forEach(it=>it.files.forEach(fo=>{ const k=g.bid+"|"+it.id+"|"+fo.idx;
+      body+=`<label style="display:flex;gap:8px;align-items:center;padding:3px 0 3px 8px;font-size:13px;cursor:pointer">
+        <input type="checkbox" ${_dlCtx.sel.has(k)?"checked":""} onchange="dlToggle('${k}')">
+        <span>${esc(it.name)} <span style="color:var(--muted)">· ${esc(fo.f.name)} (${fileSizeStr(fo.f.size)})</span></span></label>`; }));
+  });
+  modal(`<h3>📥 파일 다운로드</h3>
+    <p class="hint">받을 파일을 고르고 방식을 선택하세요. (선택 <b id="dlCnt">${total}</b>개)</p>
+    <div class="field"><label>받는 방식</label>
+      <div class="seg" style="display:flex">
+        <button style="flex:1" class="${_dlCtx.mode==='zip'?'on-self':''}" onclick="_dlCtx.mode='zip';renderDownloadModal()">묶음 ZIP<br><span style="font-size:11px;font-weight:400">홍길동_기본서류.zip</span></button>
+        <button style="flex:1" class="${_dlCtx.mode==='each'?'on-self':''}" onclick="_dlCtx.mode='each';renderDownloadModal()">파일별<br><span style="font-size:11px;font-weight:400">홍길동_가족관계증명서</span></button>
+      </div></div>
+    <div style="margin-bottom:8px"><button class="btn btn-sm" onclick="dlSelectAll(true)">전체선택</button> <button class="btn btn-sm" onclick="dlSelectAll(false)">전체해제</button></div>
+    <div style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 10px">${body}</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">닫기</button>
+      <button class="btn btn-primary" onclick="doDownload()">다운로드</button>
+    </div>`,540);
+}
+function dlToggle(k){ if(_dlCtx.sel.has(k)) _dlCtx.sel.delete(k); else _dlCtx.sel.add(k); const el=$("#dlCnt"); if(el) el.textContent=_dlCtx.sel.size; }
+function dlSelectAll(on){ _dlCtx.sel.clear(); if(on) _dlCtx.groups.forEach(g=>g.items.forEach(it=>it.files.forEach(fo=>_dlCtx.sel.add(g.bid+"|"+it.id+"|"+fo.idx)))); renderDownloadModal(); }
+async function doDownload(){
+  const c=findClient(_dlCtx.cid); const nm=safeName(c.name||"의뢰인")||"의뢰인";
+  const picked=_dlCtx.groups.map(g=>({bid:g.bid,btitle:g.btitle,bi:g.bi,items:g.items.map(it=>({id:it.id,name:it.name,files:it.files.filter(fo=>_dlCtx.sel.has(g.bid+"|"+it.id+"|"+fo.idx))})).filter(it=>it.files.length)})).filter(g=>g.items.length);
+  if(picked.length===0){ toast("선택된 파일이 없습니다"); return; }
+  const mode=_dlCtx.mode; closeModal(); toast("다운로드 준비 중…");
+  try{
+    if(mode==="zip"){
+      const JSZip=await loadJSZip();
+      for(const g of picked){
+        const zip=new JSZip();
+        for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f);
+          const suffix=it.files.length>1?("_"+i):""; zip.file(safeName(it.name)+suffix+extOf(fo.f.name), bytes); } }
+        const blob=await zip.generateAsync({type:"blob"});
+        dlBlob(blob, nm+"_"+safeName(g.btitle)+".zip");
+        await new Promise(r=>setTimeout(r,700));
+      }
+      toast("묶음 ZIP 다운로드 완료 ✓");
+    } else {
+      for(const g of picked){ for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f);
+        const suffix=it.files.length>1?("_"+i):""; dlBlob(new Blob([bytes]), nm+"_"+safeName(it.name)+suffix+extOf(fo.f.name)); await new Promise(r=>setTimeout(r,450)); } } }
+      toast("파일 다운로드 완료 ✓");
+    }
+  }catch(e){ console.error(e); toast("다운로드 실패: "+e.message); }
 }
 function onItemMemo(cid,id){ const c=findClient(cid); const ta=event.target; c.items[id].memo=ta.value;
   state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
