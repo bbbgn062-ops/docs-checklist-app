@@ -1112,9 +1112,9 @@ async function removeFile(cid,id,idx){
 
 /* ---------- 6c. 첨부 파일 다운로드 (선택/일괄, 묶음 ZIP / 파일별) ---------- */
 let _dlCtx=null;
-function loadJSZip(){ return new Promise((res,rej)=>{ if(window.JSZip) return res(window.JSZip);
-  const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
-  s.onload=()=>res(window.JSZip); s.onerror=()=>rej(new Error("ZIP 라이브러리 로드 실패(인터넷 필요)")); document.head.appendChild(s); }); }
+function loadPdfLib(){ return new Promise((res,rej)=>{ if(window.PDFLib) return res(window.PDFLib);
+  const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js";
+  s.onload=()=>res(window.PDFLib); s.onerror=()=>rej(new Error("PDF 라이브러리 로드 실패(인터넷 필요)")); document.head.appendChild(s); }); }
 async function fetchFileBytes(f){
   const r=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/git/blobs/${f.sha}`,{headers:ghHeaders()});
   if(!r.ok) throw new Error("HTTP "+r.status);
@@ -1140,7 +1140,7 @@ function openDownload(cid){
   const groups=fileGroups(c);
   if(groups.length===0){ modal(`<h3>📥 파일 다운로드</h3><p class="hint">아직 첨부된 파일이 없습니다. 각 서류의 <b>📎 파일</b>로 업로드한 뒤 이용하세요.</p><div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">닫기</button></div>`); return; }
   const sel=new Set(); groups.forEach(g=>g.items.forEach(it=>it.files.forEach(fo=>sel.add(g.bid+"|"+it.id+"|"+fo.idx))));
-  _dlCtx={cid, groups, sel, mode:"zip"};
+  _dlCtx={cid, groups, sel, mode:"pdf"};
   renderDownloadModal();
 }
 function renderDownloadModal(){
@@ -1157,9 +1157,10 @@ function renderDownloadModal(){
     <p class="hint">받을 파일을 고르고 방식을 선택하세요. (선택 <b id="dlCnt">${total}</b>개)</p>
     <div class="field"><label>받는 방식</label>
       <div class="seg" style="display:flex">
-        <button style="flex:1" class="${_dlCtx.mode==='zip'?'on-self':''}" onclick="_dlCtx.mode='zip';renderDownloadModal()">묶음 ZIP<br><span style="font-size:11px;font-weight:400">홍길동_기본서류.zip</span></button>
-        <button style="flex:1" class="${_dlCtx.mode==='each'?'on-self':''}" onclick="_dlCtx.mode='each';renderDownloadModal()">파일별<br><span style="font-size:11px;font-weight:400">홍길동_가족관계증명서</span></button>
-      </div></div>
+        <button style="flex:1" class="${_dlCtx.mode==='pdf'?'on-self':''}" onclick="_dlCtx.mode='pdf';renderDownloadModal()">묶음 PDF로 합치기<br><span style="font-size:11px;font-weight:400">홍길동_기본서류.pdf</span></button>
+        <button style="flex:1" class="${_dlCtx.mode==='each'?'on-self':''}" onclick="_dlCtx.mode='each';renderDownloadModal()">파일별 따로<br><span style="font-size:11px;font-weight:400">홍길동_가족관계증명서</span></button>
+      </div>
+      ${_dlCtx.mode==='pdf'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· PDF·이미지(jpg/png)는 묶음 순서대로 한 PDF로 합쳐집니다.<br>· 엑셀·한글 등 합칠 수 없는 파일은 원본 그대로 따로 받아집니다.</div>`:""}</div>
     <div style="margin-bottom:8px"><button class="btn btn-sm" onclick="dlSelectAll(true)">전체선택</button> <button class="btn btn-sm" onclick="dlSelectAll(false)">전체해제</button></div>
     <div style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 10px">${body}</div>
     <div class="modal-actions">
@@ -1175,17 +1176,22 @@ async function doDownload(){
   if(picked.length===0){ toast("선택된 파일이 없습니다"); return; }
   const mode=_dlCtx.mode; closeModal(); toast("다운로드 준비 중…");
   try{
-    if(mode==="zip"){
-      const JSZip=await loadJSZip();
+    if(mode==="pdf"){
+      const PDFLib=await loadPdfLib(); let merged=0, others=0;
       for(const g of picked){
-        const zip=new JSZip();
-        for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f);
-          const suffix=it.files.length>1?("_"+i):""; zip.file(safeName(it.name)+suffix+extOf(fo.f.name), bytes); } }
-        const blob=await zip.generateAsync({type:"blob"});
-        dlBlob(blob, nm+"_"+safeName(g.btitle)+".zip");
-        await new Promise(r=>setTimeout(r,700));
+        const doc=await PDFLib.PDFDocument.create(); const leftovers=[];
+        for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f); const ext=extOf(fo.f.name).toLowerCase();
+          try{
+            if(ext===".pdf"){ const src=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true}); const ps=await doc.copyPages(src,src.getPageIndices()); ps.forEach(p=>doc.addPage(p)); }
+            else if(ext===".jpg"||ext===".jpeg"){ const img=await doc.embedJpg(bytes); const pg=doc.addPage([img.width,img.height]); pg.drawImage(img,{x:0,y:0,width:img.width,height:img.height}); }
+            else if(ext===".png"){ const img=await doc.embedPng(bytes); const pg=doc.addPage([img.width,img.height]); pg.drawImage(img,{x:0,y:0,width:img.width,height:img.height}); }
+            else leftovers.push({it,fo,bytes,i});
+          }catch(e){ console.warn("PDF 합치기 건너뜀",fo.f.name,e); leftovers.push({it,fo,bytes,i}); }
+        } }
+        if(doc.getPageCount()>0){ const out=await doc.save(); dlBlob(new Blob([out],{type:"application/pdf"}), nm+"_"+safeName(g.btitle)+".pdf"); merged++; await new Promise(r=>setTimeout(r,700)); }
+        for(const lo of leftovers){ const suffix=lo.it.files.length>1?("_"+lo.i):""; dlBlob(new Blob([lo.bytes]), nm+"_"+safeName(lo.it.name)+suffix+extOf(lo.fo.f.name)); others++; await new Promise(r=>setTimeout(r,450)); }
       }
-      toast("묶음 ZIP 다운로드 완료 ✓");
+      toast(`PDF ${merged}개 합침${others?` · 기타 ${others}개 따로 받음`:""} ✓`);
     } else {
       for(const g of picked){ for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f);
         const suffix=it.files.length>1?("_"+i):""; dlBlob(new Blob([bytes]), nm+"_"+safeName(it.name)+suffix+extOf(fo.f.name)); await new Promise(r=>setTimeout(r,450)); } } }
