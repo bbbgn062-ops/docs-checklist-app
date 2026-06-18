@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <title>개인회생 서류 취합 시스템</title>
 <style>
   :root{
@@ -95,20 +98,22 @@
   .bundle-body{padding:4px 14px 12px;}
   .subgroup-title{font-size:12.5px;font-weight:800;color:var(--brand);margin:12px 6px 6px;text-transform:none;}
 
-  .item{border:1px solid var(--line);border-left:3px solid transparent;border-radius:12px;padding:13px 14px;margin:8px 0;background:#fff;transition:border-color .15s,background .15s;}
-  .item.done{background:#FCFDFC;border-color:var(--line);}
-  .item.st-req{border-left-color:var(--amber);}
-  .item.st-notreq{border-left-color:var(--red);}
-  .item.st-self{border-left-color:#DDD7CE;}
-  .item.st-recv{border-left-color:#7FC9A6;}
-  .item.st-na{border-left-color:transparent;opacity:.55;}
-  .item-row{display:flex;align-items:center;gap:11px;flex-wrap:wrap;}
-  .chk{width:21px;height:21px;border-radius:6px;border:1.5px solid #D8D2C9;background:#fff;flex:0 0 auto;
-    display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;line-height:1;transition:all .15s;}
-  .chk:hover{border-color:var(--brand);}
-  .item.done .chk{background:var(--green);border-color:var(--green);}
+  .item{border:1px solid var(--line);border-radius:13px;padding:13px 15px;margin:8px 0;background:#fff;transition:background .15s,border-color .15s;}
+  .item.st-req{background:#FFF6E5;border-color:#F1DFBC;}      /* 요청중: 은은한 앰버 */
+  .item.st-rej{background:#FCEAEA;border-color:#F0CDCD;}      /* 보완필요: 은은한 레드 */
+  .item.done,.item.st-recv{background:#E7F7EC;border-color:#C3E9CF;} /* 완료: 은은한 연두/민트 */
+  .item.st-na{background:#FAFAF9;opacity:.6;}
+  .item-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  /* 토스뱅크형 원형 체크박스 */
+  .chk{width:24px;height:24px;border-radius:50%;border:2px solid #D9D3CA;background:#fff;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:800;line-height:1;
+    transition:all .18s cubic-bezier(.2,.8,.2,1);}
+  .chk:hover{border-color:var(--green);}
+  .item.done .chk{background:var(--green);border-color:var(--green);transform:scale(1);}
   .item-name{flex:1;min-width:140px;font-weight:700;font-size:15.5px;}
-  .item.done .item-name{color:#6b7280;}
+  .nm{font-weight:700;}
+  .item.done .nm{display:inline-block;background:#1F9D5B;color:#fff;font-weight:800;padding:3px 12px;border-radius:999px;font-size:14.5px;box-shadow:0 2px 6px rgba(31,157,91,.25);}
+  .item.st-rej .nm{display:inline-block;background:var(--red);color:#fff;font-weight:800;padding:3px 12px;border-radius:999px;font-size:14.5px;}
   .item-note{font-size:12px;color:var(--muted);margin-top:2px;font-weight:400;}
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
   .seg button{border:none;background:#fff;color:var(--muted);padding:5px 10px;font-size:12px;font-weight:700;border-right:1px solid var(--line);}
@@ -760,8 +765,7 @@ function renderDashboard(){
     const remind=isRemindNeeded(c);
     const stg=clientStage(c); const stgColor=STAGE_COLOR[stg];
     const d=dDay(c);
-    const accent = p.rejected>0?"var(--red)":(p.pct===100?"var(--green)":"var(--brand)");
-    return `<div class="card ${c.archived?'arch':''}" onclick="openDetail('${c.id}')" style="border-left:4px solid ${accent}">
+    return `<div class="card ${c.archived?'arch':''}" onclick="openDetail('${c.id}')">
       <div class="card-top"><span class="card-name">${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</span>
         <span class="badge ${badgeClass}">${esc(c.caseType||"개인회생")}</span>
         <span class="badge" style="background:${stgColor}1a;color:${stgColor}">${stg}</span></div>
@@ -909,12 +913,12 @@ function passFilterReject(s){ return s && s.rejected; }
 function itemHtml(c,it,isExtra,bid){
   const s=c.items[it.id]||{mode:"request",reqTag:"none",done:false,memo:"",link:"",rejected:false};
   const showTags = s.mode==="request";
-  const stClass = s.rejected?"st-notreq":(s.done?"st-recv":(s.mode==="na"?"st-na":(s.mode==="self"?"st-self":(s.reqTag==="requesting"?"st-req":"st-notreq"))));
+  const stClass = s.rejected?"st-rej":(s.done?"st-recv":(s.mode==="na"?"st-na":(s.reqTag==="requesting"?"st-req":"")));
   return `<div class="item ${s.done&&!s.rejected?'done':''} ${stClass}">
     <div class="item-row">
       ${selMode?`<button class="chk" style="border-radius:50%;${selSet.has(it.id)?'background:var(--brand);border-color:var(--brand)':''}" onclick="toggleSel('${it.id}')" title="선택">${selSet.has(it.id)?'✓':''}</button>`:""}
       <button class="chk" onclick="toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?'✓':''}</button>
-      <div class="item-name">${esc(it.name)}
+      <div class="item-name"><span class="nm">${esc(it.name)}</span>
         ${s.rejected?`<div class="item-note" style="color:var(--red);font-weight:700">⚠ 보완필요${s.rejectReason?` — ${esc(s.rejectReason)}`:""}</div>`:""}
         ${it.note?`<div class="item-note">${esc(it.note)}</div>`:""}
         ${WHERE[it.id]?`<div class="item-note">📍 ${esc(WHERE[it.id])}</div>`:""}
