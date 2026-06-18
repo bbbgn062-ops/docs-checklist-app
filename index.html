@@ -527,6 +527,18 @@ function applyIncomeType(c){
   TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!INCOME_CONTROLLED.includes(g.id)) return; const applic=keep.has(g.id);
     g.items.forEach(it=>{ const s=c.items[it.id]; if(!s) return; if(applic){ if(s.mode==="na") s.mode=it.mode; } else s.mode="na"; }); }));
 }
+/* 기존 데이터 복원 (한 번만): 공통 묶음이 과거 소득로직으로 '해당없음'에 갇힌 것 되살림 + 옛 소득유형 명칭 변환 */
+function migrateV2(){
+  const remap={"급여소득자":"근로자(월급수령자)","사업소득자":"사업자","연금수령자":"미정","복합(둘 이상)":"둘 다(겸업)"};
+  const controlled=new Set(INCOME_CONTROLLED);
+  state.clients.forEach(c=>{ if(!c.items) return;
+    if(remap[c.incomeType]) c.incomeType=remap[c.incomeType];
+    TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(controlled.has(g.id)) return; // 공통 묶음만
+      g.items.forEach(it=>{ const s=c.items[it.id]; if(s && s.mode==="na" && it.mode!=="na") s.mode=it.mode; }); }));
+    applyIncomeType(c); // 근로/사업 묶음 정합성 재적용
+  });
+}
+function migrateIfNeeded(){ if(state._ver>=2) return false; state.clients.forEach(ensureItems); migrateV2(); state._ver=2; return true; }
 
 /* 완료율 계산 */
 function progress(client){
@@ -626,7 +638,12 @@ async function pullFromGithub(silent){
     // 원격이 더 최신이면 반영
     if(!state.updatedAt || (remote.updatedAt && remote.updatedAt > state.updatedAt)){
       if(isEditing()){ setSync("ok"); return true; } // 입력 중에는 덮어쓰지 않음(메모 보호)
-      state=remote; saveLocal();
+      state=remote;
+      if(!state.clients) state.clients=[]; if(!state.log) state.log=[];
+      state.clients.forEach(ensureItems);
+      const migrated=migrateIfNeeded(); // 클라우드 데이터도 한 번 복원
+      saveLocal();
+      if(migrated){ setSync("ok"); pushToGithub(true); }
       if(!silent){ rerender(); toast("다른 기기의 변경을 불러왔습니다"); }
       else rerender();
     }
@@ -1529,6 +1546,7 @@ function boot(){
   try{ const c=localStorage.getItem(LS_CFG); if(c) cfg=Object.assign(cfg,JSON.parse(c)); }catch(_){}
   if(!state.clients) state.clients=[]; if(!state.log) state.log=[];
   state.clients.forEach(ensureItems);
+  if(migrateIfNeeded()) saveLocal();
   updateSyncPill();
   renderDashboard();
   if(githubReady()){ pullFromGithub(true).then(()=>startPolling()); }
