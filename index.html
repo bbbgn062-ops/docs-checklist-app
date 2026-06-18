@@ -500,6 +500,7 @@ let navOpen = (typeof window!=="undefined" && window.innerWidth>900); // 좌측 
 
 /* ---------- 3. 유틸 ---------- */
 const $ = (s,el=document)=>el.querySelector(s);
+const CHECK = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M5 12.5l4.2 4.3L19 6.5"/></svg>';
 const now = ()=>new Date().toISOString();
 function fmt(ts){ if(!ts) return "-"; const d=new Date(ts);
   return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
@@ -978,8 +979,8 @@ function itemRow(c,it,isExtra,bid){
   else if(s.reqTag==="requesting"){ label="요청중"; col="var(--amber)"; }
   const stClass=s.rejected?"st-rej":(s.done?"st-recv":(s.mode==="na"?"st-na":(s.reqTag==="requesting"?"st-req":"")));
   return `<div class="lrow ${s.done&&!s.rejected?'done':''} ${stClass}">
-    ${selMode?`<button class="chk" style="border-radius:50%;${selSet.has(it.id)?'background:var(--brand);border-color:var(--brand)':''}" onclick="toggleSel('${it.id}')">${selSet.has(it.id)?'✓':''}</button>`:""}
-    <button class="chk" onclick="toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?'✓':''}</button>
+    ${selMode?`<button class="chk" style="border-radius:50%;${selSet.has(it.id)?'background:var(--brand);border-color:var(--brand)':''}" onclick="toggleSel('${it.id}')">${selSet.has(it.id)?CHECK:''}</button>`:""}
+    <button class="chk" onclick="toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?CHECK:''}</button>
     <span class="lname">${esc(it.name)}${(s.files&&s.files.length)?` <span style="color:var(--brand)">📎${s.files.length}</span>`:""}${s.memo?` <span style="color:var(--muted)">📝</span>`:""}</span>
     <span class="lstat" style="color:${col}">${label}</span>
   </div>`;
@@ -992,8 +993,8 @@ function itemHtml(c,it,isExtra,bid){
   const stClass = s.rejected?"st-rej":(s.done?"st-recv":(s.mode==="na"?"st-na":(s.reqTag==="requesting"?"st-req":"")));
   return `<div class="item ${s.done&&!s.rejected?'done':''} ${stClass}">
     <div class="item-row">
-      ${selMode?`<button class="chk" style="border-radius:50%;${selSet.has(it.id)?'background:var(--brand);border-color:var(--brand)':''}" onclick="toggleSel('${it.id}')" title="선택">${selSet.has(it.id)?'✓':''}</button>`:""}
-      <button class="chk" onclick="toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?'✓':''}</button>
+      ${selMode?`<button class="chk" style="border-radius:50%;${selSet.has(it.id)?'background:var(--brand);border-color:var(--brand)':''}" onclick="toggleSel('${it.id}')" title="선택">${selSet.has(it.id)?CHECK:''}</button>`:""}
+      <button class="chk" onclick="toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?CHECK:''}</button>
       <div class="item-name"><span class="nm">${esc(it.name)}</span>
         ${s.rejected?`<div class="item-note" style="color:var(--red);font-weight:700">⚠ 보완필요${s.rejectReason?` — ${esc(s.rejectReason)}`:""}</div>`:""}
         ${it.note?`<div class="item-note">${esc(it.note)}</div>`:""}
