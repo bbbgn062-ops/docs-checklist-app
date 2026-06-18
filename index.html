@@ -765,36 +765,40 @@ async function pushToGithub(silent){
   if(!githubReady()) return;
   setSync("saving");
   try{
-    // 먼저 원격 최신본을 가져와 '합치기' → 다른 기기 자료를 덮어쓰지 않음(데이터 보존)
-    let mergedAdded=false;
-    try{
-      const chk=await fetch(ghUrl()+"?ref="+encodeURIComponent(cfg.branch)+"&t="+Date.now(),{headers:ghHeaders()});
-      if(chk.status===401||chk.status===403){ tokenError(); setSync("error"); return; }
-      if(chk.ok){ const cj=await chk.json();
-        const remote=JSON.parse(b64decode(cj.content));
-        remoteSha=cj.sha;
-        const beforeIds=(state.clients||[]).map(x=>x.id).sort().join(",");
-        state = mergeStates(state, remote);     // 원격에만 있는 의뢰인도 보존
-        if(!state.clients) state.clients=[]; if(!state.log) state.log=[];
-        state.clients.forEach(ensureItems);
-        saveLocal();
-        const afterIds=(state.clients||[]).map(x=>x.id).sort().join(",");
-        mergedAdded = (afterIds!==beforeIds);
-      } else if(chk.status===404){ remoteSha=null; }
-    }catch(_){}
-    if(mergedAdded && !isEditing()) rerender();   // 합치며 들어온 의뢰인 화면 반영
-    const body={ message:`update ${state.updatedBy||"?"} @ ${fmt(state.updatedAt)} (${(state.log[0]&&state.log[0].text)||"변경"})`,
-      content:b64encode(JSON.stringify(state,null,1)), branch:cfg.branch };
-    if(remoteSha) body.sha=remoteSha;
-    const r=await fetch(ghUrl(),{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify(body)});
-    if(r.status===401||r.status===403){ tokenError(); setSync("error"); return; }
-    if(!r.ok){ const t=await r.text(); throw new Error("HTTP "+r.status+" "+t.slice(0,120)); }
-    const j=await r.json(); remoteSha=j.content.sha;
-    state._base=state.updatedAt;
-    clearBanner();
-    setSync("ok");
-    if(!silent) toast("깃헙에 저장됨 ✓");
-    maybeDailyBackup(); // 3단계+: 하루 1회 클라우드 날짜별 백업본
+    // 충돌(409) 시 자동 재시도: 매번 원격을 다시 읽어 '합치기' 후 저장(데이터 보존 + 자가치유)
+    for(let attempt=1; attempt<=3; attempt++){
+      let mergedAdded=false;
+      try{
+        const chk=await fetch(ghUrl()+"?ref="+encodeURIComponent(cfg.branch)+"&t="+Date.now(),{headers:ghHeaders()});
+        if(chk.status===401||chk.status===403){ tokenError(); setSync("error"); return; }
+        if(chk.ok){ const cj=await chk.json();
+          const remote=JSON.parse(b64decode(cj.content));
+          remoteSha=cj.sha;
+          const beforeIds=(state.clients||[]).map(x=>x.id).sort().join(",");
+          state = mergeStates(state, remote);     // 원격에만 있는 의뢰인도 보존
+          if(!state.clients) state.clients=[]; if(!state.log) state.log=[];
+          state.clients.forEach(ensureItems);
+          saveLocal();
+          mergedAdded = ((state.clients||[]).map(x=>x.id).sort().join(",")!==beforeIds);
+        } else if(chk.status===404){ remoteSha=null; }
+      }catch(_){}
+      if(mergedAdded && !isEditing()) rerender();   // 합치며 들어온 의뢰인 화면 반영
+      const body={ message:`update ${state.updatedBy||"?"} @ ${fmt(state.updatedAt)} (${(state.log[0]&&state.log[0].text)||"변경"})`,
+        content:b64encode(JSON.stringify(state,null,1)), branch:cfg.branch };
+      if(remoteSha) body.sha=remoteSha;
+      const r=await fetch(ghUrl(),{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify(body)});
+      if(r.status===401||r.status===403){ tokenError(); setSync("error"); return; }
+      if(r.status===409){ remoteSha=null; await new Promise(rs=>setTimeout(rs,300+attempt*300)); continue; } // 다른 기기가 먼저 저장 → 다시 합쳐 재시도
+      if(!r.ok){ const t=await r.text(); throw new Error("HTTP "+r.status+" "+t.slice(0,120)); }
+      const j=await r.json(); remoteSha=j.content.sha;
+      state._base=state.updatedAt;
+      clearBanner();
+      setSync("ok");
+      if(!silent) toast("깃헙에 저장됨 ✓");
+      maybeDailyBackup(); // 3단계+: 하루 1회 클라우드 날짜별 백업본
+      return; // 성공
+    }
+    setSync("error"); if(!silent) toast("동기화가 잠시 혼잡합니다 — 잠시 후 자동 재시도됩니다");
   }catch(e){ console.error(e); setSync("error"); if(!silent) toast("깃헙 저장 실패: "+e.message); }
 }
 
