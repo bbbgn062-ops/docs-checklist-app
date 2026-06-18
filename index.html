@@ -385,7 +385,7 @@ const TEMPLATE = [
       { id:"b4-6", name:"매입·매출 내역", note:"", mode:"request" },
       { id:"b4-7", name:"부가가치세 표준증명원", note:"", mode:"self" },
     ]},
-    { id:"b4g3", title:"기타 소득·납세 자료 (해당 시)", items:[
+    { id:"b4g3", title:"기타 소득·납세 자료 (공통 필수)", items:[
       { id:"b4-8", name:"월평균 소득산정표", note:"있다면", mode:"request" },
       { id:"b4-9", name:"건강보험 자격득실확인서 전체", note:"", mode:"self" },
       { id:"b4-10", name:"건강·장기요양보험 납부확인서 전체", note:"", mode:"self" },
@@ -399,7 +399,7 @@ const TEMPLATE = [
   { id:"b5", title:"채무자 기타서류", groups:[
     { id:"b5g0", title:null, items:[
       { id:"b5-1", name:"사무장 상담시트 및 기타메모", note:"", mode:"self" },
-      { id:"b5-2", name:"그 외 서류", note:"메모 참고", mode:"na" },
+      { id:"b5-2", name:"그 외 서류", note:"추가로 가져온 기타 서류", mode:"request" },
     ]}
   ]},
   { id:"b6", title:"채무자 통장 거래내역", groups:[
