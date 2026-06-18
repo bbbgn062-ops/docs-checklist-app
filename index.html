@@ -296,7 +296,7 @@
       </select>
       <select id="incomeSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
         <option value="">소득 전체</option>
-        <option>급여소득자</option><option>사업소득자</option><option>연금수령자</option><option>복합(둘 이상)</option><option>미정</option>
+        <option>근로자(월급수령자)</option><option>사업자</option><option>둘 다(겸업)</option><option>미정</option>
       </select>
       <select id="sortSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
         <option value="recent">최근 수정순</option>
@@ -337,9 +337,10 @@ const TEMPLATE = [
   { id:"b2", title:"채무자 채권등록(채권자 목록) 소명자료", groups:[
     { id:"b2g0", title:null, items:[
       { id:"b2-1", name:"부채증명서 전체", note:"채권자·채무잔액·보증기관 확인", mode:"request" },
-      { id:"b2-2", name:"지방세 납세증명서(신청서)", note:"지방세 완납·미납(체납) 확인 — 미납 시 채권자 목록 포함", mode:"self" },
-      { id:"b2-4", name:"건강보험료 미납·체납 내역서", note:"미납·체납이 있는 경우 채권자 목록에 포함", mode:"self" },
-      { id:"b2-5", name:"신용정보조회서 전체 (신용인증요청서)", note:"신용정보 전체 조회", mode:"request" },
+      { id:"b2-2", name:"지방세 납세증명서(완납) 또는 체납증명서", note:"완납·체납 여부 확인 — 체납 시 채권자 목록 포함", mode:"self" },
+      { id:"b2-4", name:"4대보험공단 완납 또는 체납증명서", note:"4대 사회보험 완납·체납 — 체납 시 채권자 목록 포함", mode:"self" },
+      { id:"b2-5", name:"신용정보조회서", note:"신용정보 전체 조회", mode:"request" },
+      { id:"b2-6", name:"신용인증송부서", note:"채권자 목록 작성용", mode:"request" },
     ]}
   ]},
   { id:"b3", title:"채무자 재산 소명자료", groups:[
@@ -374,18 +375,17 @@ const TEMPLATE = [
     ]},
   ]},
   { id:"b4", title:"채무자 수입·지출 소명자료", groups:[
-    { id:"b4g1", title:"직장·급여 소득자 (회사)", items:[
-      { id:"b4-1", name:"근로계약서", note:"", mode:"request" },
+    { id:"b4g1", title:"근로자(월급수령자) 자료", items:[
+      { id:"b4-1", name:"근로계약서 또는 재직증명서", note:"회사 직인 필수 — 직인 없으면 무효 처리", mode:"request" },
       { id:"b4-2", name:"급여명세서 / 급여입금내역", note:"전월 급여 등", mode:"request" },
-      { id:"b4-3", name:"재직증명서", note:"", mode:"request" },
       { id:"b4-4", name:"원천징수영수증", note:"", mode:"request" },
     ]},
-    { id:"b4g2", title:"사업소득자 (사업)", items:[
+    { id:"b4g2", title:"사업자 자료", items:[
       { id:"b4-5", name:"사업자등록증", note:"", mode:"request" },
       { id:"b4-6", name:"매입·매출 내역", note:"", mode:"request" },
       { id:"b4-7", name:"부가가치세 표준증명원", note:"", mode:"self" },
     ]},
-    { id:"b4g3", title:"연금 수령자", items:[
+    { id:"b4g3", title:"기타 소득·납세 자료 (해당 시)", items:[
       { id:"b4-8", name:"월평균 소득산정표", note:"있다면", mode:"request" },
       { id:"b4-9", name:"건강보험 자격득실확인서 전체", note:"", mode:"self" },
       { id:"b4-10", name:"건강·장기요양보험 납부확인서 전체", note:"", mode:"self" },
@@ -398,7 +398,7 @@ const TEMPLATE = [
   ]},
   { id:"b5", title:"채무자 기타서류", groups:[
     { id:"b5g0", title:null, items:[
-      { id:"b5-1", name:"사무장 기타 메모서류", note:"", mode:"na" },
+      { id:"b5-1", name:"사무장 상담시트 및 기타메모", note:"", mode:"self" },
       { id:"b5-2", name:"그 외 서류", note:"메모 참고", mode:"na" },
     ]}
   ]},
@@ -414,17 +414,6 @@ const TEMPLATE = [
       { id:"b7-2", name:"무상거주 사실확인서", note:"최종 소유자가 서명, 본인 아닐 경우", mode:"request" },
     ]}
   ]},
-  { id:"b8", title:"법무법인 계약 관리", groups:[
-    { id:"b8g0", title:null, items:[
-      { id:"b8-1", name:"수임시트 작성", note:"이름·전화번호·사건종류·상담자", mode:"self" },
-    ]}
-  ]},
-  { id:"b9", title:"스캔 → 노션 업로드 → 계약관리 구글시트", groups:[
-    { id:"b9g0", title:null, items:[
-      { id:"b9-1", name:"스캔 후 노션 업로드", note:"사건 목록표 작성", mode:"self" },
-      { id:"b9-2", name:"이준 계약관리 구글시트 등록", note:"사건 목록표", mode:"self" },
-    ]}
-  ]},
 ];
 
 /* ---------- 1-2. 서류 발급처/발급방법 안내 (id별) ---------- */
@@ -435,9 +424,10 @@ const WHERE = {
   "b1-4":"정부24에서 발급(세대원 포함)",
   "b1-5":"거래은행 앱/창구에서 통장사본(또는 표지+거래내역) 발급",
   "b2-1":"각 채권사(은행·카드사·캐피탈)에 '부채증명서' 요청",
-  "b2-2":"정부24·위택스에서 지방세 납세증명서 발급",
+  "b2-2":"정부24·위택스에서 지방세 납세증명서(완납)/체납증명서 발급",
   "b2-3":"위택스(또는 정부24)에서 지방세 세목별 과세증명 발급",
-  "b2-4":"국민건강보험공단에서 보험료 납부확인서·체납(미납) 내역 발급",
+  "b2-4":"4대사회보험 정보연계센터·각 공단에서 완납/체납증명서 발급",
+  "b2-6":"신용회복위원회/관련 기관 양식 — 채권자 목록 작성용 송부서",
   "b2-5":"한국신용정보원/나이스(올크레딧)에서 신용정보조회서 발급",
   "b3-1":"가입 보험사 앱·고객센터에서 자동차 보험증서 발급",
   "b3-2":"정부24·자동차민원(또는 오토비아)에서 자동차등록원부 발급",
@@ -453,9 +443,8 @@ const WHERE = {
   "b3-12":"보유 비품·재고·설비의 시가를 정리한 표(의뢰인 작성·제출)",
   "b3-13":"근무처(회사)에 예상퇴직금 확인서 요청",
   "b3-14":"가입 금융기관 또는 통합연금포털에서 퇴직연금 가입확인서 발급",
-  "b4-1":"근무 회사 보관본(근로계약서) 제출",
+  "b4-1":"회사 발급 근로계약서 또는 재직증명서 (회사 직인 필수, 없으면 무효)",
   "b4-2":"회사 급여명세서 또는 급여통장 입금내역 제출",
-  "b4-3":"근무 회사에 재직증명서 요청",
   "b4-4":"회사 또는 홈택스에서 원천징수영수증 발급",
   "b4-5":"보관본 또는 홈택스에서 사업자등록증 발급",
   "b4-6":"홈택스에서 매입·매출 내역(부가세 신고자료) 발급",
@@ -495,6 +484,7 @@ let collapsed = {};             // 묶음 접힘 상태
 let selMode = false;            // 선택 모드
 let selSet = new Set();         // 선택된 항목 id
 let viewMode = "card";          // 보기 모드: card | list
+let showNa = false;             // 해당없음 서류 표시 여부(기본 숨김 → 더보기로 표시)
 let focusBundle = "";           // 좌측 탭에서 고른 묶음(빈값=전체)
 let navOpen = (typeof window!=="undefined" && window.innerWidth>900); // 좌측 묶음 탭 열림
 
@@ -529,13 +519,13 @@ function ensureItems(client){
 }
 
 /* 소득유형에 따라 수입·지출(b4) 묶음 자동 맞춤 */
-const INCOME_MAP={ "급여소득자":["b4g1"], "사업소득자":["b4g2"], "연금수령자":["b4g3"], "복합(둘 이상)":["b4g1","b4g2","b4g3"] };
+const INCOME_MAP={ "근로자(월급수령자)":["b4g1","b3g5"], "사업자":["b4g2","b3g6"], "둘 다(겸업)":["b4g1","b4g2","b3g5","b3g6"] };
+const INCOME_CONTROLLED=["b4g1","b4g2","b3g5","b3g6"]; // 소득유형에 따라 켜고 끄는 묶음(근로/사업/퇴직/사업용재산)
 function applyIncomeType(c){
   const keepArr=INCOME_MAP[c.incomeType]; if(!keepArr) return; // 미정 → 변경 안 함
   const keep=new Set(keepArr);
-  const b4=TEMPLATE.find(b=>b.id==="b4"); if(!b4) return;
-  b4.groups.forEach(g=>{ const applic=keep.has(g.id); g.items.forEach(it=>{ const s=c.items[it.id]; if(!s) return;
-    if(applic){ if(s.mode==="na") s.mode=it.mode; } else { s.mode="na"; } }); });
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!INCOME_CONTROLLED.includes(g.id)) return; const applic=keep.has(g.id);
+    g.items.forEach(it=>{ const s=c.items[it.id]; if(!s) return; if(applic){ if(s.mode==="na") s.mode=it.mode; } else s.mode="na"; }); }));
 }
 
 /* 완료율 계산 */
@@ -920,11 +910,13 @@ function renderDetail(id){
   html+=`<div class="checklist">`;
   TEMPLATE.forEach((b,bi)=>{
     if(focusBundle && focusBundle!==b.id) return;
-    const items=collectBundleItems(c,b);
-    const visItems = items.filter(x=>passFilter(c.items[x.id]));
+    const showItem=(id)=>{ const s=c.items[id]; if(!s) return false; if(s.mode==="na" && !showNa) return false; if(detailFilter!=="all" && !passFilter(s)) return false; return true; };
+    let naHidden=0; collectBundleItems(c,b).forEach(it=>{ const s=c.items[it.id]; if(s && s.mode==="na" && !showNa && (detailFilter==="all"||passFilter(s))) naHidden++; });
+    const anyVis = collectBundleItems(c,b).some(it=>showItem(it.id));
+    const hasNa = collectBundleItems(c,b).some(it=>{ const s=c.items[it.id]; return s && s.mode==="na"; });
     const bp = bundleProgress(c,b);
     const isCol = collapsed[c.id+b.id];
-    if(detailFilter!=="all" && visItems.length===0) return;
+    if(!anyVis && naHidden===0) return; // 보일 것도, 더보기할 것도 없으면 숨김
     html+=`<div class="bundle ${isCol?'collapsed':''}">
       <div class="bundle-head" onclick="toggleBundle('${c.id}','${b.id}')">
         <div class="bnum">${bi+1}</div>
@@ -934,12 +926,14 @@ function renderDetail(id){
       </div>
       <div class="bundle-body ${viewMode==='list'?'listmode':''}">`;
     b.groups.forEach(g=>{
-      const gItems=g.items.filter(it=>passFilter(c.items[it.id]));
-      if(detailFilter!=="all" && gItems.length===0) return;
+      const gItems=g.items.filter(it=>showItem(it.id));
+      if(gItems.length===0) return;
       if(g.title) html+=`<div class="subgroup-title">— ${esc(g.title)}</div>`;
-      (detailFilter==="all"?g.items:gItems).forEach(it=>{ html+=(viewMode==='list'?itemRow(c,it,false):itemHtml(c,it,false)); });
+      gItems.forEach(it=>{ html+=(viewMode==='list'?itemRow(c,it,false):itemHtml(c,it,false)); });
     });
-    (c.extra[b.id]||[]).forEach(ex=>{ if(detailFilter!=="all" && !passFilter(c.items[ex.id])) return; html+=(viewMode==='list'?itemRow(c,ex,true,b.id):itemHtml(c,ex,true,b.id)); });
+    (c.extra[b.id]||[]).filter(ex=>showItem(ex.id)).forEach(ex=>{ html+=(viewMode==='list'?itemRow(c,ex,true,b.id):itemHtml(c,ex,true,b.id)); });
+    if(naHidden>0) html+=`<button class="btn btn-sm btn-ghost" style="margin:5px 2px;color:var(--muted)" onclick="toggleShowNa()">＋ 해당없음 ${naHidden}개 더보기</button>`;
+    else if(showNa && hasNa) html+=`<button class="btn btn-sm btn-ghost" style="margin:5px 2px;color:var(--muted)" onclick="toggleShowNa()">해당없음 숨기기</button>`;
     if(viewMode==='card') html+=`<div class="additem"><button class="btn btn-sm btn-ghost" onclick="addExtra('${c.id}','${b.id}')">+ 이 묶음에 서류 추가</button></div>`;
     html+=`</div></div>`;
   });
@@ -957,6 +951,7 @@ function passFilter(s){
   if(detailFilter==="request") return s.mode==="request";
   if(detailFilter==="requesting") return s.mode==="request" && s.reqTag==="requesting";
   if(detailFilter==="received") return s.done;
+  if(detailFilter==="rejected") return !!s.rejected;
   if(detailFilter==="self") return s.mode==="self";
   if(detailFilter==="haslink") return !!s.link;
   if(detailFilter==="hasmemo") return !!(s.memo && s.memo.trim());
@@ -964,6 +959,7 @@ function passFilter(s){
 }
 function setFilter(f){ detailFilter=f; renderDetail(currentClientId); }
 function setView(m){ viewMode=m; renderDetail(currentClientId); }
+function toggleShowNa(){ showNa=!showNa; renderDetail(currentClientId); }
 function toggleNav(){ navOpen=!navOpen; renderDetail(currentClientId); }
 function focusBundleSet(bid){ focusBundle=bid; if(window.innerWidth<=760) navOpen=false; renderDetail(currentClientId); window.scrollTo({top:0,behavior:"smooth"}); }
 function toggleBundle(cid,bid){ collapsed[cid+bid]=!collapsed[cid+bid]; renderDetail(cid); }
@@ -1133,9 +1129,9 @@ function openClientModal(id){
         ${STAGES.map(t=>`<option ${((c&&clientStage(c))||"서류수집")===t?"selected":""}>${t}</option>`).join("")}
       </select></div>
     <div class="field"><label>담당자 (사무장·상담자)</label><input id="m_assignee" value="${c?esc(c.assignee||''):""}" placeholder="예: 김사무장"/></div>
-    <div class="field"><label>소득 유형 (선택 시 해당 서류만 자동 표시)</label>
+    <div class="field"><label>소득 유형 (근로자/사업자 선택 시 필요한 서류만 자동 표시)</label>
       <select id="m_income">
-        ${["미정","급여소득자","사업소득자","연금수령자","복합(둘 이상)"].map(t=>`<option ${c&&c.incomeType===t?"selected":""}>${t}</option>`).join("")}
+        ${["미정","근로자(월급수령자)","사업자","둘 다(겸업)"].map(t=>`<option ${c&&c.incomeType===t?"selected":""}>${t}</option>`).join("")}
       </select></div>
     <div class="field"><label>마감일 (보정기한·접수예정일 등)</label>
       <div style="display:flex;gap:8px">
