@@ -270,6 +270,9 @@
     .detail-head h2{font-size:19px;}
     .pct{font-size:26px !important;}
   }
+  .topbanner{display:none;position:sticky;top:0;z-index:9999;padding:11px 16px;font-size:13.5px;font-weight:700;line-height:1.5;text-align:center}
+  .topbanner.warn{background:#FBF1DF;color:#7a5300;border-bottom:2px solid #e6c879}
+  .topbanner.err{background:#FBE9EC;color:#8a1024;border-bottom:2px solid #e3a3ad}
 </style>
 </head>
 <body>
@@ -649,6 +652,8 @@ function addLog(text){
 /* 변경 발생 시 호출: 로컬 즉시 저장 + 깃헙 디바운스 저장 */
 function touch(logText){
   state.updatedAt=now(); state.updatedBy=deviceName||"미설정";
+  // 현재 보고 있는 의뢰인에 개별 수정시각 기록 → 동기화 충돌 시 누구 것이 최신인지 판단(데이터 보존)
+  if(currentClientId){ const _cc=findClient(currentClientId); if(_cc) _cc.updatedAt=now(); }
   if(logText) addLog(logText);
   saveLocal();      // 1단계
   pushSnapshot();   // 2단계
@@ -675,6 +680,55 @@ function setSync(s,msg){
   else if(s==="error"){ pill.classList.add("sync-err"); txt.textContent="동기화 오류"; }
 }
 
+/* 화면 상단 안내 배너 (토큰 만료·잘못된 주소 등) */
+function showBanner(html, kind){
+  let el=document.getElementById("topBanner");
+  if(!el){ el=document.createElement("div"); el.id="topBanner"; document.body.insertBefore(el, document.body.firstChild); }
+  el.className = "topbanner "+(kind||"warn");
+  el.innerHTML = html + ` <button onclick="clearBanner()" style="margin-left:8px;border:none;background:rgba(0,0,0,.08);border-radius:6px;padding:2px 8px;cursor:pointer;font-weight:800">✕</button>`;
+  el.style.display="block";
+}
+function clearBanner(){ const el=document.getElementById("topBanner"); if(el) el.style.display="none"; _tokenErrShown=false; }
+let _tokenErrShown=false;
+function tokenError(){
+  if(_tokenErrShown) return; _tokenErrShown=true;
+  showBanner("🔑 <b>토큰이 만료되었거나 권한이 없습니다.</b> 우측 상단 <b>⚙ 설정</b>에서 새 토큰을 넣어 주세요. (그 전까지는 이 기기에만 저장됩니다)", "err");
+}
+
+/* 두 저장본을 '의뢰인 단위로 합치기' (어느 쪽도 사라지지 않게).
+   - 같은 의뢰인(id)이 양쪽에 있으면, 의뢰인별 수정시각(updatedAt)이 더 최신인 것을 채택
+   - 한쪽에만 있는 의뢰인은 그대로 보존(union)
+   - 삭제는 deleted(묘비) 목록으로 전파 → 한쪽에서 지우면 합쳐도 되살아나지 않음 */
+function mergeStates(a, b){
+  a=a||{}; b=b||{};
+  const del = new Set([...(a.deleted||[]), ...(b.deleted||[])]);
+  const aMap={}, bMap={};
+  (a.clients||[]).forEach(c=>{ if(c&&c.id) aMap[c.id]=c; });
+  (b.clients||[]).forEach(c=>{ if(c&&c.id) bMap[c.id]=c; });
+  const ids = new Set([...Object.keys(aMap), ...Object.keys(bMap)]);
+  const clients=[];
+  ids.forEach(id=>{
+    if(del.has(id)) return;            // 삭제된 의뢰인은 제외
+    const ca=aMap[id], cb=bMap[id];
+    if(ca && cb){ const ta=ca.updatedAt||"", tb=cb.updatedAt||""; clients.push(ta>=tb?ca:cb); }
+    else clients.push(ca||cb);          // 한쪽에만 있으면 보존
+  });
+  const aNewer = (a.updatedAt||"") >= (b.updatedAt||"");
+  const base = aNewer ? a : b;          // 전역 항목(사무소명 등)은 더 최신 쪽 기준
+  const merged = Object.assign({}, base);
+  merged.clients = clients;
+  merged.deleted = [...del];
+  // 로그 합치기(시각 기준 중복 제거, 최근 1000개)
+  const seen=new Set();
+  merged.log = [...(a.log||[]), ...(b.log||[])]
+    .sort((x,y)=>String(y.ts||"").localeCompare(String(x.ts||"")))
+    .filter(l=>{ const k=(l.ts||"")+"|"+(l.text||""); if(seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0,1000);
+  merged.updatedAt = aNewer ? a.updatedAt : b.updatedAt;
+  merged._ver = Math.max(a._ver||0, b._ver||0);
+  return merged;
+}
+
 async function pullFromGithub(silent){
   if(!githubReady()) return false;
   try{
@@ -682,22 +736,26 @@ async function pullFromGithub(silent){
     if(r.status===404){ // 파일 없음 → 최초 업로드
       remoteSha=null; await pushToGithub(true); return true;
     }
+    if(r.status===401 || r.status===403){ tokenError(); setSync("error"); return false; }
     if(!r.ok) throw new Error("HTTP "+r.status);
     const j=await r.json();
     remoteSha=j.sha;
     const remote=JSON.parse(b64decode(j.content));
-    // 원격이 더 최신이면 반영
-    if(!state.updatedAt || (remote.updatedAt && remote.updatedAt > state.updatedAt)){
-      if(isEditing()){ setSync("ok"); return true; } // 입력 중에는 덮어쓰지 않음(메모 보호)
-      state=remote;
-      if(!state.clients) state.clients=[]; if(!state.log) state.log=[];
-      state.clients.forEach(ensureItems);
-      const migrated=migrateIfNeeded(); // 클라우드 데이터도 한 번 복원
-      saveLocal();
-      if(migrated){ setSync("ok"); pushToGithub(true); }
-      if(!silent){ rerender(); toast("다른 기기의 변경을 불러왔습니다"); }
-      else rerender();
-    }
+    if(isEditing()){ setSync("ok"); return true; } // 입력 중에는 건드리지 않음(메모 보호)
+    const remoteIds=(remote.clients||[]).map(x=>x.id).sort().join(",");
+    const beforeIds=(state.clients||[]).map(x=>x.id).sort().join(",");
+    const beforeU=state.updatedAt||"";
+    state = mergeStates(state, remote);   // 통째 교체 대신 '의뢰인별 합치기'(데이터 보존)
+    if(!state.clients) state.clients=[]; if(!state.log) state.log=[];
+    state.clients.forEach(ensureItems);
+    const migrated=migrateIfNeeded();     // 클라우드 데이터도 한 번 복원
+    saveLocal();
+    const mergedIds=(state.clients||[]).map(x=>x.id).sort().join(",");
+    const changed = (mergedIds!==beforeIds) || (state.updatedAt!==beforeU);
+    // 합치는 과정에서 원격에 없던 의뢰인을 살렸다면 원격에도 올려서 양쪽을 같게 맞춤
+    if(mergedIds!==remoteIds || migrated){ pushToGithub(true); }
+    if(changed){ rerender(); if(!silent && mergedIds!==beforeIds) toast("다른 기기의 변경을 불러왔습니다"); }
+    clearBanner();
     setSync("ok");
     return true;
   }catch(e){ console.warn(e); setSync("error"); return false; }
@@ -707,27 +765,33 @@ async function pushToGithub(silent){
   if(!githubReady()) return;
   setSync("saving");
   try{
-    // 먼저 최신본 확인 (충돌·데이터손실 최소화)
-    let remoteClients=null;
+    // 먼저 원격 최신본을 가져와 '합치기' → 다른 기기 자료를 덮어쓰지 않음(데이터 보존)
+    let mergedAdded=false;
     try{
       const chk=await fetch(ghUrl()+"?ref="+encodeURIComponent(cfg.branch)+"&t="+Date.now(),{headers:ghHeaders()});
+      if(chk.status===401||chk.status===403){ tokenError(); setSync("error"); return; }
       if(chk.ok){ const cj=await chk.json();
         const remote=JSON.parse(b64decode(cj.content));
-        remoteSha=cj.sha; remoteClients=(remote.clients||[]).length;
+        remoteSha=cj.sha;
+        const beforeIds=(state.clients||[]).map(x=>x.id).sort().join(",");
+        state = mergeStates(state, remote);     // 원격에만 있는 의뢰인도 보존
+        if(!state.clients) state.clients=[]; if(!state.log) state.log=[];
+        state.clients.forEach(ensureItems);
+        saveLocal();
+        const afterIds=(state.clients||[]).map(x=>x.id).sort().join(",");
+        mergedAdded = (afterIds!==beforeIds);
       } else if(chk.status===404){ remoteSha=null; }
     }catch(_){}
-    // 안전장치: 클라우드에 자료가 있는데 지금 화면이 비어있으면 덮어쓰지 않음 (데이터 보호)
-    if(remoteClients>0 && (state.clients||[]).length===0){
-      setSync("error"); if(!silent) toast("⚠️ 안전장치 작동: 빈 데이터로 클라우드를 덮어쓰지 않았습니다");
-      return;
-    }
+    if(mergedAdded && !isEditing()) rerender();   // 합치며 들어온 의뢰인 화면 반영
     const body={ message:`update ${state.updatedBy||"?"} @ ${fmt(state.updatedAt)} (${(state.log[0]&&state.log[0].text)||"변경"})`,
       content:b64encode(JSON.stringify(state,null,1)), branch:cfg.branch };
     if(remoteSha) body.sha=remoteSha;
     const r=await fetch(ghUrl(),{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify(body)});
+    if(r.status===401||r.status===403){ tokenError(); setSync("error"); return; }
     if(!r.ok){ const t=await r.text(); throw new Error("HTTP "+r.status+" "+t.slice(0,120)); }
     const j=await r.json(); remoteSha=j.content.sha;
     state._base=state.updatedAt;
+    clearBanner();
     setSync("ok");
     if(!silent) toast("깃헙에 저장됨 ✓");
     maybeDailyBackup(); // 3단계+: 하루 1회 클라우드 날짜별 백업본
@@ -1409,7 +1473,9 @@ function saveClient(id){
 }
 function deleteClient(id){
   const c=findClient(id); if(!confirm(`'${c.name}' 의뢰인을 삭제할까요? 되돌릴 수 없습니다.`)) return;
-  state.clients=state.clients.filter(x=>x.id!==id); touch(`의뢰인 삭제 '${c.name}'`); showDashboard();
+  state.clients=state.clients.filter(x=>x.id!==id);
+  state.deleted=(state.deleted||[]); if(!state.deleted.includes(id)) state.deleted.push(id); // 삭제 전파(되살아남 방지)
+  touch(`의뢰인 삭제 '${c.name}'`); showDashboard();
 }
 function togglePin(id){ const c=findClient(id); c.pinned=!c.pinned; touch(`[${c.name}] ${c.pinned?'중요 고정':'고정 해제'}`); renderDetail(id); }
 function toggleArchive(id){ const c=findClient(id); c.archived=!c.archived; touch(`[${c.name}] ${c.archived?'보관(아카이브)':'보관 해제'}`); if(c.archived){ toast("보관함으로 이동했습니다"); showDashboard(); } else renderDetail(id); }
@@ -1784,6 +1850,7 @@ function boot(){
   if(migrateIfNeeded()) saveLocal();
   updateSyncPill();
   renderDashboard();
+  if(location.protocol==="file:"){ showBanner("⚠️ <b>이 파일이 아니라 인터넷 링크(github.io 주소)로 여세요.</b> 파일로 열면 다른 기기와 동기화·자동연결이 되지 않고, 입력이 이 컴퓨터에만 남습니다.","warn"); }
   if(githubReady()){ pullFromGithub(true).then(()=>startPolling()); }
 }
 window.addEventListener("DOMContentLoaded",boot);
