@@ -507,7 +507,8 @@ const LS_DATA="ksdocs_data_v1", LS_CFG="ksdocs_cfg_v1", LS_DEVICE="ksdocs_device
 const LS_SNAP="ksdocs_snaps_v1", LS_DATA_BAK="ksdocs_data_bak_v1";
 const SNAP_MAX=20; // 보관할 자동 스냅샷 개수
 let state = { clients:[], log:[], updatedAt:null, updatedBy:null };
-let cfg = { repo:"", owner:"", branch:"main", token:"", path:"data.json", firmName:"법무법인" };
+const DEFAULT_OWNER="bbbgn062-ops", DEFAULT_REPO="docs-checklist", DEFAULT_BRANCH="main"; // 우리 사무소 고정값 (자동 기입)
+let cfg = { repo:DEFAULT_REPO, owner:DEFAULT_OWNER, branch:DEFAULT_BRANCH, token:"", path:"data.json", firmName:"법무법인 이준 서초분사무소" };
 let deviceName = localStorage.getItem(LS_DEVICE) || "";
 let currentClientId = null;
 let detailFilter = "all";
@@ -857,7 +858,7 @@ function rejectedList(c){ const arr=[]; const chk=(id,name)=>{ const s=c.items[i
   TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>chk(it.id,it.name)))); Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>chk(ex.id,ex.name))); return arr; }
 function renderDashHeaderStatsBoard(){
   const hdr=$("#dashHeader"), stat=$("#dashStats"), board=$("#dashBoard");
-  const active=state.clients.filter(c=>!c.archived);
+  const active=state.clients.filter(c=>!c.archived && (!firmF || firmShort(c.firm)===firmF));
   if(active.length===0){ if(hdr)hdr.innerHTML=""; if(stat)stat.innerHTML=""; if(board)board.innerHTML=""; return; }
   let tReq=0,tNot=0,tRej=0,avg=0,inProg=0,dueSoon=0;
   active.forEach(c=>{ const p=progress(c); tReq+=p.requesting; tNot+=p.notReq; tRej+=p.rejected; avg+=p.pct; if(p.pct<100)inProg++; const d=dDay(c); if(d!==null&&d<=7)dueSoon++; });
@@ -886,9 +887,12 @@ function renderDashHeaderStatsBoard(){
   const rejRows=[]; active.forEach(c=>rejectedList(c).forEach(r=>rejRows.push({c,r})));
   const dueRows=active.filter(c=>{ const d=dDay(c); return d!==null && d<=7; }).sort((a,b)=>dDay(a)-dDay(b));
   const remindRows=active.filter(c=>isRemindNeeded(c));
+  const reqRows=active.filter(c=>progress(c).notReq>0).sort((a,b)=>progress(b).notReq-progress(a).notReq);
   let boardHtml="";
-  if(rejRows.length||dueRows.length||remindRows.length){
+  if(rejRows.length||dueRows.length||remindRows.length||reqRows.length){
+    boardHtml+=`<div style="font-size:13px;font-weight:900;color:var(--ink);margin:2px 0 9px">📋 오늘 할 일</div>`;
     boardHtml+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:16px">`;
+    if(reqRows.length) boardHtml+=`<div class="card" style="cursor:default;padding:0;overflow:hidden"><div style="background:var(--red-soft);color:var(--red);font-weight:800;font-size:13px;padding:10px 13px">📨 요청 필요 ${reqRows.length}명</div><div style="max-height:200px;overflow:auto">${reqRows.map(c=>{const p=progress(c);return `<div onclick="openDetail('${c.id}')" style="cursor:pointer;padding:8px 13px;border-top:1px solid var(--line);font-size:13px;display:flex;justify-content:space-between"><span><b>${esc(c.name)}</b></span><span style="font-weight:800;color:var(--red)">미요청 ${p.notReq}건</span></div>`;}).join("")}</div></div>`;
     if(rejRows.length) boardHtml+=`<div class="card" style="cursor:default;padding:0;overflow:hidden"><div style="background:var(--red-soft);color:var(--red);font-weight:800;font-size:13px;padding:10px 13px">⚠ 보완 필요 ${rejRows.length}건</div><div style="max-height:200px;overflow:auto">${rejRows.map(({c,r})=>`<div onclick="openDetail('${c.id}')" style="cursor:pointer;padding:8px 13px;border-top:1px solid var(--line);font-size:13px"><b>${esc(c.name)}</b> · ${esc(r.name)}${r.reason?`<div style="font-size:11.5px;color:var(--red)">↳ ${esc(r.reason)}</div>`:""}</div>`).join("")}</div></div>`;
     if(dueRows.length) boardHtml+=`<div class="card" style="cursor:default;padding:0;overflow:hidden"><div style="background:var(--amber-soft);color:var(--amber);font-weight:800;font-size:13px;padding:10px 13px">⏳ 마감 임박 ${dueRows.length}명</div><div style="max-height:200px;overflow:auto">${dueRows.map(c=>{const d=dDay(c);return `<div onclick="openDetail('${c.id}')" style="cursor:pointer;padding:8px 13px;border-top:1px solid var(--line);font-size:13px;display:flex;justify-content:space-between"><span><b>${esc(c.name)}</b> · ${esc(c.deadlineLabel||"마감")}</span><span style="font-weight:800;color:${d<0?'var(--red)':'var(--amber)'}">${d<0?`${-d}일 지남`:d===0?"D-DAY":"D-"+d}</span></div>`;}).join("")}</div></div>`;
     if(remindRows.length) boardHtml+=`<div class="card" style="cursor:default;padding:0;overflow:hidden"><div style="background:var(--brand-soft);color:var(--brand);font-weight:800;font-size:13px;padding:10px 13px">⏰ 리마인더 필요 ${remindRows.length}명</div><div style="max-height:200px;overflow:auto">${remindRows.map(c=>`<div onclick="openDetail('${c.id}')" style="cursor:pointer;padding:8px 13px;border-top:1px solid var(--line);font-size:13px"><b>${esc(c.name)}</b> · 오래된 요청중 서류</div>`).join("")}</div></div>`;
@@ -1637,6 +1641,11 @@ function renderMsgModal(){
       <input type="checkbox" id="msgHow" checked onchange="_msgCtx.how=this.checked;regenMsg()"> 발급처·발급방법 안내 포함</label>
     <div class="field"><label>미리보기 (직접 수정 가능)</label>
       <textarea id="msgText" rows="9" style="font-size:13px;line-height:1.6"></textarea></div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn" style="flex:1" onclick="shareRequestMsg('sms')">📱 문자 앱으로</button>
+      <button class="btn" style="flex:1" onclick="shareRequestMsg('mail')">✉ 메일 앱으로</button>
+    </div>
+    <p class="hint" style="margin:-2px 0 10px;font-size:11.5px">📱·✉ 버튼은 휴대폰에서 문자·메일 앱이 바로 열립니다(내용 자동 입력). 보내면 자동으로 ‘요청중’으로 표시돼요.</p>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">닫기</button>
       <button class="btn" onclick="copyRequestMsg(false)">복사만</button>
@@ -1674,6 +1683,20 @@ function buildRequestText(){
 }
 function regenMsg(){ const ta=$("#msgText"); if(ta) ta.value=buildRequestText(); }
 function setMsgTone(t){ _msgCtx.tone=t; renderMsgModal(); }
+function shareRequestMsg(kind){
+  const ta=$("#msgText"); const text=ta?ta.value.trim():""; if(!text){ toast("메시지가 비어 있습니다"); return; }
+  const enc=encodeURIComponent(text);
+  let url;
+  if(kind==="sms"){ const ua=navigator.userAgent||""; const sep=/iPhone|iPad|Macintosh|Mac OS/i.test(ua)?"&":"?"; url="sms:"+sep+"body="+enc; }
+  else { url="mailto:?subject="+encodeURIComponent("서류 요청 안내")+"&body="+enc; }
+  // 보낸 것으로 보고 '요청중' 표시
+  const c=findClient(_msgCtx.cid); let n=0;
+  _msgCtx.sel.forEach(id=>{ const s=c.items[id]; if(s && s.reqTag!=="received"){ s.reqTag="requesting"; if(!s.reqDate) s.reqDate=now(); n++; } });
+  touch(`[${c.name}] ${_msgCtx.kind==="reminder"?"리마인더":"요청 메시지"} ${kind==="sms"?"문자":"메일"} 발송 (${n}건 요청중)`);
+  try{ window.location.href=url; }catch(_){ window.open(url); }
+  setTimeout(()=>{ closeModal(); renderDetail(_msgCtx.cid); }, 400);
+  toast((kind==="sms"?"문자":"메일")+" 앱을 엽니다 · 요청중 표시 ✓");
+}
 function copyRequestMsg(mark){
   const ta=$("#msgText"); const text=ta?ta.value:"";
   copyText(text).then(ok=>{
@@ -1775,12 +1798,13 @@ function restoreSnapshot(i){
 function openSettings(){
   modal(`
     <h3>⚙️ 설정 · 깃헙 동기화</h3>
-    <p class="hint">여러 기기에서 같이 보고, 자동저장·로그가 남도록 비공개 저장소에 연결합니다.</p>
-    <div class="field"><label>이 기기/사용자 이름 (로그에 표시)</label>
+    <p class="hint">새 기기·새 직원은 아래 <b>두 가지만</b> 입력하고 [연결 / 저장]을 누르면 끝입니다.</p>
+    <div class="field"><label>① 이 기기/사용자 이름 (로그에 표시)</label>
       <input id="s_device" value="${esc(deviceName)}" placeholder="예: 혜림-사무실PC"/></div>
-    <div class="field"><label>사무소 이름 (요청 메시지에 표시)</label>
-      <input id="s_firm" value="${esc(cfg.firmName||'법무법인')}" placeholder="예: 법무법인 이준"/></div>
-    <div class="field"><label>데이터 안전 (3단계 저장)</label>
+    <div class="field"><label>② 액세스 토큰 (관리자에게 받은 ghp_… 글자)</label>
+      <input id="s_token" type="password" value="${esc(cfg.token)}" placeholder="github_pat_... 또는 ghp_..."/></div>
+    <div class="note-warn">토큰은 이 기기 브라우저에만 저장되며 외부로 전송되지 않습니다(깃헙 외). 기기마다 한 번만 입력하면 됩니다.</div>
+    <div class="field" style="margin-top:12px"><label>데이터 안전 (3단계 저장)</label>
       <div style="font-size:12.5px;color:var(--muted);background:var(--gray-soft);border-radius:9px;padding:8px 11px;line-height:1.7">
         ① 로컬 즉시저장 <b>켜짐</b> · ② 자동 스냅샷 <b>${getSnapshots().length}개</b> 보관<br>
         ③ 깃헙 클라우드: <b>${githubReady()?"연결됨 ✓":"미연결"}</b>${state.updatedAt?` · 최근 ${fmt(state.updatedAt)}`:""}
@@ -1790,19 +1814,19 @@ function openSettings(){
         <button class="btn btn-sm" onclick="importData()">📤 백업 불러오기</button>
         <button class="btn btn-sm" onclick="openSnapshots()">🕘 스냅샷 되돌리기</button>
       </div></div>
-    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0"/>
-    <div class="field"><label>깃헙 사용자명 (owner)</label><input id="s_owner" value="${esc(cfg.owner)}" placeholder="예: lawfirm-leejun"/></div>
-    <div class="field"><label>저장소 이름 (repo)</label><input id="s_repo" value="${esc(cfg.repo)}" placeholder="예: docs-checklist"/></div>
-    <div class="field"><label>브랜치</label><input id="s_branch" value="${esc(cfg.branch||'main')}" placeholder="main"/></div>
-    <div class="field"><label>액세스 토큰 (Personal Access Token)</label><input id="s_token" type="password" value="${esc(cfg.token)}" placeholder="github_pat_..."/></div>
-    <div class="note-warn">토큰은 이 기기 브라우저에만 저장되며 외부로 전송되지 않습니다(깃헙 외). 기기마다 한 번씩 입력하면 됩니다.</div>
-    <div style="margin-top:10px"><button class="btn btn-sm btn-ghost" onclick="showGuide()">❓ 저장소·토큰 만드는 방법 (처음이라면)</button></div>
+    <div style="margin-top:10px"><button class="btn btn-sm btn-ghost" id="ghAdvBtn" onclick="toggleAdvGh()">고급 설정 (보통 그대로 두세요) ▾</button></div>
+    <div id="ghAdv" class="hidden">
+      <div class="field"><label>깃헙 사용자명 (owner) · 자동 입력됨</label><input id="s_owner" value="${esc(cfg.owner||DEFAULT_OWNER)}"/></div>
+      <div class="field"><label>저장소 이름 (repo) · 자동 입력됨</label><input id="s_repo" value="${esc(cfg.repo||DEFAULT_REPO)}"/></div>
+      <div class="field"><label>브랜치 · 자동 입력됨</label><input id="s_branch" value="${esc(cfg.branch||DEFAULT_BRANCH)}"/></div>
+    </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">닫기</button>
       <button class="btn" onclick="disconnectGithub()">연결 해제</button>
       <button class="btn btn-primary" onclick="connectGithub()">연결 / 저장</button>
     </div>`);
 }
+function toggleAdvGh(){ const el=document.getElementById("ghAdv"); const b=document.getElementById("ghAdvBtn"); if(!el)return; const open=el.classList.toggle("hidden")===false; if(b) b.textContent= open?"고급 설정 (보통 그대로 두세요) ▴":"고급 설정 (보통 그대로 두세요) ▾"; }
 function showGuide(){
   modal(`
     <h3>📘 깃헙 비공개 저장소 + 토큰 만들기</h3>
@@ -1833,9 +1857,9 @@ function showGuide(){
 }
 async function connectGithub(){
   deviceName=$("#s_device").value.trim(); localStorage.setItem(LS_DEVICE,deviceName);
-  cfg.firmName=$("#s_firm").value.trim()||"법무법인";
-  cfg.owner=$("#s_owner").value.trim(); cfg.repo=$("#s_repo").value.trim();
-  cfg.branch=$("#s_branch").value.trim()||"main"; cfg.token=$("#s_token").value.trim();
+  cfg.owner=($("#s_owner")?$("#s_owner").value.trim():"")||DEFAULT_OWNER;
+  cfg.repo=($("#s_repo")?$("#s_repo").value.trim():"")||DEFAULT_REPO;
+  cfg.branch=($("#s_branch")?$("#s_branch").value.trim():"")||DEFAULT_BRANCH; cfg.token=$("#s_token").value.trim();
   saveCfg();
   if(!githubReady()){ updateSyncPill(); toast("저장됨 · 깃헙 동기화는 owner/repo/토큰을 모두 입력하세요"); return; }
   setSync("saving"); toast("연결 확인 중…");
