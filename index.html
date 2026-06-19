@@ -475,7 +475,7 @@ const WHERE = {
   "b3-8":"계좌정보통합관리 어카운트인포(payinfo.or.kr)에서 계좌잔액 상세조회",
   "b3-9":"인터넷등기소(iros.go.kr)에서 부동산 등기사항전부증명서(등기부등본) 발급",
   "b3-10":"부동산공시가격알리미(realtyprice.kr)에서 개별공시지가 조회 후 '인쇄하기'로 발급",
-  "b3-11":"정부24(gov.kr)에서 토지대장·임야대장(지적전산자료) 발급",
+  "b3-11":"K-GeoP(kgeop.go.kr)에서 토지대장·임야대장(지적전산자료) 조회·발급",
   "b3-12":"보유 비품·재고·설비의 시가를 정리한 표(의뢰인 작성·제출)",
   "b3-13":"근무처(회사)에 예상퇴직금 확인서 요청",
   "b3-14":"통합연금포털(100lifeplan.fss.or.kr) 또는 가입 금융기관에서 퇴직연금 가입확인서 발급",
@@ -527,7 +527,8 @@ function msgWhere(id){ return WHERE_MSG[id] || WHERE[id] || ""; }
 /* ---------- 1-2b. 발급처별 묶음 (같은 사이트끼리 그룹) ---------- */
 const ITEM_BY_ID={}; TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{ITEM_BY_ID[it.id]=it;})));
 const SITES=[
-  { key:"gov24",      name:"정부24",                         url:"https://www.gov.kr",  icon:"24", color:"#2563eb", ids:["b1-3","b1-4","b3-11","b2-2","b2-3","b3-2","b4-13","b4-14","b4-15","b4-7","b4-5","b2-4"] },
+  { key:"gov24",      name:"정부24",                         url:"https://www.gov.kr",  icon:"24", color:"#2563eb", ids:["b1-3","b1-4","b2-2","b2-3","b3-2","b4-13","b4-14","b4-15","b4-7","b4-5","b2-4"] },
+  { key:"kgeop",      name:"K-GeoP(지적전산자료)",            url:"https://kgeop.go.kr", icon:"K", color:"#0f766e", ids:["b3-11"] },
   { key:"efamily",    name:"대법원 전자가족관계등록시스템",  url:"https://efamily.scourt.go.kr", icon:"법", color:"#9B1B33", ids:["b1-1","b1-2"] },
   { key:"hometax",    name:"홈택스(국세)",                   url:"https://hometax.go.kr", icon:"국", color:"#059669", ids:["b4-4","b4-6"] },
   { key:"iros",       name:"인터넷등기소",                   url:"https://www.iros.go.kr", icon:"등", color:"#9B1B33", ids:["b3-9","b3-5"] },
