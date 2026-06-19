@@ -185,6 +185,20 @@
   .memo-box textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(155,27,51,.12);}
   .additem{margin:8px 0 4px;}
 
+  /* ── 토스식 컴팩트 서류 행 (한 줄 + 탭하면 펼침) ── */
+  .item-head{display:flex;align-items:center;gap:12px;cursor:pointer;}
+  .item-head .item-name{flex:1;min-width:0;}
+  .item-src{font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .status-pill{flex:0 0 auto;font-size:12px;font-weight:800;padding:5px 12px;border-radius:999px;line-height:1;}
+  .item-caret{flex:0 0 auto;color:var(--gray);font-style:normal;font-size:14px;transition:transform .15s;}
+  .item.open .item-caret{transform:rotate(180deg);}
+  .item-body{margin-top:11px;padding-top:11px;border-top:1px solid var(--line);}
+  .item-controls{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;}
+  .item-tools{display:flex;gap:5px;flex-wrap:wrap;}
+  .item.done .nm{background:none;color:#2C6B48;font-weight:800;padding:0;box-shadow:none;border-radius:0;font-size:15.5px;}
+  .item.st-rej .nm{background:none;color:var(--red);font-weight:800;padding:0;border-radius:0;font-size:15.5px;}
+  .item.done .item-src{color:#3A8F63;}
+
   /* Modal */
   .overlay{position:fixed;inset:0;background:rgba(20,24,45,.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;}
   .modal{background:#fff;border-radius:16px;padding:22px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);max-height:90vh;overflow:auto;}
@@ -578,6 +592,8 @@ let focusBundle = "";           // 좌측 탭에서 고른 묶음(빈값=전체)
 let navOpen = (typeof window!=="undefined" && window.innerWidth>900); // 좌측 묶음 탭 열림
 let groupMode = "bundle";       // 보기 기준: bundle(서류묶음) | site(발급처별)
 let focusSite = "";             // 발급처 탭에서 고른 사이트(빈값=전체)
+let expandedItems = new Set();  // 상세화면에서 펼쳐진(액션 노출) 서류 항목 id
+function toggleItemExpand(id){ if(expandedItems.has(id)) expandedItems.delete(id); else expandedItems.add(id); renderDetail(currentClientId); }
 function setGroupMode(m){ groupMode=m; focusSite=""; focusBundle=""; renderDetail(currentClientId); }
 function focusSiteSet(k){ focusSite=k; if(window.innerWidth<=760) navOpen=false; renderDetail(currentClientId); window.scrollTo({top:0,behavior:"smooth"}); }
 function toggleSiteBundle(cid,key){ collapsed[cid+'site'+key]=!collapsed[cid+'site'+key]; renderDetail(cid); }
@@ -1050,7 +1066,7 @@ function renderDashboard(){
   }).join("");
 }
 
-function openDetail(id){ currentClientId=id; renderDetail(id); window.scrollTo(0,0); }
+function openDetail(id){ currentClientId=id; expandedItems.clear(); renderDetail(id); window.scrollTo(0,0); }
 function renderDetail(id){
   const c=ensureItems(findClient(id)); if(!c) return showDashboard();
   $("#view-dashboard").classList.add("hidden");
@@ -1277,36 +1293,55 @@ function itemHtml(c,it,isExtra,bid){
   const s=c.items[it.id]||{mode:"request",reqTag:"none",done:false,memo:"",link:"",rejected:false};
   const showTags = s.mode==="request";
   const stClass = s.rejected?"st-rej":(s.done?"st-recv":(s.mode==="na"?"st-na":(s.reqTag==="requesting"?"st-req":"")));
-  return `<div class="item ${s.done&&!s.rejected?'done':''} ${stClass}">
-    <div class="item-row">
-      ${selMode?`<button class="chk" style="border-radius:50%;${selSet.has(it.id)?'background:var(--brand);border-color:var(--brand)':''}" onclick="toggleSel('${it.id}')" title="선택">${selSet.has(it.id)?CHECK:''}</button>`:""}
-      <button class="chk" onclick="toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?CHECK:''}</button>
-      <div class="item-name"><span class="nm">${esc(it.name)}</span>
-        ${s.rejected?`<div class="item-note" style="color:var(--red);font-weight:700">⚠ 보완필요${s.rejectReason?` — ${esc(s.rejectReason)}`:""}</div>`:""}
-        ${it.note?`<div class="item-note">${esc(it.note)}</div>`:""}
-        ${WHERE[it.id]?`<div class="item-note">📍 ${esc(WHERE[it.id])}</div>`:""}
-        ${s.link?`<div class="item-note"><a href="${esc(s.link)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700">🔗 링크 열기</a></div>`:""}
-        ${(s.files&&s.files.length)?`<div class="item-note">${s.files.map((f,fi)=>`📎 <a href="#" onclick="event.preventDefault();event.stopPropagation();openPreview('${c.id}','${it.id}',${fi})" style="color:var(--brand);font-weight:700" title="미리보기">${esc(f.name)}</a> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span> <button onclick="event.stopPropagation();openFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="다운로드">⤓</button> <button onclick="event.stopPropagation();removeFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px" title="삭제">×</button>`).join("<br>")}</div>`:""}
-        ${(function(){ let d=[]; if(s.reqDate&&!s.done) d.push(`요청 ${fmtD(s.reqDate)}${daysAgo(s.reqDate)>=3?` · ${daysAgo(s.reqDate)}일 경과`:''}`); if(s.recvDate&&s.done) d.push(`받음 ${fmtD(s.recvDate)}`); return d.length?`<div class="item-note" style="color:${(!s.done&&daysAgo(s.reqDate)>=7)?'var(--red)':'var(--brand)'}">🕒 ${d.join(" · ")}</div>`:""; })()}
-        ${isExtra?`<button class="btn-ghost btn-sm" style="font-size:11px;color:var(--red);padding:2px 4px" onclick="removeExtra('${c.id}','${bid}','${it.id}')">삭제</button>`:""}
+  const open = expandedItems.has(it.id);
+  const site = SITES.find(x=>x.ids && x.ids.includes(it.id)); const src = site?site.name:"";
+  let plabel,pcol,pbg;
+  if(s.rejected){plabel="보완필요";pcol="var(--red)";pbg="var(--red-soft)";}
+  else if(s.done){plabel="받음";pcol="var(--green)";pbg="var(--green-soft)";}
+  else if(s.mode==="na"){plabel="해당없음";pcol="var(--muted)";pbg="var(--gray-soft)";}
+  else if(s.mode==="self"){plabel="직접발급";pcol="var(--brand)";pbg="var(--brand-soft)";}
+  else if(s.reqTag==="requesting"){plabel="요청중";pcol="var(--amber)";pbg="var(--amber-soft)";}
+  else {plabel="미요청";pcol="var(--muted)";pbg="var(--gray-soft)";}
+  const fc=(s.files&&s.files.length)?s.files.length:0;
+  return `<div class="item ${s.done&&!s.rejected?'done':''} ${stClass} ${open?'open':''}">
+    <div class="item-head" onclick="toggleItemExpand('${it.id}')">
+      ${selMode?`<button class="chk" style="border-radius:50%;${selSet.has(it.id)?'background:var(--brand);border-color:var(--brand)':''}" onclick="event.stopPropagation();toggleSel('${it.id}')" title="선택">${selSet.has(it.id)?CHECK:''}</button>`:""}
+      <button class="chk" onclick="event.stopPropagation();toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?CHECK:''}</button>
+      <div class="item-name">
+        <span class="nm">${esc(it.name)}</span>${fc?` <span style="color:var(--brand);font-size:12px">📎${fc}</span>`:""}${s.memo?` <span style="color:var(--muted);font-size:12px">📝</span>`:""}
+        ${s.rejected?`<div class="item-src" style="color:var(--red);font-weight:700">⚠ 보완필요${s.rejectReason?` — ${esc(s.rejectReason)}`:""}</div>`:(src?`<div class="item-src">${esc(src)}</div>`:"")}
       </div>
-      <div class="seg">
-        <button class="${s.mode==='self'?'on-self':''}" onclick="setMode('${c.id}','${it.id}','self')">직접발급</button>
-        <button class="${s.mode==='request'?'on-req':''}" onclick="setMode('${c.id}','${it.id}','request')">의뢰인요청</button>
-        <button class="${s.mode==='na'?'on-na':''}" onclick="setMode('${c.id}','${it.id}','na')">해당없음</button>
-      </div>
-      ${showTags?`<div class="tags">
-        <button class="tag ${s.reqTag==='none'?'on t-none':''}" onclick="setTag('${c.id}','${it.id}','none')">미요청</button>
-        <button class="tag ${s.reqTag==='requesting'?'on t-req':''}" onclick="setTag('${c.id}','${it.id}','requesting')">요청중</button>
-        <button class="tag ${s.reqTag==='received'?'on t-recv':''}" onclick="setTag('${c.id}','${it.id}','received')">받음</button>
-      </div>`:""}
-      <button class="memo-toggle" onclick="attachFiles('${c.id}','${it.id}')">📎 파일${(s.files&&s.files.length)?` ${s.files.length}`:""}</button>
-      <button class="memo-toggle" onclick="setLink('${c.id}','${it.id}')">${s.link?'🔗 링크':'＋ 링크'}</button>
-      <button class="memo-toggle" onclick="toggleMemo('${it.id}')">${s.memo?'📝 메모':'＋ 메모'}</button>
-      <button class="memo-toggle" style="color:${s.rejected?'var(--red)':'var(--muted)'};font-weight:${s.rejected?'800':'400'}" onclick="toggleReject('${c.id}','${it.id}')">${s.rejected?'⚠ 보완해제':'⚠ 보완'}</button>
+      <span class="status-pill" style="color:${pcol};background:${pbg}">${plabel}</span>
+      <i class="item-caret">▾</i>
     </div>
-    <div class="memo-box ${s.memo?'':'hidden'}" id="memo-${it.id}">
-      <textarea rows="1" placeholder="이 서류 관련 메모 (예: 3/12 문자로 요청함)" oninput="onItemMemo('${c.id}','${it.id}')">${esc(s.memo||"")}</textarea>
+    <div class="item-body" ${open?"":'style="display:none"'}>
+      ${it.note?`<div class="item-note">${esc(it.note)}</div>`:""}
+      ${WHERE[it.id]?`<div class="item-note">📍 ${esc(WHERE[it.id])}</div>`:""}
+      ${s.link?`<div class="item-note"><a href="${esc(s.link)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700">🔗 링크 열기</a></div>`:""}
+      ${(s.files&&s.files.length)?`<div class="item-note">${s.files.map((f,fi)=>`📎 <a href="#" onclick="event.preventDefault();event.stopPropagation();openPreview('${c.id}','${it.id}',${fi})" style="color:var(--brand);font-weight:700" title="미리보기">${esc(f.name)}</a> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span> <button onclick="event.stopPropagation();openFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="다운로드">⤓</button> <button onclick="event.stopPropagation();removeFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px" title="삭제">×</button>`).join("<br>")}</div>`:""}
+      ${(function(){ let d=[]; if(s.reqDate&&!s.done) d.push(`요청 ${fmtD(s.reqDate)}${daysAgo(s.reqDate)>=3?` · ${daysAgo(s.reqDate)}일 경과`:''}`); if(s.recvDate&&s.done) d.push(`받음 ${fmtD(s.recvDate)}`); return d.length?`<div class="item-note" style="color:${(!s.done&&daysAgo(s.reqDate)>=7)?'var(--red)':'var(--brand)'}">🕒 ${d.join(" · ")}</div>`:""; })()}
+      <div class="item-controls">
+        <div class="seg">
+          <button class="${s.mode==='self'?'on-self':''}" onclick="setMode('${c.id}','${it.id}','self')">직접발급</button>
+          <button class="${s.mode==='request'?'on-req':''}" onclick="setMode('${c.id}','${it.id}','request')">의뢰인요청</button>
+          <button class="${s.mode==='na'?'on-na':''}" onclick="setMode('${c.id}','${it.id}','na')">해당없음</button>
+        </div>
+        ${showTags?`<div class="tags">
+          <button class="tag ${s.reqTag==='none'?'on t-none':''}" onclick="setTag('${c.id}','${it.id}','none')">미요청</button>
+          <button class="tag ${s.reqTag==='requesting'?'on t-req':''}" onclick="setTag('${c.id}','${it.id}','requesting')">요청중</button>
+          <button class="tag ${s.reqTag==='received'?'on t-recv':''}" onclick="setTag('${c.id}','${it.id}','received')">받음</button>
+        </div>`:""}
+      </div>
+      <div class="item-tools">
+        <button class="memo-toggle" onclick="attachFiles('${c.id}','${it.id}')">📎 파일${fc?` ${fc}`:""}</button>
+        <button class="memo-toggle" onclick="setLink('${c.id}','${it.id}')">${s.link?'🔗 링크':'＋ 링크'}</button>
+        <button class="memo-toggle" onclick="toggleMemo('${it.id}')">${s.memo?'📝 메모':'＋ 메모'}</button>
+        <button class="memo-toggle" style="color:${s.rejected?'var(--red)':'var(--muted)'};font-weight:${s.rejected?'800':'400'}" onclick="toggleReject('${c.id}','${it.id}')">${s.rejected?'⚠ 보완해제':'⚠ 보완'}</button>
+        ${isExtra?`<button class="btn-ghost btn-sm" style="font-size:11px;color:var(--red);padding:2px 6px" onclick="removeExtra('${c.id}','${bid}','${it.id}')">삭제</button>`:""}
+      </div>
+      <div class="memo-box ${s.memo?'':'hidden'}" id="memo-${it.id}">
+        <textarea rows="1" placeholder="이 서류 관련 메모 (예: 3/12 문자로 요청함)" oninput="onItemMemo('${c.id}','${it.id}')">${esc(s.memo||"")}</textarea>
+      </div>
     </div>
   </div>`;
 }
