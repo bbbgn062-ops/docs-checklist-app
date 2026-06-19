@@ -143,8 +143,10 @@
   .bundle{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:14px;box-shadow:var(--shadow);overflow:hidden;}
   .bundle-head{display:flex;align-items:center;gap:10px;padding:14px 16px;cursor:pointer;user-select:none;}
   .bundle-head:hover{background:#fafbff;}
-  .bnum{width:26px;height:26px;border-radius:8px;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:0 0 auto;}
-  .bundle-title{font-size:16px;font-weight:800;flex:1;letter-spacing:-.2px;}
+  .bnum{width:26px;height:26px;border-radius:8px;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex:0 0 auto;}
+  .bundle-title{font-size:16px;font-weight:600;flex:1;letter-spacing:-.2px;}
+  .tbar{height:4px;border-radius:999px;background:#EBE6E0;overflow:hidden;}
+  .tbar > i{display:block;height:100%;background:linear-gradient(90deg,#e14b6f,#9B1B33);border-radius:999px;transition:width .4s;}
   .bundle-prog{font-size:12.5px;color:var(--muted);font-weight:700;}
   .caret{color:var(--muted);transition:transform .15s;}
   .bundle.collapsed .caret{transform:rotate(-90deg);}
@@ -1134,7 +1136,7 @@ function renderDetail(id){
   const filtOpts=[["all","전체 보기"],["missing","미확보만"],["request","요청 서류"],["requesting","요청중"],["received","받음"],["rejected","보완필요"],["self","직접발급"],["haslink","링크있음"],["hasmemo","메모있음"]];
   // ── 컨트롤바: 2단 정리 (1행 검색 / 2행 그룹·보기·필터·선택) ──
   html+=`<div class="ctrlbar" style="margin-bottom:8px">
-    <div class="docsearch" style="flex:1">🔎<input id="docSearchInput" style="flex:1;width:auto;min-width:0" placeholder="의뢰인 서류 검색" value="${esc(docSearch)}" oninput="onDocSearch(this.value)"></div>
+    <div class="docsearch" style="flex:1">🔎<input id="docSearchInput" style="flex:1;width:auto;min-width:0" placeholder="의뢰인 서류 검색" value="${esc(docSearch)}" oninput="onDocSearch(this.value)" oncompositionstart="_docComposing=true" oncompositionend="_docComposing=false;onDocSearch(this.value)"></div>
   </div>
   <div class="ctrlbar">
     <button class="iconbtn ${navOpen?'on':''}" onclick="toggleNav()">☰ 묶음</button>
@@ -1189,12 +1191,16 @@ function renderDetail(id){
       if(visItems.length===0 && naHidden===0) return;
       const sp=siteProgress(c,st);
       const isCol=collapsed[c.id+'site'+st.key];
+      const spct=sp.total?Math.round(sp.done/sp.total*100):0;
       html+=`<div class="bundle ${isCol?'collapsed':''}">
-        <div class="bundle-head" onclick="toggleSiteBundle('${c.id}','${st.key}')">
-          <div class="bnum" style="background:${st.color}">${esc(st.icon)}</div>
-          <div class="bundle-title">${esc(st.name)}</div>
-          <div class="bundle-prog">${sp.done}/${sp.total}</div>
-          <div class="caret">▾</div>
+        <div class="bundle-head" style="flex-direction:column;align-items:stretch;gap:9px" onclick="toggleSiteBundle('${c.id}','${st.key}')">
+          <div style="display:flex;align-items:center;gap:11px">
+            <div class="bnum" style="background:${st.color}">${esc(st.icon)}</div>
+            <div class="bundle-title">${esc(st.name)}</div>
+            <div class="bundle-prog">${sp.done}/${sp.total}</div>
+            <div class="caret">▾</div>
+          </div>
+          <div class="tbar"><i style="width:${spct}%;background:${st.color}"></i></div>
         </div>
         <div class="bundle-body ${viewMode==='list'?'listmode':''}">`;
       if(st.url||true) html+=`<div style="padding:5px 4px 9px;display:flex;gap:7px;flex-wrap:wrap">${st.url?`<a href="${st.url}" target="_blank" rel="noopener" class="qbtn" style="text-decoration:none">🔗 사이트 열기</a>`:""}<button class="qbtn" onclick="copySiteMsg('${c.id}','${st.key}')">📋 이 발급처 서류목록 복사</button></div>`;
@@ -1221,12 +1227,16 @@ function renderDetail(id){
       const bp = bundleProgress(c,b);
       const isCol = collapsed[c.id+b.id];
       if(!anyVis && naHidden===0) return; // 보일 것도, 더보기할 것도 없으면 숨김
+      const bpct=bp.total?Math.round(bp.done/bp.total*100):0;
       html+=`<div class="bundle ${isCol?'collapsed':''}">
-        <div class="bundle-head" onclick="toggleBundle('${c.id}','${b.id}')">
-          <div class="bnum">${bi+1}</div>
-          <div class="bundle-title">${esc(b.title)}</div>
-          <div class="bundle-prog">${bp.done}/${bp.total}</div>
-          <div class="caret">▾</div>
+        <div class="bundle-head" style="flex-direction:column;align-items:stretch;gap:9px" onclick="toggleBundle('${c.id}','${b.id}')">
+          <div style="display:flex;align-items:center;gap:11px">
+            <div class="bnum" style="background:var(--brand-soft);color:var(--brand)">${bi+1}</div>
+            <div class="bundle-title">${esc(b.title)}</div>
+            <div class="bundle-prog">${bp.done}/${bp.total}</div>
+            <div class="caret">▾</div>
+          </div>
+          <div class="tbar"><i style="width:${bpct}%"></i></div>
         </div>
         <div class="bundle-body ${viewMode==='list'?'listmode':''}">`;
       b.groups.forEach(g=>{
@@ -1266,7 +1276,9 @@ function passFilter(s){
 function setFilter(f){ detailFilter=f; renderDetail(currentClientId); }
 function setView(m){ viewMode=m; renderDetail(currentClientId); }
 function toggleShowNa(){ showNa=!showNa; renderDetail(currentClientId); }
-function onDocSearch(v){ docSearch=v; renderDetail(currentClientId); const el=$("#docSearchInput"); if(el){ el.focus(); try{ el.setSelectionRange(el.value.length,el.value.length); }catch(_){} } }
+let _docSearchTimer=null, _docComposing=false;
+function onDocSearch(v){ docSearch=v; if(_docComposing) return; clearTimeout(_docSearchTimer); _docSearchTimer=setTimeout(_doDocSearchRender,200); }
+function _doDocSearchRender(){ if(_docComposing){ clearTimeout(_docSearchTimer); _docSearchTimer=setTimeout(_doDocSearchRender,200); return; } renderDetail(currentClientId); const el=$("#docSearchInput"); if(el){ el.focus(); const L=el.value.length; try{ el.setSelectionRange(L,L); }catch(_){} } }
 function toggleNav(){ navOpen=!navOpen; renderDetail(currentClientId); }
 function focusBundleSet(bid){ focusBundle=bid; if(window.innerWidth<=760) navOpen=false; renderDetail(currentClientId); window.scrollTo({top:0,behavior:"smooth"}); }
 function toggleBundle(cid,bid){ collapsed[cid+bid]=!collapsed[cid+bid]; renderDetail(cid); }
