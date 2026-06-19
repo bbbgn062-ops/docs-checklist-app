@@ -1132,20 +1132,23 @@ function renderDetail(id){
 
   // 컨트롤 바 (묶음탭·보기·필터·선택)
   const filtOpts=[["all","전체 보기"],["missing","미확보만"],["request","요청 서류"],["requesting","요청중"],["received","받음"],["rejected","보완필요"],["self","직접발급"],["haslink","링크있음"],["hasmemo","메모있음"]];
-  html+=`<div class="ctrlbar">
+  // ── 컨트롤바: 2단 정리 (1행 검색 / 2행 그룹·보기·필터·선택) ──
+  html+=`<div class="ctrlbar" style="margin-bottom:8px">
+    <div class="docsearch" style="flex:1">🔎<input id="docSearchInput" style="flex:1;width:auto;min-width:0" placeholder="의뢰인 서류 검색" value="${esc(docSearch)}" oninput="onDocSearch(this.value)"></div>
+  </div>
+  <div class="ctrlbar">
     <button class="iconbtn ${navOpen?'on':''}" onclick="toggleNav()">☰ 묶음</button>
-    <div class="segview">
-      <button class="${viewMode==='card'?'on':''}" onclick="setView('card')">🗂 카드</button>
-      <button class="${viewMode==='list'?'on':''}" onclick="setView('list')">☰ 목록</button>
-    </div>
     <div class="segview">
       <button class="${groupMode==='bundle'?'on':''}" onclick="setGroupMode('bundle')">📂 묶음별</button>
       <button class="${groupMode==='site'?'on':''}" onclick="setGroupMode('site')">📍 발급처별</button>
     </div>
+    <div class="segview">
+      <button class="${viewMode==='card'?'on':''}" onclick="setView('card')">🗂 카드</button>
+      <button class="${viewMode==='list'?'on':''}" onclick="setView('list')">☰ 목록</button>
+    </div>
     <select class="ctrl-sel" onchange="setFilter(this.value)">
       ${filtOpts.map(f=>`<option value="${f[0]}" ${detailFilter===f[0]?'selected':''}>${f[1]}</option>`).join("")}
     </select>
-    <div class="docsearch">🔎<input id="docSearchInput" placeholder="서류 검색" value="${esc(docSearch)}" oninput="onDocSearch(this.value)"></div>
     <div class="grow"></div>
     <button class="iconbtn ${selMode?'on':''}" onclick="toggleSelMode('${c.id}')">☑ 선택</button>
   </div>`;
