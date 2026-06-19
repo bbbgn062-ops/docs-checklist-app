@@ -1501,9 +1501,9 @@ function renderDownloadModal(){
       ${_dlCtx.mode==='pdf'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· PDF·이미지(jpg/png)는 묶음 순서대로 한 PDF로 합쳐집니다.<br>· 엑셀·한글 등 합칠 수 없는 파일은 원본 그대로 따로 받아집니다.</div>`:""}</div>
     <div style="margin-bottom:8px"><button class="btn btn-sm" onclick="dlSelectAll(true)">전체선택</button> <button class="btn btn-sm" onclick="dlSelectAll(false)">전체해제</button></div>
     <div style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 10px">${body}</div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal()">닫기</button>
-      <button class="btn btn-primary" onclick="doDownload()">다운로드</button>
+    <div class="modal-actions" style="flex-direction:column;gap:8px;margin-top:16px">
+      <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14.5px" onclick="doDownload()">다운로드</button>
+      <button class="btn" style="width:100%;padding:12px" onclick="closeModal()">닫기</button>
     </div>`,540);
 }
 function dlToggle(k){ if(_dlCtx.sel.has(k)) _dlCtx.sel.delete(k); else _dlCtx.sel.add(k); const el=$("#dlCnt"); if(el) el.textContent=_dlCtx.sel.size; }
@@ -1576,7 +1576,7 @@ function openMore(cid){ const c=findClient(cid);
 }
 function openCert(cid){ const c=ensureItems(findClient(cid)); if(!c.cert) c.cert={files:[],pw:""};
   const files=(c.cert.files||[]).map((f,i)=>`<div class="item-note" style="display:flex;align-items:center;gap:6px">🔐 <b>${esc(f.name)}</b> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span> ${githubReady()?`<button class="memo-toggle" onclick="openCertFile('${c.id}',${i})">열기</button>`:""} <button class="memo-toggle" style="color:var(--red)" onclick="removeCertFile('${c.id}',${i})">삭제</button></div>`).join("");
-  modal(`<h3>🔐 공동인증서 관리</h3>
+  modal(`<div style="text-align:center;margin-bottom:10px"><div style="font-size:30px;line-height:1">🔐</div><h3 style="margin:6px 0 0;padding-right:0">공동인증서 관리</h3></div>
     <div class="note-warn">⚠️ 공동인증서와 비밀번호는 본인 인증이 가능한 <b>매우 민감한 정보</b>입니다. 비밀번호는 비공개 저장소에 함께 저장되며(설정에 따름), 외부 유출이 없도록 토큰·저장소를 안전하게 관리하세요.</div>
     <div class="field" style="margin-top:12px"><label>인증서 파일 (공동인증서 폴더를 zip으로 묶어 올리길 권장)</label>
       <button class="btn btn-sm" onclick="attachCertFiles('${c.id}')">📎 인증서 파일 첨부</button>
@@ -1587,7 +1587,7 @@ function openCert(cid){ const c=ensureItems(findClient(cid)); if(!c.cert) c.cert
         <input id="cert_pw" type="password" value="${esc(c.cert.pw||'')}" placeholder="비밀번호" oninput="onCertPw('${c.id}')" style="flex:1"/>
         <button class="btn btn-sm" onclick="(function(){const e=document.getElementById('cert_pw');e.type=e.type==='password'?'text':'password';})()">보기</button>
       </div></div>
-    <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal();renderDetail('${c.id}')">완료</button></div>`,460);
+    <div class="modal-actions" style="margin-top:16px"><button class="btn btn-primary" style="width:100%;padding:12px;font-size:14.5px" onclick="closeModal();renderDetail('${c.id}')">완료</button></div>`,460);
 }
 function onCertPw(cid){ const c=findClient(cid); if(!c.cert)c.cert={files:[],pw:""}; c.cert.pw=event.target.value; state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
 function attachCertFiles(cid){
@@ -1952,7 +1952,7 @@ function restoreSnapshot(i){
 /* ---------- 8. 설정 (깃헙) ---------- */
 function openSettings(){
   modal(`
-    <h3>⚙️ 설정 · 깃헙 동기화</h3>
+    <div style="position:sticky;top:0;background:#fff;margin:-22px -22px 12px;padding:18px 22px 12px;border-bottom:1px solid var(--line);z-index:1"><h3 style="margin:0">⚙️ 설정 · 깃헙 동기화</h3></div>
     <p class="hint">새 기기·새 직원은 아래 <b>두 가지만</b> 입력하고 [연결 / 저장]을 누르면 끝입니다.</p>
     <div class="field"><label>① 이 기기/사용자 이름 (로그에 표시)</label>
       <input id="s_device" value="${esc(deviceName)}" placeholder="예: 혜림-사무실PC"/></div>
@@ -1975,7 +1975,7 @@ function openSettings(){
       <div class="field"><label>저장소 이름 (repo) · 자동 입력됨</label><input id="s_repo" value="${esc(cfg.repo||DEFAULT_REPO)}"/></div>
       <div class="field"><label>브랜치 · 자동 입력됨</label><input id="s_branch" value="${esc(cfg.branch||DEFAULT_BRANCH)}"/></div>
     </div>
-    <div class="modal-actions">
+    <div class="modal-actions" style="position:sticky;bottom:0;background:#fff;margin:18px -22px -22px;padding:13px 22px;border-top:1px solid var(--line)">
       <button class="btn" onclick="closeModal()">닫기</button>
       <button class="btn" onclick="disconnectGithub()">연결 해제</button>
       <button class="btn btn-primary" onclick="connectGithub()">연결 / 저장</button>
