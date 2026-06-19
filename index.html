@@ -204,11 +204,13 @@
 
   /* Modal */
   .overlay{position:fixed;inset:0;background:rgba(20,24,45,.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;}
-  .modal{background:#fff;border-radius:16px;padding:22px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);max-height:90vh;overflow:auto;}
-  .modal h3{margin:0 0 4px;font-size:19px;}
+  .modal{position:relative;background:#fff;border-radius:18px;padding:22px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);max-height:90vh;overflow:auto;}
+  .modal-x{position:absolute;top:13px;right:13px;width:30px;height:30px;border:none;background:none;color:var(--muted);font-size:16px;cursor:pointer;border-radius:8px;line-height:1;z-index:2;}
+  .modal-x:hover{background:var(--gray-soft);}
+  .modal h3{margin:0 0 4px;font-size:18px;font-weight:600;padding-right:30px;}
   .modal p.hint{color:var(--muted);font-size:13px;margin:0 0 16px;}
   .field{margin-bottom:13px;}
-  .field label{display:block;font-size:12.5px;font-weight:800;color:var(--muted);margin-bottom:5px;}
+  .field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:5px;}
   .field input,.field select,.field textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none;}
   .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(155,27,51,.15);}
   .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;}
@@ -271,7 +273,9 @@
     .seg, .tags{flex:1 1 100%;}
     .seg{justify-content:space-between;}
     .seg button{flex:1;}
-    .modal{border-radius:18px 18px 0 0;align-self:flex-end;max-height:94vh;}
+    .modal{border-radius:20px 20px 0 0;align-self:flex-end;max-height:94vh;padding-top:14px;}
+    .modal::before{content:"";display:block;width:38px;height:4px;border-radius:999px;background:#D9D3CA;margin:0 auto 12px;}
+    .modal-x{display:none;}
     .overlay{align-items:flex-end;padding:0;}
     .tl-date{flex-basis:70px;}
     .detail-grid{grid-template-columns:1fr;}
@@ -2043,7 +2047,7 @@ function exportLog(){
 }
 
 /* ---------- 10. 모달 ---------- */
-function modal(html,maxw){ $("#modalRoot").innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal" style="${maxw?'max-width:'+maxw+'px':''}">${html}</div></div>`; }
+function modal(html,maxw){ $("#modalRoot").innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal" style="${maxw?'max-width:'+maxw+'px':''}"><button class="modal-x" onclick="closeModal()" aria-label="닫기">✕</button>${html}</div></div>`; }
 function closeModal(){ $("#modalRoot").innerHTML=""; }
 
 /* ---------- 11. 시작 ---------- */
