@@ -595,6 +595,8 @@ let groupMode = "bundle";       // 보기 기준: bundle(서류묶음) | site(�
 let focusSite = "";             // 발급처 탭에서 고른 사이트(빈값=전체)
 let expandedItems = new Set();  // 상세화면에서 펼쳐진(액션 노출) 서류 항목 id
 function toggleItemExpand(id){ if(expandedItems.has(id)) expandedItems.delete(id); else expandedItems.add(id); renderDetail(currentClientId); }
+let detailPanel = "";           // 상단 카드에서 펼친 패널: '' | stage | memo | timeline
+function toggleDetailPanel(p){ detailPanel=(detailPanel===p)?"":p; renderDetail(currentClientId); }
 function setGroupMode(m){ groupMode=m; focusSite=""; focusBundle=""; renderDetail(currentClientId); }
 function focusSiteSet(k){ focusSite=k; if(window.innerWidth<=760) navOpen=false; renderDetail(currentClientId); window.scrollTo({top:0,behavior:"smooth"}); }
 function toggleSiteBundle(cid,key){ collapsed[cid+'site'+key]=!collapsed[cid+'site'+key]; renderDetail(cid); }
@@ -1067,71 +1069,66 @@ function renderDashboard(){
   }).join("");
 }
 
-function openDetail(id){ currentClientId=id; expandedItems.clear(); renderDetail(id); window.scrollTo(0,0); }
+function openDetail(id){ currentClientId=id; expandedItems.clear(); detailPanel=""; renderDetail(id); window.scrollTo(0,0); }
 function renderDetail(id){
   const c=ensureItems(findClient(id)); if(!c) return showDashboard();
   $("#view-dashboard").classList.add("hidden");
   const v=$("#view-detail"); v.classList.remove("hidden");
   const p=progress(c);
   const hasCert=(c.cert&&c.cert.files&&c.cert.files.length>0);
-  let html=`<button class="back" onclick="showDashboard()">← 의뢰인 목록</button>
-    <div class="detail-head">
-      <h2>${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</h2>
-      <span class="badge ${c.caseType?.includes('파산')?'파산':(c.caseType?.includes('회생')?'회생':'기타')}">${esc(c.caseType||"개인회생")}</span>
-      <span class="badge" style="background:${hasCert?'var(--green-soft)':'var(--gray-soft)'};color:${hasCert?'var(--green)':'var(--muted)'};cursor:pointer" onclick="openCert('${c.id}')">${hasCert?'🔐 공동인증서':'🔓 인증서 없음'}</span>
-      <div class="grow"></div>
-      <button class="btn btn-sm btn-primary" onclick="openRequestMsg('${c.id}')">📨 요청 메시지</button>
-      <button class="btn btn-sm" onclick="openReminder('${c.id}')">⏰ 리마인더</button>
-      <button class="btn btn-sm" onclick="openDownload('${c.id}')">📥 다운로드</button>
-      <button class="btn btn-sm" onclick="openMore('${c.id}')">⋯ 더보기</button>
-    </div>
-    <div class="meta" style="margin-bottom:8px">${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?("사건번호 "+esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}수정 ${fmt(c.updatedAt)}</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-      ${firmChip(c)}
-      ${(c.incomeType&&c.incomeType!=="미정")?`<span class="tagchip">💼 ${esc(c.incomeType)}</span>`:""}
-      ${(c.housing&&c.housing!=="미정")?`<span class="tagchip">🏠 ${esc(c.housing)}</span>`:""}
-      ${(c.assets||[]).map(a=>`<span class="tagchip">📦 ${esc(a)}</span>`).join("")}
-      <button class="tagchip" style="border:1px dashed var(--brand);background:#FBEEF0;color:var(--brand);cursor:pointer;font-weight:800" onclick="openClientModal('${c.id}')">✏ 사건유형·소득·재산 수정</button>
-    </div>`;
-
-  // 사건 단계 스텝퍼
-  html+=`<div class="stage-bar">`+STAGES.map(s=>{const on=clientStage(c)===s; return `<button class="stage-step ${on?'on':''}" style="${on?`background:${STAGE_COLOR[s]};border-color:${STAGE_COLOR[s]}`:''}" onclick="setStage('${c.id}','${s}')">${s}</button>`;}).join("")+`</div>`;
-
-  // 지금 할 일 CTA (한눈에 다음 행동 안내)
-  if(p.rejected>0) html+=`<div class="cta"><span style="font-size:20px">⚠️</span><div style="flex:1"><b>보완 필요한 서류 ${p.rejected}건</b><div style="font-size:12px;color:var(--muted)">미흡한 서류를 확인하고 다시 요청하세요</div></div><button class="btn btn-sm btn-primary" onclick="setFilter('rejected')">보완 서류 보기</button></div>`;
-  else if(p.notReq>0) html+=`<div class="cta"><span style="font-size:20px">📨</span><div style="flex:1"><b>아직 요청 안 한 서류 ${p.notReq}건</b><div style="font-size:12px;color:var(--muted)">의뢰인에게 요청 메시지를 보내세요</div></div><button class="btn btn-sm btn-primary" onclick="openRequestMsg('${c.id}')">요청 메시지</button></div>`;
-  else if(p.requesting>0) html+=`<div class="cta"><span style="font-size:20px">⏰</span><div style="flex:1"><b>회신 대기 중 ${p.requesting}건</b><div style="font-size:12px;color:var(--muted)">아직 안 온 서류를 리마인더로 챙기세요</div></div><button class="btn btn-sm btn-primary" onclick="openReminder('${c.id}')">리마인더</button></div>`;
-  else if(p.total>0 && p.missing===0 && clientStage(c)==="서류수집") html+=`<div class="cta"><span style="font-size:20px">✅</span><div style="flex:1"><b>필요한 서류를 모두 받았어요</b><div style="font-size:12px;color:var(--muted)">다음 단계로 넘길 수 있어요</div></div><button class="btn btn-sm btn-primary" onclick="setStage('${c.id}','검토')">단계 '검토'로</button></div>`;
-
-  // 종합 박스
   const dd=dDay(c);
-  html+=`<div class="overall">
-      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-        <div><div class="pct" style="color:${p.rejected>0?'var(--red)':'var(--green)'}">${p.pct}%</div><div style="font-size:12px;color:var(--muted);font-weight:700">${p.done}/${p.total} 확보</div></div>
-        <div style="flex:1;min-width:160px"><div class="bar" style="height:12px"><i style="width:${p.pct}%;background:${p.rejected>0?'linear-gradient(90deg,#f87171,#dc2626)':(p.pct===100?'#059669':'linear-gradient(90deg,#e14b6f,#9B1B33)')}"></i></div>
-          <div class="card-stats">
-            ${p.rejected?`<span class="chip miss">⚠ 보완 ${p.rejected}</span>`:""}
-            ${p.requesting?`<span class="chip wait">요청중 ${p.requesting}</span>`:""}
-            ${p.notReq?`<span class="chip req">미요청 ${p.notReq}</span>`:""}
-            ${p.missing===0&&p.rejected===0?`<span class="chip ok">전부 확보 ✓</span>`:""}
-          </div></div>
-        ${dd!==null?`<div style="text-align:center"><div style="font-size:20px;font-weight:800;color:${dd<0?'var(--red)':dd<=7?'var(--amber)':'var(--ink)'}">${dd<0?`+${-dd}일`:dd===0?"D-DAY":"D-"+dd}</div><div style="font-size:11.5px;color:var(--muted);font-weight:700">${esc(c.deadlineLabel||"마감")} ${c.deadline?fmtD(c.deadline):""}</div></div>`:""}
+  const stg=clientStage(c); const stgColor=STAGE_COLOR[stg];
+  let topChips="";
+  if(p.rejected) topChips+=`<span class="chip miss">⚠ 보완 ${p.rejected}</span>`;
+  if(p.requesting) topChips+=`<span class="chip wait">요청중 ${p.requesting}</span>`;
+  if(p.notReq) topChips+=`<span class="chip req">미요청 ${p.notReq}</span>`;
+  if(p.missing===0&&p.rejected===0) topChips+=`<span class="chip ok">전부 확보 ✓</span>`;
+  const banner=(bg,col,icon,txt,btn,act)=>`<div style="display:flex;align-items:center;gap:9px;margin-top:13px;padding:11px 14px;background:${bg};border-radius:12px"><span style="font-size:16px">${icon}</span><span style="font-size:13.5px;color:${col};flex:1">${txt}</span><button onclick="${act}" style="font-size:13px;font-weight:800;color:${col};background:none;border:none;cursor:pointer;white-space:nowrap">${btn} →</button></div>`;
+  let cta="";
+  if(p.rejected>0) cta=banner('var(--red-soft)','#a11','⚠️',`보완 필요한 서류 <b>${p.rejected}건</b>`,'보완 보기',`setFilter('rejected')`);
+  else if(p.notReq>0) cta=banner('var(--red-soft)','#a11','📨',`아직 요청 안 한 서류 <b>${p.notReq}건</b>`,'요청 메시지',`openRequestMsg('${c.id}')`);
+  else if(p.requesting>0) cta=banner('var(--amber-soft)','#8a5a00','⏰',`회신 대기 중 <b>${p.requesting}건</b>`,'리마인더',`openReminder('${c.id}')`);
+  else if(p.total>0 && p.missing===0 && stg==="서류수집") cta=banner('var(--green-soft)','#1f7a4d','✅','필요한 서류를 모두 받았어요','단계 검토로',`setStage('${c.id}','검토')`);
+  const fbtn=(label,act)=>`<button onclick="${act}" style="font-size:12.5px;color:var(--muted);font-weight:600;background:none;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px">${label}</button>`;
+
+  let html=`<button class="back" onclick="showDashboard()">← 의뢰인 목록</button>
+    <div class="overall" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h2 style="margin:0;font-size:21px;font-weight:600;letter-spacing:-.4px">${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</h2>
+        <span class="badge ${c.caseType?.includes('파산')?'파산':(c.caseType?.includes('회생')?'회생':'기타')}">${esc(c.caseType||"개인회생")}</span>
+        ${firmChip(c)}
+        <span class="badge" style="background:${hasCert?'var(--green-soft)':'var(--gray-soft)'};color:${hasCert?'var(--green)':'var(--muted)'};cursor:pointer" onclick="openCert('${c.id}')">${hasCert?'🔐 인증서':'🔓 인증서'}</span>
+        <span style="flex:1"></span>
+        <button class="badge" style="background:${stgColor}1a;color:${stgColor};border:none;cursor:pointer;font-weight:800;font-size:12.5px" onclick="toggleDetailPanel('stage')">${stg} ▾</button>
       </div>
-      <div class="field" style="margin:12px 0 0">
-        <label>📝 의뢰인 메모 (상황·특이사항)</label>
-        <textarea id="clientMemo" rows="2" placeholder="예: 배우자 명의 차량 있음 / 전세보증금 확인 필요 / 사업자 폐업"
-          oninput="onClientMemo('${c.id}')">${esc(c.memo||"")}</textarea>
+      <div class="meta" style="margin-top:7px">${(c.incomeType&&c.incomeType!=="미정")?esc(c.incomeType)+" · ":""}${(c.housing&&c.housing!=="미정")?esc(c.housing)+" · ":""}${(c.assets||[]).map(esc).join(" · ")}${(c.assets||[]).length?" · ":""}${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?(esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}수정 ${fmt(c.updatedAt)} <button onclick="openClientModal('${c.id}')" style="margin-left:6px;font-size:11px;color:var(--brand);background:#FBEEF0;border:1px dashed var(--brand);border-radius:999px;padding:2px 9px;cursor:pointer;font-weight:700">✏ 수정</button></div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:13px">
+        <div class="bar" style="flex:1;height:10px"><i style="width:${p.pct}%;background:${p.rejected>0?'linear-gradient(90deg,#f87171,#dc2626)':(p.pct===100?'#059669':'linear-gradient(90deg,#e14b6f,#9B1B33)')}"></i></div>
+        <span style="font-size:13px;color:var(--muted);white-space:nowrap">${p.done}/${p.total} · <b style="color:${p.pct===100?'var(--green)':'var(--ink)'};font-weight:700">${p.pct}%</b></span>
+        ${dd!==null?`<span class="chip" style="background:${dd<0?'var(--red-soft)':'var(--amber-soft)'};color:${dd<0?'var(--red)':'var(--amber)'};font-weight:800;white-space:nowrap">${dd<0?`마감 ${-dd}일`:dd===0?"D-DAY":"D-"+dd}</span>`:""}
+      </div>
+      ${topChips?`<div class="card-stats" style="margin-top:9px">${topChips}</div>`:""}
+      ${cta}
+      <div style="display:flex;gap:16px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line);flex-wrap:wrap;align-items:center">
+        ${fbtn('📨 요청',`openRequestMsg('${c.id}')`)}
+        ${fbtn(`📝 메모${(c.memo&&c.memo.trim())?' ●':''}`,`toggleDetailPanel('memo')`)}
+        ${fbtn(`🗓 기록${(c.timeline&&c.timeline.length)?' '+c.timeline.length:''}`,`toggleDetailPanel('timeline')`)}
+        ${fbtn('📥 다운로드',`openDownload('${c.id}')`)}
+        <span style="flex:1"></span>
+        ${fbtn('⋯ 더보기',`openMore('${c.id}')`)}
       </div>
     </div>`;
 
-  // 상담/연락 기록 타임라인
-  html+=`<div class="overall" style="margin-top:-6px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <label style="font-size:12.5px;font-weight:800;color:var(--muted)">🗓️ 상담·연락 기록</label>
-        <button class="btn btn-sm" onclick="addTimeline('${c.id}')">+ 기록 추가</button>
-      </div>
-      ${(c.timeline&&c.timeline.length)?`<div class="tl">`+c.timeline.map((t,i)=>`<div class="tl-row"><span class="tl-date">${fmt(t.ts)}</span><span class="tl-who">${esc(t.by||'')}</span><span class="tl-txt">${esc(t.text)}</span><button class="tl-del" onclick="delTimeline('${c.id}',${i})">×</button></div>`).join("")+`</div>`:`<div style="font-size:12.5px;color:var(--muted)">아직 기록이 없습니다. "+기록 추가"로 상담·통화 내용을 남기세요.</div>`}
-    </div>`;
+  // 상단 카드 펼침 패널: 단계 / 메모 / 상담기록
+  if(detailPanel==='stage'){
+    html+=`<div class="overall" style="margin-top:-6px;margin-bottom:14px"><div style="font-size:12.5px;font-weight:800;color:var(--muted);margin-bottom:8px">사건 단계 선택</div><div class="stage-bar" style="margin-bottom:0">`+STAGES.map(s=>{const on=clientStage(c)===s; return `<button class="stage-step ${on?'on':''}" style="${on?`background:${STAGE_COLOR[s]};border-color:${STAGE_COLOR[s]}`:''}" onclick="setStage('${c.id}','${s}')">${s}</button>`;}).join("")+`</div></div>`;
+  }
+  if(detailPanel==='memo'){
+    html+=`<div class="overall" style="margin-top:-6px;margin-bottom:14px"><div class="field" style="margin:0"><label>📝 의뢰인 메모 (상황·특이사항)</label><textarea id="clientMemo" rows="2" placeholder="예: 배우자 명의 차량 있음 / 전세보증금 확인 필요 / 사업자 폐업" oninput="onClientMemo('${c.id}')">${esc(c.memo||"")}</textarea></div></div>`;
+  }
+  if(detailPanel==='timeline'){
+    html+=`<div class="overall" style="margin-top:-6px;margin-bottom:14px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><label style="font-size:12.5px;font-weight:800;color:var(--muted)">🗓️ 상담·연락 기록</label><button class="btn btn-sm" onclick="addTimeline('${c.id}')">+ 기록 추가</button></div>${(c.timeline&&c.timeline.length)?`<div class="tl">`+c.timeline.map((t,i)=>`<div class="tl-row"><span class="tl-date">${fmt(t.ts)}</span><span class="tl-who">${esc(t.by||'')}</span><span class="tl-txt">${esc(t.text)}</span><button class="tl-del" onclick="delTimeline('${c.id}',${i})">×</button></div>`).join("")+`</div>`:`<div style="font-size:12.5px;color:var(--muted)">아직 기록이 없습니다. "+기록 추가"로 상담·통화 내용을 남기세요.</div>`}</div>`;
+  }
 
   // 컨트롤 바 (묶음탭·보기·필터·선택)
   const filtOpts=[["all","전체 보기"],["missing","미확보만"],["request","요청 서류"],["requesting","요청중"],["received","받음"],["rejected","보완필요"],["self","직접발급"],["haslink","링크있음"],["hasmemo","메모있음"]];
