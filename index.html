@@ -1084,43 +1084,36 @@ function renderDetail(id){
   const hasCert=(c.cert&&c.cert.files&&c.cert.files.length>0);
   const dd=dDay(c);
   const stg=clientStage(c); const stgColor=STAGE_COLOR[stg];
-  let topChips="";
-  if(p.rejected) topChips+=`<span class="chip miss">⚠ 보완 ${p.rejected}</span>`;
-  if(p.requesting) topChips+=`<span class="chip wait">요청중 ${p.requesting}</span>`;
-  if(p.notReq) topChips+=`<span class="chip req">미요청 ${p.notReq}</span>`;
-  if(p.missing===0&&p.rejected===0) topChips+=`<span class="chip ok">전부 확보 ✓</span>`;
-  const banner=(bg,col,icon,txt,btn,act)=>`<div style="display:flex;align-items:center;gap:9px;margin-top:13px;padding:11px 14px;background:${bg};border-radius:12px"><span style="font-size:16px">${icon}</span><span style="font-size:13.5px;color:${col};flex:1">${txt}</span><button onclick="${act}" style="font-size:13px;font-weight:800;color:${col};background:none;border:none;cursor:pointer;white-space:nowrap">${btn} →</button></div>`;
-  let cta="";
-  if(p.rejected>0) cta=banner('var(--red-soft)','#a11','⚠️',`보완 필요한 서류 <b>${p.rejected}건</b>`,'보완 보기',`setFilter('rejected')`);
-  else if(p.notReq>0) cta=banner('var(--red-soft)','#a11','📨',`아직 요청 안 한 서류 <b>${p.notReq}건</b>`,'요청 메시지',`openRequestMsg('${c.id}')`);
-  else if(p.requesting>0) cta=banner('var(--amber-soft)','#8a5a00','⏰',`회신 대기 중 <b>${p.requesting}건</b>`,'리마인더',`openReminder('${c.id}')`);
-  else if(p.total>0 && p.missing===0 && stg==="서류수집") cta=banner('var(--green-soft)','#1f7a4d','✅','필요한 서류를 모두 받았어요','단계 검토로',`setStage('${c.id}','검토')`);
   const fbtn=(label,act)=>`<button onclick="${act}" style="font-size:12.5px;color:var(--muted);font-weight:600;background:none;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px">${label}</button>`;
+  const bigBtn=(bg,label,act)=>`<button onclick="${act}" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;background:${bg};color:#fff;font-size:14px;font-weight:600;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px">${label}</button>`;
+  let primaryBtn="";
+  if(p.rejected>0) primaryBtn=bigBtn('var(--red)',`⚠ 보완 서류 ${p.rejected}건 보기`,`setFilter('rejected')`);
+  else if(p.notReq>0) primaryBtn=bigBtn('var(--brand)',`📨 요청 메시지 보내기 · ${p.notReq}건`,`openRequestMsg('${c.id}')`);
+  else if(p.requesting>0) primaryBtn=bigBtn('var(--amber)',`⏰ 리마인더 보내기 · ${p.requesting}건`,`openReminder('${c.id}')`);
+  else if(p.total>0 && p.missing===0 && stg==="서류수집") primaryBtn=bigBtn('var(--green)','✅ 모두 받음 · 단계 검토로',`setStage('${c.id}','검토')`);
 
   let html=`<button class="back" onclick="showDashboard()">← 의뢰인 목록</button>
     <div class="overall" style="margin-bottom:14px">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
         <h2 style="margin:0;font-size:21px;font-weight:600;letter-spacing:-.4px">${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</h2>
         <span class="badge ${c.caseType?.includes('파산')?'파산':(c.caseType?.includes('회생')?'회생':'기타')}">${esc(c.caseType||"개인회생")}</span>
         ${firmChip(c)}
-        <span class="badge" style="background:${hasCert?'var(--green-soft)':'var(--gray-soft)'};color:${hasCert?'var(--green)':'var(--muted)'};cursor:pointer" onclick="openCert('${c.id}')">${hasCert?'🔐 인증서':'🔓 인증서'}</span>
+        <span class="badge" style="background:${hasCert?'var(--green-soft)':'var(--amber-soft)'};color:${hasCert?'var(--green)':'var(--amber)'};cursor:pointer;font-weight:700" onclick="openCert('${c.id}')">${hasCert?'🔐 인증서 있음':'🔓 인증서 없음'}</span>
         <span style="flex:1"></span>
-        <button class="badge" style="background:${stgColor}1a;color:${stgColor};border:none;cursor:pointer;font-weight:800;font-size:12.5px" onclick="toggleDetailPanel('stage')">${stg} ▾</button>
+        <button class="badge" style="background:${stgColor}1a;color:${stgColor};border:none;cursor:pointer;font-weight:600;font-size:12.5px" onclick="toggleDetailPanel('stage')">${stg} ▾</button>
       </div>
-      <div class="meta" style="margin-top:7px">${(c.incomeType&&c.incomeType!=="미정")?esc(c.incomeType)+" · ":""}${(c.housing&&c.housing!=="미정")?esc(c.housing)+" · ":""}${(c.assets||[]).map(esc).join(" · ")}${(c.assets||[]).length?" · ":""}${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?(esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}수정 ${fmt(c.updatedAt)} <button onclick="openClientModal('${c.id}')" style="margin-left:6px;font-size:11px;color:var(--brand);background:#FBEEF0;border:1px dashed var(--brand);border-radius:999px;padding:2px 9px;cursor:pointer;font-weight:700">✏ 수정</button></div>
-      <div style="display:flex;align-items:center;gap:12px;margin-top:13px">
-        <div class="bar" style="flex:1;height:10px"><i style="width:${p.pct}%;background:${p.rejected>0?'linear-gradient(90deg,#f87171,#dc2626)':(p.pct===100?'#059669':'linear-gradient(90deg,#e14b6f,#9B1B33)')}"></i></div>
-        <span style="font-size:13px;color:var(--muted);white-space:nowrap">${p.done}/${p.total} · <b style="color:${p.pct===100?'var(--green)':'var(--ink)'};font-weight:700">${p.pct}%</b></span>
-        ${dd!==null?`<span class="chip" style="background:${dd<0?'var(--red-soft)':'var(--amber-soft)'};color:${dd<0?'var(--red)':'var(--amber)'};font-weight:800;white-space:nowrap">${dd<0?`마감 ${-dd}일`:dd===0?"D-DAY":"D-"+dd}</span>`:""}
+      <div class="meta" style="margin-top:7px">${(c.incomeType&&c.incomeType!=="미정")?esc(c.incomeType)+" · ":""}${(c.housing&&c.housing!=="미정")?esc(c.housing)+" · ":""}${(c.assets||[]).map(esc).join(" · ")}${(c.assets||[]).length?" · ":""}${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?(esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}수정 ${fmt(c.updatedAt)}</div>
+      <div style="display:flex;align-items:center;gap:11px;margin-top:14px">
+        <div class="bar" style="flex:1;height:6px"><i style="width:${p.pct}%;background:${p.rejected>0?'linear-gradient(90deg,#f87171,#dc2626)':(p.pct===100?'#059669':'linear-gradient(90deg,#e14b6f,#9B1B33)')}"></i></div>
+        <span style="font-size:13px;color:var(--muted);white-space:nowrap">${p.done}/${p.total} · <b style="color:${p.pct===100?'var(--green)':'var(--ink)'};font-weight:600">${p.pct}%</b></span>
+        ${dd!==null?`<span class="chip" style="background:${dd<0?'var(--red-soft)':'var(--amber-soft)'};color:${dd<0?'var(--red)':'var(--amber)'};font-weight:600;white-space:nowrap">${dd<0?`마감 ${-dd}일`:dd===0?"D-DAY":"D-"+dd}</span>`:""}
       </div>
-      ${topChips?`<div class="card-stats" style="margin-top:9px">${topChips}</div>`:""}
-      ${cta}
-      <div style="display:flex;gap:16px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line);flex-wrap:wrap;align-items:center">
-        ${fbtn('📨 요청',`openRequestMsg('${c.id}')`)}
+      ${primaryBtn}
+      <div style="display:flex;gap:18px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line);flex-wrap:wrap;align-items:center;justify-content:center">
         ${fbtn(`📝 메모${(c.memo&&c.memo.trim())?' ●':''}`,`toggleDetailPanel('memo')`)}
         ${fbtn(`🗓 기록${(c.timeline&&c.timeline.length)?' '+c.timeline.length:''}`,`toggleDetailPanel('timeline')`)}
         ${fbtn('📥 다운로드',`openDownload('${c.id}')`)}
-        <span style="flex:1"></span>
+        ${fbtn('✏ 수정',`openClientModal('${c.id}')`)}
         ${fbtn('⋯ 더보기',`openMore('${c.id}')`)}
       </div>
     </div>`;
@@ -1564,6 +1557,8 @@ function removeExtra(cid,bid,id){
 function openMore(cid){ const c=findClient(cid);
   modal(`<h3>⋯ 더보기</h3>
     <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn btn-primary" onclick="closeModal();openRequestMsg('${c.id}')">📨 요청 메시지</button>
+      <button class="btn" onclick="closeModal();openReminder('${c.id}')">⏰ 리마인더</button>
       <button class="btn" onclick="closeModal();copySummary('${c.id}')">📋 진행상황 복사</button>
       <button class="btn" onclick="closeModal();printChecklist('${c.id}')">🖨️ 인쇄 / PDF</button>
       <button class="btn" onclick="closeModal();openCert('${c.id}')">🔐 공동인증서 관리</button>
