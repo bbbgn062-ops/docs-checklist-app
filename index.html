@@ -382,45 +382,46 @@
 const TEMPLATE = [
   { id:"b1", title:"채무자 기본서류", groups:[
     { id:"b1g0", title:null, items:[
+      { id:"b1-4", name:"주민등록등본", note:"세대원 확인", mode:"self" },
+      { id:"b1-3", name:"주민등록초본", note:"과거 주소 전부 포함", mode:"self" },
       { id:"b1-1", name:"가족관계증명서(상세)", note:"부모·배우자·자녀 확인", mode:"self" },
       { id:"b1-2", name:"혼인관계증명서(상세)", note:"결혼·이혼일·배우자 확인", mode:"self" },
-      { id:"b1-3", name:"주민등록초본", note:"과거 주소 전부 포함", mode:"self" },
-      { id:"b1-4", name:"주민등록등본", note:"세대원 확인", mode:"self" },
       { id:"b1-5", name:"채무자 통장사본", note:"압류금액 등 확인", mode:"request" },
     ]}
   ]},
   { id:"b2", title:"채무자 채권등록(채권자 목록) 소명자료", groups:[
     { id:"b2g0", title:null, items:[
       { id:"b2-1", name:"부채증명서 전체", note:"채권자·채무잔액·보증기관 확인", mode:"request" },
+      { id:"b4-13", name:"납세증명서(완납) 또는 체납증명서", note:"국세 완납·체납 여부 확인", mode:"self" },
       { id:"b2-2", name:"지방세 납세증명서(완납) 또는 체납증명서", note:"완납·체납 여부 확인 — 체납 시 채권자 목록 포함", mode:"self" },
       { id:"b2-4", name:"4대 사회보험료 완납증명서 / 미납내역서", note:"완납 시 '완납증명서', 체납·미납 시 '미납내역서'로 발급 — 체납 시 채권자 목록 포함", mode:"self" },
       { id:"b2-5", name:"신용정보조회서", note:"신용정보 전체 조회", mode:"request" },
-      { id:"b2-7", name:"채권자변동정보조회서", note:"신용정보조회서와 함께 발급(같은 사이트) — 채권자 변동내역 확인", mode:"request" },
       { id:"b2-6", name:"신용인증송부서", note:"채권자 목록 작성용", mode:"request" },
+      { id:"b2-7", name:"채권자변동정보조회서", note:"신용정보조회서와 함께 발급(같은 사이트) — 채권자 변동내역 확인", mode:"request" },
     ]}
   ]},
   { id:"b3", title:"채무자 재산 소명자료", groups:[
-    { id:"b3g0", title:"부동산·재산 현황 (공통 필수)", items:[
-      { id:"b2-3", name:"지방세 세목별 과세증명서", note:"재산세·재산현황(부동산 등) 확인", mode:"self" },
-      { id:"b3-11", name:"지적전산자료조회결과", note:"부동산 유무와 무관하게 항상 필요 (토지 현황 확인)", mode:"self" },
+    { id:"b3g2", title:"임차보증금 재산 (임차 시)", items:[
+      { id:"b3-4", name:"임대차계약서", note:"임차보증금 확인", mode:"request" },
+      { id:"b3-5", name:"해당 주택 등기사항전부증명서", note:"말소사항 포함", mode:"self" },
     ]},
-    { id:"b3g4", title:"부동산 재산 (부동산 보유 시)", items:[
+    { id:"b3g4", title:"부동산 재산 (자가 보유 시)", items:[
       { id:"b3-9", name:"부동산 등기부등본(등기사항전부증명서)", note:"보유 부동산 확인", mode:"self" },
       { id:"b3-10", name:"공시지가 확인서(개별공시지가)", note:"부동산 가액 확인", mode:"self" },
     ]},
-    { id:"b3g1", title:"자동차 재산", items:[
+    { id:"b3g1", title:"자동차 재산 (차량 보유 시)", items:[
       { id:"b3-1", name:"자동차 보험증서", note:"환가예상액 확인", mode:"request" },
       { id:"b3-2", name:"자동차등록원부", note:"", mode:"self" },
       { id:"b3-3", name:"자동차 중고시세", note:"엔카 시세 확인 (없으면 보험증권 요청)", mode:"self" },
     ]},
-    { id:"b3g2", title:"임차보증금 재산", items:[
-      { id:"b3-4", name:"임대차계약서", note:"임차보증금 확인", mode:"request" },
-      { id:"b3-5", name:"해당 주택 등기사항전부증명서", note:"말소사항 포함", mode:"self" },
-    ]},
     { id:"b3g3", title:"보험 재산", items:[
       { id:"b3-6", name:"보험가입 조회결과표", note:"생명보험협회", mode:"self" },
       { id:"b3-7", name:"보험 해약환급금 증명서", note:"예상보험금액 서류", mode:"request" },
+    ]},
+    { id:"b3g0", title:"재산 현황 (공통 필수)", items:[
       { id:"b3-8", name:"계좌통합관리서비스 계좌잔액 상세조회", note:"채무자 명의 소유재산 확인", mode:"self" },
+      { id:"b3-11", name:"지적전산자료조회결과", note:"부동산 유무와 무관하게 항상 필요 (토지 현황 확인)", mode:"self" },
+      { id:"b2-3", name:"지방세 세목별 과세증명서", note:"재산세·재산현황(부동산 등) 확인", mode:"self" },
     ]},
     { id:"b3g6", title:"사업용 재산 (사업자인 경우)", items:[
       { id:"b3-12", name:"비품·재고품·설비 시가표", note:"사업용 자산의 시가 정리", mode:"request" },
@@ -434,7 +435,7 @@ const TEMPLATE = [
     { id:"b4g1", title:"근로자(월급수령자) 자료", items:[
       { id:"b4-1", name:"근로계약서 또는 재직증명서", note:"회사 직인 필수 — 직인 없으면 무효 처리", mode:"request" },
       { id:"b4-2", name:"급여명세서 / 급여입금내역", note:"전월 급여 등", mode:"request" },
-      { id:"b4-4", name:"원천징수영수증", note:"", mode:"request" },
+      { id:"b4-4", name:"근로소득 원천징수영수증", note:"", mode:"request" },
     ]},
     { id:"b4g2", title:"사업자 자료", items:[
       { id:"b4-5", name:"사업자등록증명", note:"", mode:"self" },
@@ -443,13 +444,14 @@ const TEMPLATE = [
     ]},
     { id:"b4g3", title:"기타 소득·납세 자료 (공통 필수)", items:[
       { id:"b4-8", name:"월평균 소득산정표", note:"있다면", mode:"request" },
+      { id:"b4-14", name:"소득금액증명", note:"", mode:"self" },
       { id:"b4-9", name:"건강보험 자격득실확인서 전체", note:"", mode:"self" },
       { id:"b4-10", name:"건강·장기요양보험 납부확인서 전체", note:"", mode:"self" },
       { id:"b4-11", name:"국민연금 가입증명 서류", note:"", mode:"self" },
       { id:"b4-12", name:"연금산정용 가입내역 확인서", note:"개인회생 신청용 확인서", mode:"self" },
-      { id:"b4-13", name:"납세증명서", note:"", mode:"self" },
-      { id:"b4-14", name:"소득금액증명", note:"", mode:"self" },
+      { id:"b4-16", name:"납부내역증명", note:"", mode:"self" },
       { id:"b4-15", name:"사실증명(사업자등록사실여부)", note:"사업자등록 사실여부 확인", mode:"self" },
+      { id:"b4-17", name:"폐업사실증명", note:"폐업한 경우 (있다면)", mode:"self" },
     ]},
   ]},
   { id:"b5", title:"채무자 기타서류", groups:[
@@ -511,9 +513,11 @@ const WHERE = {
   "b4-10":"국민건강보험공단(nhis.or.kr)에서 건강·장기요양보험 납부확인서 발급 — 전체",
   "b4-11":"국민연금공단(nps.or.kr)에서 가입증명 발급",
   "b4-12":"국민연금공단(nps.or.kr)에서 연금산정용 가입내역 확인서 발급",
-  "b4-13":"정부24(gov.kr)에서 납세증명서 발급",
+  "b4-13":"정부24(gov.kr)에서 납세증명서(완납)/체납증명서 발급",
   "b4-14":"정부24(gov.kr)에서 소득금액증명 발급",
+  "b4-16":"정부24(gov.kr)에서 납부내역증명 발급",
   "b4-15":"정부24(gov.kr)에서 사실증명(사업자등록사실여부) 발급",
+  "b4-17":"정부24(gov.kr)에서 폐업사실증명원 발급 (폐업한 경우)",
   "b6-1":"거래은행 앱·창구에서 거래내역서 발급",
   "b6-2":"카드사 앱·고객센터에서 카드 거래내역서 발급",
   "b7-1":"채무가 늘어난 경위를 시간순으로 정리(첨부파일/PDF)",
@@ -548,7 +552,7 @@ function msgWhere(id){ return WHERE_MSG[id] || WHERE[id] || ""; }
 /* ---------- 1-2b. 발급처별 묶음 (같은 사이트끼리 그룹) ---------- */
 const ITEM_BY_ID={}; TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{ITEM_BY_ID[it.id]=it;})));
 const SITES=[
-  { key:"gov24",      name:"정부24",                         url:"https://www.gov.kr",  icon:"24", color:"#2563eb", ids:["b1-3","b1-4","b2-2","b2-3","b3-2","b4-13","b4-14","b4-15","b4-7","b4-5","b2-4"] },
+  { key:"gov24",      name:"정부24",                         url:"https://www.gov.kr",  icon:"24", color:"#2563eb", ids:["b1-3","b1-4","b2-2","b2-3","b3-2","b4-13","b4-14","b4-15","b4-16","b4-17","b4-7","b4-5","b2-4"] },
   { key:"kgeop",      name:"K-GeoP(지적전산자료)",            url:"https://kgeop.go.kr", icon:"K", color:"#0f766e", ids:["b3-11"] },
   { key:"efamily",    name:"대법원 전자가족관계등록시스템",  url:"https://efamily.scourt.go.kr", icon:"법", color:"#9B1B33", ids:["b1-1","b1-2"] },
   { key:"hometax",    name:"홈택스(국세)",                   url:"https://hometax.go.kr", icon:"국", color:"#059669", ids:["b4-4","b4-6"] },
@@ -1406,18 +1410,68 @@ function attachFiles(cid,id){
   };
   inp.click();
 }
+/* 앱 내 미리보기 (PC·모바일 공통) — 이미지는 <img>, PDF는 PDF.js로 렌더링 */
+let _previewUrl=null, _previewName=null, _pdfjsLoading=null;
+function loadPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(_pdfjsLoading) return _pdfjsLoading;
+  _pdfjsLoading=new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload=()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){ } res(window.pdfjsLib); };
+    s.onerror=()=>{ _pdfjsLoading=null; rej(new Error("PDF 뷰어 로드 실패(인터넷 필요)")); };
+    document.head.appendChild(s);
+  });
+  return _pdfjsLoading;
+}
+async function renderPdfPreview(bytes, container){
+  let pdfjsLib;
+  try{ pdfjsLib=await loadPdfJs(); }
+  catch(e){ container.innerHTML=`<div style="color:#fff;padding:16px">미리보기를 열 수 없어 새 창으로 엽니다…</div>`;
+    try{ const u=URL.createObjectURL(new Blob([bytes],{type:"application/pdf"})); window.open(u,"_blank"); }catch(_){ } return; }
+  container.innerHTML="";
+  const data=(bytes instanceof Uint8Array)?bytes.slice(0):new Uint8Array(bytes);
+  const pdf=await pdfjsLib.getDocument({data}).promise;
+  const dpr=window.devicePixelRatio||1;
+  const cw=Math.max(280,(container.clientWidth||700)-16);
+  for(let n=1;n<=pdf.numPages;n++){
+    const page=await pdf.getPage(n);
+    const base=page.getViewport({scale:1});
+    const scale=Math.max(0.3,Math.min(3,cw/base.width));
+    const vp=page.getViewport({scale:scale*dpr});
+    const canvas=document.createElement("canvas");
+    canvas.width=vp.width; canvas.height=vp.height;
+    canvas.style.width=(base.width*scale)+"px"; canvas.style.maxWidth="100%"; canvas.style.height="auto";
+    canvas.style.display="block"; canvas.style.margin="0 auto 10px"; canvas.style.borderRadius="6px"; canvas.style.background="#fff";
+    container.appendChild(canvas);
+    await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;
+  }
+}
+function dlPreview(){ if(!_previewUrl) return; const a=document.createElement("a"); a.href=_previewUrl; a.download=_previewName||"file"; document.body.appendChild(a); a.click(); a.remove(); }
 async function openPreview(cid,id,idx){
   const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
   if(!githubReady()){ toast("깃헙 연결 후 미리보기가 가능합니다"); return; }
   const ext=extOf(f.name).toLowerCase();
-  let type="application/octet-stream";
-  if(ext===".pdf")type="application/pdf"; else if(ext===".png")type="image/png"; else if(ext===".jpg"||ext===".jpeg")type="image/jpeg"; else if(ext===".gif")type="image/gif"; else if(ext===".webp")type="image/webp";
-  const previewable=(type==="application/pdf"||type.indexOf("image/")===0);
-  toast(previewable?"미리보기 여는 중…":"파일 받는 중…");
-  try{ const bytes=await fetchFileBytes(f); const blob=new Blob([bytes],{type}); const url=URL.createObjectURL(blob);
-    if(previewable){ const w=window.open(url,"_blank"); if(!w){ toast("팝업 차단됨 — 허용 후 다시"); } setTimeout(()=>URL.revokeObjectURL(url),60000); }
-    else { const a=document.createElement("a"); a.href=url; a.download=f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),20000); }
-  }catch(e){ console.error(e); toast("열기 실패: "+e.message); }
+  const isImg=[".png",".jpg",".jpeg",".gif",".webp"].includes(ext);
+  const isPdf=(ext===".pdf");
+  if(!isImg&&!isPdf){ return openFile(cid,id,idx); } /* 미리보기 불가 형식은 다운로드 */
+  toast("미리보기 여는 중…");
+  try{
+    const bytes=await fetchFileBytes(f);
+    const type=isPdf?"application/pdf":(ext===".png"?"image/png":ext===".gif"?"image/gif":ext===".webp"?"image/webp":"image/jpeg");
+    if(_previewUrl){ try{URL.revokeObjectURL(_previewUrl);}catch(_){ } }
+    _previewUrl=URL.createObjectURL(new Blob([bytes],{type})); _previewName=f.name;
+    modal(`
+      <h3 style="font-size:15px;word-break:break-all;margin-bottom:8px">${esc(f.name)}</h3>
+      <div id="pvBody" style="max-height:72vh;overflow:auto;background:#33373d;border-radius:10px;padding:8px;text-align:center"><div style="color:#fff;padding:24px">불러오는 중…</div></div>
+      <div class="modal-actions" style="gap:8px;margin-top:12px">
+        <button class="btn btn-primary" onclick="dlPreview()">📥 다운로드</button>
+        <button class="btn" onclick="closeModal()">닫기</button>
+      </div>`,820);
+    const body=document.getElementById("pvBody");
+    if(isImg){ body.innerHTML=`<img src="${_previewUrl}" style="max-width:100%;height:auto;border-radius:6px" alt="${esc(f.name)}">`; }
+    else { await renderPdfPreview(bytes,body); }
+  }catch(e){ console.error(e); toast("미리보기 실패: "+e.message); }
 }
 async function openFile(cid,id,idx){
   const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
@@ -1487,11 +1541,14 @@ function renderDownloadModal(){
   modal(`<h3>📥 파일 다운로드</h3>
     <p class="hint">받을 파일을 고르고 방식을 선택하세요. (선택 <b id="dlCnt">${total}</b>개)</p>
     <div class="field"><label>받는 방식</label>
-      <div class="seg" style="display:flex">
+      <div class="seg" style="display:flex;gap:4px">
         <button style="flex:1" class="${_dlCtx.mode==='pdf'?'on-self':''}" onclick="_dlCtx.mode='pdf';renderDownloadModal()">묶음 PDF로 합치기<br><span style="font-size:11px;font-weight:400">홍길동_기본서류.pdf</span></button>
-        <button style="flex:1" class="${_dlCtx.mode==='each'?'on-self':''}" onclick="_dlCtx.mode='each';renderDownloadModal()">파일별 따로<br><span style="font-size:11px;font-weight:400">홍길동_가족관계증명서</span></button>
+        <button style="flex:1" class="${_dlCtx.mode==='eachpdf'?'on-self':''}" onclick="_dlCtx.mode='eachpdf';renderDownloadModal()">파일별 PDF로<br><span style="font-size:11px;font-weight:400">이미지도 PDF 변환</span></button>
+        <button style="flex:1" class="${_dlCtx.mode==='each'?'on-self':''}" onclick="_dlCtx.mode='each';renderDownloadModal()">파일별 원본<br><span style="font-size:11px;font-weight:400">올린 그대로(jpg 등)</span></button>
       </div>
-      ${_dlCtx.mode==='pdf'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· PDF·이미지(jpg/png)는 묶음 순서대로 한 PDF로 합쳐집니다.<br>· 엑셀·한글 등 합칠 수 없는 파일은 원본 그대로 따로 받아집니다.</div>`:""}</div>
+      ${_dlCtx.mode==='pdf'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· PDF·이미지(jpg/png)는 묶음 순서대로 한 PDF로 합쳐집니다.<br>· 엑셀·한글 등 합칠 수 없는 파일은 원본 그대로 따로 받아집니다.</div>`:""}
+      ${_dlCtx.mode==='eachpdf'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· 이미지(jpg/png)는 각각 1개의 PDF 파일로 변환해서 받습니다.<br>· PDF는 그대로, 엑셀·한글 등은 원본 그대로 받아집니다.</div>`:""}
+      ${_dlCtx.mode==='each'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· 올린 파일을 변환 없이 원본 형식 그대로 받습니다.</div>`:""}</div>
     <div style="margin-bottom:8px"><button class="btn btn-sm" onclick="dlSelectAll(true)">전체선택</button> <button class="btn btn-sm" onclick="dlSelectAll(false)">전체해제</button></div>
     <div style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 10px">${body}</div>
     <div class="modal-actions" style="flex-direction:column;gap:8px;margin-top:16px">
@@ -1523,6 +1580,23 @@ async function doDownload(){
         for(const lo of leftovers){ const suffix=lo.it.files.length>1?("_"+lo.i):""; dlBlob(new Blob([lo.bytes]), nm+"_"+safeName(lo.it.name)+suffix+extOf(lo.fo.f.name)); others++; await new Promise(r=>setTimeout(r,450)); }
       }
       toast(`PDF ${merged}개 합침${others?` · 기타 ${others}개 따로 받음`:""} ✓`);
+    } else if(mode==="eachpdf"){
+      const PDFLib=await loadPdfLib(); let pdfN=0, origN=0;
+      for(const g of picked){ for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f);
+        const ext=extOf(fo.f.name).toLowerCase(); const suffix=it.files.length>1?("_"+i):""; const base=nm+"_"+safeName(it.name)+suffix;
+        try{
+          if(ext===".pdf"){ dlBlob(new Blob([bytes],{type:"application/pdf"}), base+".pdf"); pdfN++; }
+          else if(ext===".jpg"||ext===".jpeg"||ext===".png"){
+            const doc=await PDFLib.PDFDocument.create();
+            const img=(ext===".png")?await doc.embedPng(bytes):await doc.embedJpg(bytes);
+            const pg=doc.addPage([img.width,img.height]); pg.drawImage(img,{x:0,y:0,width:img.width,height:img.height});
+            const out=await doc.save(); dlBlob(new Blob([out],{type:"application/pdf"}), base+".pdf"); pdfN++;
+          }
+          else { dlBlob(new Blob([bytes]), base+ext); origN++; }
+        }catch(e){ console.warn("PDF 변환 건너뜀",fo.f.name,e); dlBlob(new Blob([bytes]), base+ext); origN++; }
+        await new Promise(r=>setTimeout(r,450));
+      } } }
+      toast(`PDF ${pdfN}개 변환${origN?` · 기타 ${origN}개 원본`:""} ✓`);
     } else {
       for(const g of picked){ for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f);
         const suffix=it.files.length>1?("_"+i):""; dlBlob(new Blob([bytes]), nm+"_"+safeName(it.name)+suffix+extOf(fo.f.name)); await new Promise(r=>setTimeout(r,450)); } } }
@@ -2043,7 +2117,7 @@ function exportLog(){
 
 /* ---------- 10. 모달 ---------- */
 function modal(html,maxw){ $("#modalRoot").innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal" style="${maxw?'max-width:'+maxw+'px':''}"><button class="modal-x" onclick="closeModal()" aria-label="닫기">✕</button>${html}</div></div>`; }
-function closeModal(){ $("#modalRoot").innerHTML=""; }
+function closeModal(){ $("#modalRoot").innerHTML=""; if(_previewUrl){ try{URL.revokeObjectURL(_previewUrl);}catch(_){ } _previewUrl=null; } }
 
 /* ---------- 11. 시작 ---------- */
 function boot(){
