@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
-<title>개인회생 서류 취합 시스템</title>
+<title>이준 회생서류 취합 시스템</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
 <style>
   :root{
@@ -301,10 +301,10 @@
 </head>
 <body>
 <header>
-  <div style="display:flex;align-items:center;gap:11px">
+  <div style="display:flex;align-items:center;gap:11px;cursor:pointer" onclick="showDashboard()" title="메인 화면으로">
     <div class="logo"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L20 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
     <div>
-      <h1>개인회생 서류 취합 시스템</h1>
+      <h1>이준 회생서류 취합 시스템</h1>
       <div class="sub">법무법인 내부용 · 의뢰인별 서류 체크리스트</div>
     </div>
   </div>
@@ -363,6 +363,7 @@
       </select>
     </div>
     <div id="firmChips" class="firmchips"></div>
+    <div id="stagePills"></div>
     <div id="cards" class="cards"></div>
   </section>
 
@@ -616,6 +617,21 @@ let viewMode = "card";          // 보기 모드: card | list
 let showNa = false;             // 해당없음 서류 표시 여부(기본 숨김 → 더보기로 표시)
 let firmF = "";                 // 사무소 필터 ("" 전체 / "이준" / "블루")
 function setFirmF(v){ firmF=v; renderDashboard(); }
+let stageFilter = "서류수집";    // 단계(과정) 필터 — 기본값: 서류수집(서류취합)
+let stageExpanded = false;      // 단계 알약 더보기 펼침 상태
+function setStageFilter(s){ stageFilter=s; renderDashboard(); }
+function toggleStageMore(){ stageExpanded=!stageExpanded; renderStagePills(); }
+function renderStagePills(){
+  const el=document.getElementById("stagePills"); if(!el) return;
+  const base=state.clients.filter(c=>!c.archived && (!firmF || firmShort(c.firm)===firmF));
+  const cnt={}; STAGES.forEach(s=>cnt[s]=0); let all=0;
+  base.forEach(c=>{ const st=clientStage(c); if(cnt[st]!==undefined) cnt[st]++; all++; });
+  const stages=[["전체",all]].concat(STAGES.map(s=>[s,cnt[s]]));
+  const list = stageExpanded ? stages : stages.filter(([s])=> s==="서류수집" || s===stageFilter);
+  const pill=([s,n])=>{ const on=stageFilter===s; return `<button onclick="setStageFilter('${s}')" style="cursor:pointer;font-size:13px;border:0.5px solid ${on?'var(--brand)':'var(--line)'};background:${on?'var(--brand)':'#fff'};color:${on?'#fff':'var(--ink)'};border-radius:999px;padding:6px 13px;font-weight:700">${s} <span style="opacity:.7;font-weight:600">${n}</span></button>`; };
+  const more=`<button onclick="toggleStageMore()" style="cursor:pointer;font-size:13px;background:none;border:none;color:var(--brand);font-weight:800;padding:6px 6px">${stageExpanded?'접기 ▴':'다른 과정 더보기 ▾'}</button>`;
+  el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">${list.map(pill).join("")}${more}</div>`;
+}
 function toggleAdvFilters(){ const el=document.getElementById("advFilters"); const b=document.getElementById("advBtn"); if(!el)return; const open=el.classList.toggle("hidden")===false; if(b) b.textContent= open?"필터 ▴":"필터 ▾"; }
 let docSearch = "";             // 서류 탭 내 서류명 검색어
 let focusBundle = "";           // 좌측 탭에서 고른 묶음(빈값=전체)
@@ -1008,9 +1024,10 @@ function renderFirmChips(){
   const nAll=act.length, nJun=act.filter(c=>firmShort(c.firm)==="이준").length, nBlue=act.filter(c=>firmShort(c.firm)==="블루").length;
   // 블루(다른 사무소) 의뢰인이 하나도 없으면 칩을 숨김(섞일 때만 의미 있음)
   if(nBlue===0 && firmF===""){ el.innerHTML=""; el.style.display="none"; return; }
-  el.style.display="flex";
-  const chip=(val,label,n,color)=>`<button class="firmchip ${firmF===val?'on':''}" style="${firmF===val?`background:${color};border-color:${color};color:#fff`:''}" onclick="setFirmF('${val}')">${label} <b>${n}</b></button>`;
-  el.innerHTML = chip("","전체",nAll,"#5b524c") + chip("이준","🏛 이준",nJun,"#9B1B33") + chip("블루","🏛 블루",nBlue,"#2563EB");
+  // 시안 3: 세그먼트 컨트롤 (전체/이준/블루 연결형, 활성 칸은 사무소 색)
+  el.style.cssText="display:inline-flex;flex-wrap:wrap;border:0.5px solid var(--line);border-radius:999px;overflow:hidden;margin-bottom:12px";
+  const seg=(val,label,n,color,first)=>{const on=firmF===val;return `<button onclick="setFirmF('${val}')" style="cursor:pointer;font-size:13px;border:none;${first?'':'border-left:0.5px solid var(--line);'}padding:7px 15px;font-weight:700;background:${on?color:'#fff'};color:${on?'#fff':'var(--ink)'}">${label} ${n}</button>`;};
+  el.innerHTML = seg("","전체",nAll,"#5b524c",true) + seg("이준","이준",nJun,"#9B1B33",false) + seg("블루","블루",nBlue,"#2563EB",false);
 }
 function renderDashboard(){
   // 담당자 필터 옵션 채우기
@@ -1036,6 +1053,7 @@ function renderDashboard(){
       if(statusF==="deadline"){ const d=dDay(c); if(d===null||d>7) return false; }
     }
     if(stageF && clientStage(c)!==stageF) return false;
+    if(stageFilter && stageFilter!=="전체" && clientStage(c)!==stageFilter) return false;
     if(assigneeF && (c.assignee||"")!==assigneeF) return false;
     if(catF && (c.caseType||"개인회생")!==catF) return false;
     if(incF && (c.incomeType||"미정")!==incF) return false;
@@ -1051,6 +1069,7 @@ function renderDashboard(){
   });
   renderDashHeaderStatsBoard();
   renderFirmChips();
+  renderStagePills();
   renderQuickLinks();
   const root=$("#cards");
   if(list.length===0){
