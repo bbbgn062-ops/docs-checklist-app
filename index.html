@@ -1043,7 +1043,6 @@ function renderDashboard(){
     return true;
   });
   list.sort((a,b)=>{
-    if((b.urgent?1:0)!==(a.urgent?1:0)) return (b.urgent?1:0)-(a.urgent?1:0);
     if((b.pinned?1:0)!==(a.pinned?1:0)) return (b.pinned?1:0)-(a.pinned?1:0);
     if(sort==="name") return (a.name||"").localeCompare(b.name||"","ko");
     if(sort==="progress") return progress(a).pct - progress(b).pct;
