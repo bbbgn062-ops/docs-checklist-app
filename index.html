@@ -574,6 +574,10 @@ function collectSiteItems(c,st){ return st.ids.map(id=>ITEM_BY_ID[id]).filter(Bo
 function siteProgress(c,st){ let total=0,done=0; collectSiteItems(c,st).forEach(it=>{ const s=c.items[it.id]; if(!s||s.mode==="na")return; total++; if(s.done)done++; }); return {total,done}; }
 /* 공동인증서 센터(신한은행) + 발급처 사이트 바로가기 묶음 */
 const SHINHAN_URL="https://bank.shinhan.com/index.jsp#200107000000";
+const URGENT_ICON_SRC="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAFiUlEQVR42t3ZW4hdVxkH8N/a5zIzZyamFazRh4KixWgtkrwI9UEiKbQPFqQQUIoigiCKKKHiBfGt4IsUKmIf+iQGgqIW8qIUwQsoqNVWNATb4iUabEg6M+e+z97Lh7X25MxJ0plJMkZcsGBm9rp867/+3/f91zfMtUiItCKdSDeyNuSZin+MeH/++1KkvUNfinRGHJtxfsgPI6t5zU7eI9hLO01r8W8T7o3ESBxxyh7bkO818zc4vPg9XmPPxRaagYHqHEtv4YGao11Wh8w6vFIQpqyscHC4y5P3iAPWlxnNiBVv6NEu6Qd++zI/uYdJs/d1F2pOsc5DJX9qThzTBs814zY5Mf9tN33Ah+bQfH7+W8mf+zy0E5JFoBrwyBpnWhweUA2ZYIZ+w6vAEmYjxkNmO/QJZoHlOV725W8Dqhbv6HFmyIlAdfo6RrZHvDXwdEWcUheJwFyZUEvOU6GdedF+revNDtCS5sTc5fmhoDWk6lC0eHrEr5f5a0yA1dsQjHxxiQONcQsE7QXqQBXomttph9YM6+a5daC3RXoUtEqqLr2Kz4U0p7gKQTxYUhVpwBZZR8xa3DvksZC4eLK88r3aycIyGfbYJhcCR9scHjGLhMYpCmKdxn0go1flM2zhEOKuQdm/NmQ05c138mo+QJzn4G92mF9tv5k9tXruyq/lBLGV1t74XwDq/7OFEcdv095VxVKb1Yqqx5nA9CoDb8fdx0zqHCl+WXF2k5NvTIlhu5MMFwLjPrc6YIX2hKdW+FrgX9noIsfJbYC1w94980ZRq9q02ymsfH6VbywkhXoRvSZQ7z9siWOtis0xj67yo5iyzHTAe5d4X8lzgWevMnJI3M/ep4wpz790mSMZzW7e+wuz7ernM1epm/0ybJB6GYkTftHnTQ3XTtMa8+2YxlYDxhX1gL9FOnOCY3+uuCYGYi85w3eW+EQ3h5Dz3Pkwp7ocHyZJ15KeATBe1CPFfjhDh7BCMeIryzyavTducPguft7l+CDpxXZISNU55X03JEHR3uLhLb7WMqvl9UZNn0tCV58HSi5mrpVzc+oJ9YiNPofmQ84tveKYPLU94+yYEweSxO8EJiM+3eKJSDFM8mp+36qbRMupNS5c9Ua5RZ5aZWd49lVe35D8NK0J38zOUOfnxDzi9TghOI9ed/5JWtwC5Oql9Oo7d4kP3sGlfKV3PcyPu3wqC1XXSgpZnY7b3J9F6zSksNO6JQgO0uZxyIcb/vR5T8mLMcfBncLRJMfBKb+b8LGXWd46wPAmxEIktgkVg5q3r3IBB8a8sMzdQ8qQ49pO66DuZdRmnJ3yRI+nbspJQjaw5PIqGyEh8s4edw+SUunE3a0TpJdejbicnqTfGnHfTSPYSQauV7ztdVzsc6jgLyupMlFKXlnsldeZh0WB9db2p+JeEAwl9QoHC45GQg4VH60436OzTFEnL9+TrGung/UL/KqbrL1RXRjzi+jLjfet8v1/cl/JyYoXV2n1dolizkRFSOnys0Ycq1L1qhxQ36AnN3HwyWtsuDrlk1P+ME6lj3qnTDTlUp8HzRWGvp5TUDVIhs6GzPLvr9mHV8ZOs5E/G18pChVN0N3kXVPK0UKwvoZxzzelukh7S3uNeLzMSNxor+d+HvH7yKGfpsJR6PPkYh5uskkTSyf84EUObhk3Vx8MIQXVI0t8pOJIZG3PVdDUZksUY17p8Uhg1OdQi3MFa7MrYUVM9aCwTBjz+Apfmq9X7rnaeQNhqMhp76uL6PWZlelKyxEfX6TEdRfMtbwi16tvpjdrHBjy93JOLMzx7d+bHJu/0v/m27fIzvHuWUKsznwrI3HMH9e557YYN/cfgxBZG/BSFhSNKHjmMnfcNuMWUdzg/pIXSi6OknANu+X9fwD8lTawMX2pkQAAAABJRU5ErkJggg==";
+const URGENT_ICON=`<img src="${URGENT_ICON_SRC}" alt="" style="width:1em;height:1em;vertical-align:-2px;margin-right:2px">`;
+function urgentBadge(c){ return c&&c.urgent?`<span class="badge" style="background:#fdecec;color:#d11;font-weight:800">${URGENT_ICON}급건</span>`:""; }
+function toggleUrgent(cid){ const c=findClient(cid); if(!c)return; c.urgent=!c.urgent; touch(`[${c.name}] 급건 ${c.urgent?"지정":"해제"}`); if(currentClientId===cid) renderDetail(cid); else renderDashboard(); }
 function renderQuickLinks(){
   const el=document.getElementById("dashLinks"); if(!el) return;
   const chip=(href,label,strong)=>`<a href="${href}" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border-radius:999px;border:1px solid ${strong?'var(--brand)':'var(--line)'};background:${strong?'var(--brand)':'#fff'};color:${strong?'#fff':'var(--ink)'};font-size:12.5px;font-weight:700">${label}</a>`;
@@ -984,19 +988,13 @@ function renderDashHeaderStatsBoard(){
     ${card("미요청", tNot+"건","var(--red)")}
     ${card("보완필요", tRej+"건","var(--red)")}
   </div>`;
-  // 오늘 할 일 보드: 보완필요 / 마감임박 / 오래된 요청중
-  const rejRows=[]; active.forEach(c=>rejectedList(c).forEach(r=>rejRows.push({c,r})));
-  const dueRows=active.filter(c=>{ const d=dDay(c); return d!==null && d<=7; }).sort((a,b)=>dDay(a)-dDay(b));
-  const remindRows=active.filter(c=>isRemindNeeded(c));
-  const reqRows=active.filter(c=>progress(c).notReq>0).sort((a,b)=>progress(b).notReq-progress(a).notReq);
+  // 오늘 할 일 보드: 급건 의뢰인만 표시
+  const urgentRows=active.filter(c=>c.urgent);
   let boardHtml="";
-  if(rejRows.length||dueRows.length||remindRows.length||reqRows.length){
-    boardHtml+=`<div style="font-size:13px;font-weight:900;color:var(--ink);margin:2px 0 9px">📋 오늘 할 일</div>`;
+  if(urgentRows.length){
+    boardHtml+=`<div style="font-size:13px;font-weight:900;color:var(--ink);margin:2px 0 9px;display:flex;align-items:center;gap:4px">${URGENT_ICON}오늘 할 일 · 급건 ${urgentRows.length}명</div>`;
     boardHtml+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:16px">`;
-    if(reqRows.length) boardHtml+=`<div class="card" style="cursor:default;padding:0;overflow:hidden"><div style="background:var(--red-soft);color:var(--red);font-weight:800;font-size:13px;padding:10px 13px">📨 요청 필요 ${reqRows.length}명</div><div style="max-height:200px;overflow:auto">${reqRows.map(c=>{const p=progress(c);return `<div onclick="openDetail('${c.id}')" style="cursor:pointer;padding:8px 13px;border-top:1px solid var(--line);font-size:13px;display:flex;justify-content:space-between"><span><b>${esc(c.name)}</b></span><span style="font-weight:800;color:var(--red)">미요청 ${p.notReq}건</span></div>`;}).join("")}</div></div>`;
-    if(rejRows.length) boardHtml+=`<div class="card" style="cursor:default;padding:0;overflow:hidden"><div style="background:var(--red-soft);color:var(--red);font-weight:800;font-size:13px;padding:10px 13px">⚠ 보완 필요 ${rejRows.length}건</div><div style="max-height:200px;overflow:auto">${rejRows.map(({c,r})=>`<div onclick="openDetail('${c.id}')" style="cursor:pointer;padding:8px 13px;border-top:1px solid var(--line);font-size:13px"><b>${esc(c.name)}</b> · ${esc(r.name)}${r.reason?`<div style="font-size:11.5px;color:var(--red)">↳ ${esc(r.reason)}</div>`:""}</div>`).join("")}</div></div>`;
-    if(dueRows.length) boardHtml+=`<div class="card" style="cursor:default;padding:0;overflow:hidden"><div style="background:var(--amber-soft);color:var(--amber);font-weight:800;font-size:13px;padding:10px 13px">⏳ 마감 임박 ${dueRows.length}명</div><div style="max-height:200px;overflow:auto">${dueRows.map(c=>{const d=dDay(c);return `<div onclick="openDetail('${c.id}')" style="cursor:pointer;padding:8px 13px;border-top:1px solid var(--line);font-size:13px;display:flex;justify-content:space-between"><span><b>${esc(c.name)}</b> · ${esc(c.deadlineLabel||"마감")}</span><span style="font-weight:800;color:${d<0?'var(--red)':'var(--amber)'}">${d<0?`${-d}일 지남`:d===0?"D-DAY":"D-"+d}</span></div>`;}).join("")}</div></div>`;
-    if(remindRows.length) boardHtml+=`<div class="card" style="cursor:default;padding:0;overflow:hidden"><div style="background:var(--brand-soft);color:var(--brand);font-weight:800;font-size:13px;padding:10px 13px">⏰ 리마인더 필요 ${remindRows.length}명</div><div style="max-height:200px;overflow:auto">${remindRows.map(c=>`<div onclick="openDetail('${c.id}')" style="cursor:pointer;padding:8px 13px;border-top:1px solid var(--line);font-size:13px"><b>${esc(c.name)}</b> · 오래된 요청중 서류</div>`).join("")}</div></div>`;
+    boardHtml+=`<div class="card" style="cursor:default;padding:0;overflow:hidden;grid-column:1/-1"><div style="background:#fdecec;color:#d11;font-weight:800;font-size:13px;padding:10px 13px;display:flex;align-items:center;gap:5px">${URGENT_ICON} 급건 ${urgentRows.length}명 — 우선 처리</div><div style="max-height:240px;overflow:auto">${urgentRows.map(c=>{const p=progress(c);const dd=dDay(c);return `<div onclick="openDetail('${c.id}')" style="cursor:pointer;padding:9px 13px;border-top:1px solid var(--line);font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(c.name)}</b> <span style="color:var(--muted)">· ${esc(c.caseType||"개인회생")}${dd!==null?` · ${dd<0?`마감 ${-dd}일 지남`:dd===0?"D-DAY":"D-"+dd}`:""}</span></span><span style="font-weight:800;color:${p.pct===100?'var(--green)':'var(--red)'}">${p.pct}%</span></div>`;}).join("")}</div></div>`;
     boardHtml+=`</div>`;
   }
   if(board) board.innerHTML=boardHtml;
@@ -1042,6 +1040,7 @@ function renderDashboard(){
     return true;
   });
   list.sort((a,b)=>{
+    if((b.urgent?1:0)!==(a.urgent?1:0)) return (b.urgent?1:0)-(a.urgent?1:0);
     if((b.pinned?1:0)!==(a.pinned?1:0)) return (b.pinned?1:0)-(a.pinned?1:0);
     if(sort==="name") return (a.name||"").localeCompare(b.name||"","ko");
     if(sort==="progress") return progress(a).pct - progress(b).pct;
@@ -1076,6 +1075,7 @@ function renderDashboard(){
     return `<div class="card ${c.archived?'arch':''}" onclick="openDetail('${c.id}')">
       <div class="card-top">
         <span class="card-name">${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</span>
+        ${urgentBadge(c)}
         <span style="flex:1"></span>
         <span class="badge" style="background:${firmColor(c.firm)};color:#fff">${esc(firmShort(c.firm))}</span></div>
       <div class="meta">${esc(c.caseType||"개인회생")} · <span style="color:${stgColor};font-weight:700">${stg}</span>${c.assignee?(" · 담당 "+esc(c.assignee)):""}${c.caseNo?(" · "+esc(c.caseNo)):""} · 수정 ${fmt(c.updatedAt)}</div>
@@ -1113,6 +1113,7 @@ function renderDetail(id){
     <div class="overall" style="margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
         <h2 style="margin:0;font-size:21px;font-weight:600;letter-spacing:-.4px">${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</h2>
+        ${urgentBadge(c)}
         <span class="badge ${c.caseType?.includes('파산')?'파산':(c.caseType?.includes('회생')?'회생':'기타')}">${esc(c.caseType||"개인회생")}</span>
         ${firmChip(c)}
         <span class="badge" style="background:${hasCert?'var(--green-soft)':'var(--amber-soft)'};color:${hasCert?'var(--green)':'var(--amber)'};cursor:pointer;font-weight:700" onclick="openCert('${c.id}')">${hasCert?'🔐 인증서 있음':'🔓 인증서 없음'}</span>
@@ -1651,6 +1652,7 @@ function openMore(cid){ const c=findClient(cid);
       <button class="btn" onclick="closeModal();printChecklist('${c.id}')">🖨️ 인쇄 / PDF</button>
       <button class="btn" onclick="closeModal();openCert('${c.id}')">🔐 공동인증서 관리</button>
       <button class="btn" onclick="closeModal();openClientModal('${c.id}')">✏️ 정보 수정</button>
+      <button class="btn" onclick="closeModal();toggleUrgent('${c.id}')">${c.urgent?'🚨 급건 해제':'🚨 급건 지정'}</button>
       <button class="btn" onclick="closeModal();togglePin('${c.id}')">${c.pinned?'📌 고정 해제':'📌 중요 고정'}</button>
       <button class="btn" onclick="closeModal();toggleArchive('${c.id}')">${c.archived?'📦 보관 해제':'📦 보관함으로'}</button>
       <button class="btn btn-danger" onclick="closeModal();deleteClient('${c.id}')">🗑️ 의뢰인 삭제</button>
