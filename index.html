@@ -320,6 +320,7 @@
     <div id="dashHeader"></div>
     <div id="dashStats"></div>
     <div id="dashBoard"></div>
+    <div id="dashLinks"></div>
     <div class="toolbar">
       <div class="search">
         <span>🔎</span>
@@ -468,7 +469,7 @@ const TEMPLATE = [
   ]},
   { id:"b7", title:"채무자 채무증대 경위서", groups:[
     { id:"b7g0", title:null, items:[
-      { id:"b7-1", name:"채무증대 사실 정리", note:"첨부파일 또는 PDF", mode:"request" },
+      { id:"b7-1", name:"채무증대경위서(진술서)", note:"첨부파일 또는 PDF", mode:"request" },
       { id:"b7-2", name:"무상거주 사실확인서", note:"최종 소유자가 서명, 본인 아닐 경우", mode:"request" },
     ]}
   ]},
@@ -571,6 +572,17 @@ const SITES=[
 ];
 function collectSiteItems(c,st){ return st.ids.map(id=>ITEM_BY_ID[id]).filter(Boolean); }
 function siteProgress(c,st){ let total=0,done=0; collectSiteItems(c,st).forEach(it=>{ const s=c.items[it.id]; if(!s||s.mode==="na")return; total++; if(s.done)done++; }); return {total,done}; }
+/* 공동인증서 센터(신한은행) + 발급처 사이트 바로가기 묶음 */
+const SHINHAN_URL="https://bank.shinhan.com/index.jsp#200107000000";
+function renderQuickLinks(){
+  const el=document.getElementById("dashLinks"); if(!el) return;
+  const chip=(href,label,strong)=>`<a href="${href}" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border-radius:999px;border:1px solid ${strong?'var(--brand)':'var(--line)'};background:${strong?'var(--brand)':'#fff'};color:${strong?'#fff':'var(--ink)'};font-size:12.5px;font-weight:700">${label}</a>`;
+  let chips=chip(SHINHAN_URL,"🏦 신한은행 개인뱅킹 (공동인증서 센터)",true);
+  SITES.forEach(st=>{ if(st.url) chips+=chip(st.url, `🔗 ${esc(st.name)}`,false); });
+  el.innerHTML=`<div class="overall" style="margin-bottom:12px;padding:12px 14px">
+    <div style="font-size:12.5px;font-weight:800;color:var(--muted);margin-bottom:9px">🔗 바로가기 · 공동인증서 센터 / 서류 발급처 사이트</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap">${chips}</div></div>`;
+}
 
 /* ---------- 1-3. 사건 단계(스테이지) ---------- */
 const STAGES = ["상담","서류수집","검토","법원접수","개시결정","완료"];
@@ -1038,6 +1050,7 @@ function renderDashboard(){
   });
   renderDashHeaderStatsBoard();
   renderFirmChips();
+  renderQuickLinks();
   const root=$("#cards");
   if(list.length===0){
     root.innerHTML=`<div class="empty" style="grid-column:1/-1"><div class="big">🗂️</div>
@@ -1648,6 +1661,7 @@ function openCert(cid){ const c=ensureItems(findClient(cid)); if(!c.cert) c.cert
   const files=(c.cert.files||[]).map((f,i)=>`<div class="item-note" style="display:flex;align-items:center;gap:6px">🔐 <b>${esc(f.name)}</b> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span> ${githubReady()?`<button class="memo-toggle" onclick="openCertFile('${c.id}',${i})">열기</button>`:""} <button class="memo-toggle" style="color:var(--red)" onclick="removeCertFile('${c.id}',${i})">삭제</button></div>`).join("");
   modal(`<div style="text-align:center;margin-bottom:10px"><div style="font-size:30px;line-height:1">🔐</div><h3 style="margin:6px 0 0;padding-right:0">공동인증서 관리</h3></div>
     <div class="note-warn">⚠️ 공동인증서와 비밀번호는 본인 인증이 가능한 <b>매우 민감한 정보</b>입니다. 비밀번호는 비공개 저장소에 함께 저장되며(설정에 따름), 외부 유출이 없도록 토큰·저장소를 안전하게 관리하세요.</div>
+    <a href="${SHINHAN_URL}" target="_blank" rel="noopener" style="text-decoration:none;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;padding:11px;border-radius:10px;background:var(--brand);color:#fff;font-size:13.5px;font-weight:700">🏦 신한은행 개인뱅킹 바로가기 (공동인증서 센터)</a>
     <div class="field" style="margin-top:12px"><label>인증서 파일 (공동인증서 폴더를 zip으로 묶어 올리길 권장)</label>
       <button class="btn btn-sm" onclick="attachCertFiles('${c.id}')">📎 인증서 파일 첨부</button>
       <div style="margin-top:6px">${files||'<span style="font-size:12.5px;color:var(--muted)">첨부된 인증서 파일이 없습니다.</span>'}</div>
@@ -1884,6 +1898,7 @@ function renderMsgModal(){
 }
 function toggleMsgSel(id){ if(_msgCtx.sel.has(id)) _msgCtx.sel.delete(id); else _msgCtx.sel.add(id);
   const cnt=$("#msgCount"); if(cnt) cnt.textContent=_msgCtx.sel.size; regenMsg(); }
+function cleanMsgName(n){ return (n||"").replace(/채무자\s*/g,"").trim(); } /* 요청 메시지에는 '채무자' 단어 미표기 */
 function buildRequestText(){
   const c=findClient(_msgCtx.cid);
   const firm=(c.firm||cfg.firmName||"법무법인").trim();
@@ -1897,15 +1912,15 @@ function buildRequestText(){
     t+= remind
       ? `[${firm}] 안녕하세요, ${name}님.\n지난번에 요청드린 아래 서류가 아직 도착하지 않아 다시 안내드립니다. 번거로우시겠지만 준비되는 대로 보내주시면 감사하겠습니다.\n\n`
       : `[${firm}] 안녕하세요, ${name}님.\n개인회생 사건 진행을 위해 아래 서류가 필요합니다. 준비되는 대로 보내주시면 감사하겠습니다.\n\n`;
-    items.forEach((x,i)=>{ t+=`${i+1}. ${x.name}\n`; if(how && msgWhere(x.id)) t+=`   ↳ ${msgWhere(x.id)}\n`; });
+    items.forEach((x,i)=>{ t+=`${i+1}. ${cleanMsgName(x.name)}\n`; if(how && msgWhere(x.id)) t+=`   ↳ ${msgWhere(x.id)}\n`; });
     t+=`\n사진 또는 파일(PDF)로 보내주시면 됩니다. 문의사항은 편하게 연락 주세요.\n감사합니다.`;
   } else if(_msgCtx.tone==="simple"){
     t+= remind ? `${name}님, 지난번 요청드린 서류 중 아직 못 받은 항목입니다.\n\n` : `${name}님, 개인회생 진행에 필요한 서류입니다.\n\n`;
-    items.forEach(x=>{ t+=`- ${x.name}`; if(how && msgWhere(x.id)) t+=` (${msgWhere(x.id)})`; t+=`\n`; });
+    items.forEach(x=>{ t+=`- ${cleanMsgName(x.name)}`; if(how && msgWhere(x.id)) t+=` (${msgWhere(x.id)})`; t+=`\n`; });
     t+=`\n준비되는 대로 보내주세요. 감사합니다. - ${firm}`;
   } else { // kakao
     t+= remind ? `${name}님 안녕하세요 😊\n지난번에 부탁드린 서류 중 아직 안 온 것들이에요! 확인 부탁드려요 🙏\n\n` : `${name}님 안녕하세요 😊\n개인회생 준비로 아래 서류가 필요해요!\n\n`;
-    items.forEach(x=>{ t+=`✅ ${x.name}`; if(how && msgWhere(x.id)) t+=`\n   → ${msgWhere(x.id)}`; t+=`\n`; });
+    items.forEach(x=>{ t+=`✅ ${cleanMsgName(x.name)}`; if(how && msgWhere(x.id)) t+=`\n   → ${msgWhere(x.id)}`; t+=`\n`; });
     t+=`\n준비되면 사진이나 파일로 보내주시면 됩니다 🙏\n- ${firm}`;
   }
   return t;
