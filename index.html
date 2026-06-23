@@ -1633,6 +1633,7 @@ function openMore(cid){ const c=findClient(cid);
     <div style="display:flex;flex-direction:column;gap:8px">
       <button class="btn btn-primary" onclick="closeModal();openRequestMsg('${c.id}')">📨 요청 메시지</button>
       <button class="btn" onclick="closeModal();openReminder('${c.id}')">⏰ 리마인더</button>
+      <button class="btn" onclick="closeModal();openMsgHistory('${c.id}')">📜 보낸 메시지 기록</button>
       <button class="btn" onclick="closeModal();copySummary('${c.id}')">📋 진행상황 복사</button>
       <button class="btn" onclick="closeModal();printChecklist('${c.id}')">🖨️ 인쇄 / PDF</button>
       <button class="btn" onclick="closeModal();openCert('${c.id}')">🔐 공동인증서 관리</button>
@@ -1870,6 +1871,10 @@ function renderMsgModal(){
       <button class="btn" style="flex:1" onclick="shareRequestMsg('mail')">✉ 메일 앱으로</button>
     </div>
     <p class="hint" style="margin:-2px 0 10px;font-size:11.5px">📱·✉ 버튼은 휴대폰에서 문자·메일 앱이 바로 열립니다(내용 자동 입력). 보내면 자동으로 ‘요청중’으로 표시돼요.</p>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn" style="flex:1" onclick="saveMsgDraft()">💾 메시지 저장(기록)</button>
+      <button class="btn" style="flex:1" onclick="openMsgHistory(_msgCtx.cid)">📜 보낸 기록 보기</button>
+    </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">닫기</button>
       <button class="btn" onclick="copyRequestMsg(false)">복사만</button>
@@ -1913,27 +1918,75 @@ function shareRequestMsg(kind){
   let url;
   if(kind==="sms"){ const ua=navigator.userAgent||""; const sep=/iPhone|iPad|Macintosh|Mac OS/i.test(ua)?"&":"?"; url="sms:"+sep+"body="+enc; }
   else { url="mailto:?subject="+encodeURIComponent("서류 요청 안내")+"&body="+enc; }
-  // 보낸 것으로 보고 '요청중' 표시
+  // 보낸 것으로 보고 '요청중' 표시 + 메시지 기록 저장
   const c=findClient(_msgCtx.cid); let n=0;
   _msgCtx.sel.forEach(id=>{ const s=c.items[id]; if(s && s.reqTag!=="received"){ s.reqTag="requesting"; if(!s.reqDate) s.reqDate=now(); n++; } });
+  logMessage(c, text, kind==="sms"?"문자":"메일");
   touch(`[${c.name}] ${_msgCtx.kind==="reminder"?"리마인더":"요청 메시지"} ${kind==="sms"?"문자":"메일"} 발송 (${n}건 요청중)`);
   try{ window.location.href=url; }catch(_){ window.open(url); }
   setTimeout(()=>{ closeModal(); renderDetail(_msgCtx.cid); }, 400);
-  toast((kind==="sms"?"문자":"메일")+" 앱을 엽니다 · 요청중 표시 ✓");
+  toast((kind==="sms"?"문자":"메일")+" 앱을 엽니다 · 요청중 표시·기록 저장 ✓");
 }
 function copyRequestMsg(mark){
   const ta=$("#msgText"); const text=ta?ta.value:"";
   copyText(text).then(ok=>{
+    const c=findClient(_msgCtx.cid); let n=0;
+    logMessage(c, text, "복사");
     if(mark){
-      const c=findClient(_msgCtx.cid); let n=0;
       _msgCtx.sel.forEach(id=>{ const s=c.items[id]; if(s && s.reqTag!=="received"){ s.reqTag="requesting"; if(!s.reqDate) s.reqDate=now(); n++; } });
-      touch(`[${c.name}] ${_msgCtx.kind==="reminder"?"리마인더":"요청 메시지"} 발송 (${n}건 요청중)`);
-      renderDetail(_msgCtx.cid);
     }
+    touch(`[${c.name}] ${_msgCtx.kind==="reminder"?"리마인더":"요청 메시지"} ${mark?"발송":"복사"} (${n}건 요청중)`);
+    renderDetail(_msgCtx.cid);
     closeModal();
-    toast(ok?(mark?"복사 완료 · 요청중으로 표시했습니다 ✓":"메시지를 복사했습니다 ✓"):"복사 실패 — 메시지를 직접 선택해 복사하세요");
+    toast(ok?(mark?"복사 완료 · 요청중 표시·기록 저장 ✓":"복사 완료 · 기록 저장 ✓"):"복사 실패 — 메시지를 직접 선택해 복사하세요");
   });
 }
+/* ---------- 7b-2. 요청/리마인더 메시지 기록(날짜+본문) ---------- */
+function logMessage(c, text, via){
+  if(!c || !text || !text.trim()) return;
+  text=text.trim();
+  if(!c.msgLog) c.msgLog=[];
+  const last=c.msgLog[c.msgLog.length-1];
+  if(last && last.text===text && (Date.now()-new Date(last.ts).getTime())<60000) return; // 1분 내 동일내용 중복 방지
+  const items=(_msgCtx && _msgCtx.list)?_msgCtx.list.filter(x=>_msgCtx.sel.has(x.id)).map(x=>x.name):[];
+  c.msgLog.push({ ts:now(), kind:(_msgCtx?_msgCtx.kind:"request"), tone:(_msgCtx?_msgCtx.tone:""), via:via||"", items, text });
+  if(c.msgLog.length>60) c.msgLog=c.msgLog.slice(-60);
+}
+function saveMsgDraft(){
+  const ta=$("#msgText"); const text=ta?ta.value:""; if(!text.trim()){ toast("저장할 메시지가 없습니다"); return; }
+  const c=findClient(_msgCtx.cid);
+  logMessage(c, text, "저장");
+  touch(`[${c.name}] ${_msgCtx.kind==="reminder"?"리마인더":"요청 메시지"} 기록 저장`);
+  toast("메시지를 기록에 저장했습니다 ✓");
+}
+function openMsgHistory(cid){
+  const c=findClient(cid); if(!c) return;
+  const log=(c.msgLog||[]);
+  let body;
+  if(log.length===0){
+    body=`<p class="hint">아직 저장된 메시지가 없습니다.<br>요청 메시지를 보내거나, 메시지 만들기 화면에서 <b>💾 메시지 저장</b>을 누르면 여기에 날짜와 내용이 기록됩니다.</p>`;
+  } else {
+    body=log.map((m,i)=>i).reverse().map(idx=>{ const m=log[idx];
+      const kindLabel=m.kind==="reminder"?"⏰ 리마인더":"📨 요청";
+      const via=m.via?` · ${esc(m.via)}`:"";
+      return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
+          <b style="font-size:12.5px">${kindLabel}${via}</b>
+          <span style="font-size:11.5px;color:var(--muted)">${fmt(m.ts)} · 서류 ${(m.items||[]).length}개</span></div>
+        <pre style="white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.55;background:#f7f7f8;border-radius:8px;padding:9px 10px;margin:0;font-family:inherit">${esc(m.text)}</pre>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button class="btn btn-sm" onclick="copyMsgHistory('${cid}',${idx})">📋 복사</button>
+          <button class="btn btn-sm" style="color:var(--red)" onclick="delMsgHistory('${cid}',${idx})">삭제</button>
+        </div></div>`;
+    }).join("");
+  }
+  modal(`<h3>📜 보낸 메시지 기록</h3>
+    <p class="hint">${esc(c.name||"의뢰인")}님에게 보낸·저장한 요청/리마인더 메시지입니다. 다음에 리마인드할 때 참고하세요.</p>
+    <div style="max-height:60vh;overflow:auto">${body}</div>
+    <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">닫기</button></div>`,580);
+}
+function copyMsgHistory(cid,idx){ const c=findClient(cid); const m=(c&&c.msgLog||[])[idx]; if(!m) return; copyText(m.text).then(ok=>toast(ok?"메시지를 복사했습니다 ✓":"복사 실패 — 직접 선택해 복사하세요")); }
+function delMsgHistory(cid,idx){ if(!confirm("이 기록을 삭제할까요?")) return; const c=findClient(cid); if(!c||!c.msgLog) return; c.msgLog.splice(idx,1); touch(`[${c.name}] 메시지 기록 삭제`); openMsgHistory(cid); }
 function copySummary(cid){
   const c=ensureItems(findClient(cid)); const p=progress(c);
   const buckets={recv:[],reqing:[],notreq:[],self:[]};
