@@ -403,6 +403,11 @@ const TEMPLATE = [
     ]}
   ]},
   { id:"b3", title:"채무자 재산 소명자료", groups:[
+    { id:"b3g0", title:"재산 현황 (공통 필수)", items:[
+      { id:"b2-3", name:"지방세 세목별 과세증명서", note:"재산세·재산현황(부동산 등) 확인", mode:"self" },
+      { id:"b3-8", name:"계좌통합관리서비스 계좌잔액 상세조회", note:"채무자 명의 소유재산 확인", mode:"self" },
+      { id:"b3-11", name:"지적전산자료조회결과", note:"부동산 유무와 무관하게 항상 필요 (토지 현황 확인)", mode:"self" },
+    ]},
     { id:"b3g2", title:"임차보증금 재산 (임차 시)", items:[
       { id:"b3-4", name:"임대차계약서", note:"임차보증금 확인", mode:"request" },
       { id:"b3-5", name:"해당 주택 등기사항전부증명서", note:"말소사항 포함", mode:"self" },
@@ -419,11 +424,6 @@ const TEMPLATE = [
     { id:"b3g3", title:"보험 재산", items:[
       { id:"b3-6", name:"보험가입 조회결과표", note:"생명보험협회", mode:"self" },
       { id:"b3-7", name:"보험 해약환급금 증명서", note:"예상보험금액 서류", mode:"request" },
-    ]},
-    { id:"b3g0", title:"재산 현황 (공통 필수)", items:[
-      { id:"b3-8", name:"계좌통합관리서비스 계좌잔액 상세조회", note:"채무자 명의 소유재산 확인", mode:"self" },
-      { id:"b3-11", name:"지적전산자료조회결과", note:"부동산 유무와 무관하게 항상 필요 (토지 현황 확인)", mode:"self" },
-      { id:"b2-3", name:"지방세 세목별 과세증명서", note:"재산세·재산현황(부동산 등) 확인", mode:"self" },
     ]},
     { id:"b3g6", title:"사업용 재산 (사업자인 경우)", items:[
       { id:"b3-12", name:"비품·재고품·설비 시가표", note:"사업용 자산의 시가 정리", mode:"request" },
@@ -1593,6 +1593,7 @@ function renderDownloadModal(){
 }
 function dlToggle(k){ if(_dlCtx.sel.has(k)) _dlCtx.sel.delete(k); else _dlCtx.sel.add(k); const el=$("#dlCnt"); if(el) el.textContent=_dlCtx.sel.size; }
 function dlSelectAll(on){ _dlCtx.sel.clear(); if(on) _dlCtx.groups.forEach(g=>g.items.forEach(it=>it.files.forEach(fo=>_dlCtx.sel.add(g.bid+"|"+it.id+"|"+fo.idx)))); renderDownloadModal(); }
+function addImageA4(doc,img){ const A4W=595.28,A4H=841.89; const sc=Math.min(A4W/img.width, A4H/img.height); const w=img.width*sc, h=img.height*sc; const pg=doc.addPage([A4W,A4H]); pg.drawImage(img,{x:(A4W-w)/2, y:A4H-h, width:w, height:h}); } /* 이미지를 A4 한 장에 여백없이 최대한 크게(잘림 없음) · 위쪽 정렬 */
 async function doDownload(){
   const c=findClient(_dlCtx.cid); const nm=safeName(c.name||"의뢰인")||"의뢰인";
   const picked=_dlCtx.groups.map(g=>({bid:g.bid,btitle:g.btitle,bi:g.bi,items:g.items.map(it=>({id:it.id,name:it.name,files:it.files.filter(fo=>_dlCtx.sel.has(g.bid+"|"+it.id+"|"+fo.idx))})).filter(it=>it.files.length)})).filter(g=>g.items.length);
@@ -1606,8 +1607,8 @@ async function doDownload(){
         for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f); const ext=extOf(fo.f.name).toLowerCase();
           try{
             if(ext===".pdf"){ const src=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true}); const ps=await doc.copyPages(src,src.getPageIndices()); ps.forEach(p=>doc.addPage(p)); }
-            else if(ext===".jpg"||ext===".jpeg"){ const img=await doc.embedJpg(bytes); const pg=doc.addPage([img.width,img.height]); pg.drawImage(img,{x:0,y:0,width:img.width,height:img.height}); }
-            else if(ext===".png"){ const img=await doc.embedPng(bytes); const pg=doc.addPage([img.width,img.height]); pg.drawImage(img,{x:0,y:0,width:img.width,height:img.height}); }
+            else if(ext===".jpg"||ext===".jpeg"){ const img=await doc.embedJpg(bytes); addImageA4(doc,img); }
+            else if(ext===".png"){ const img=await doc.embedPng(bytes); addImageA4(doc,img); }
             else leftovers.push({it,fo,bytes,i});
           }catch(e){ console.warn("PDF 합치기 건너뜀",fo.f.name,e); leftovers.push({it,fo,bytes,i}); }
         } }
@@ -1624,7 +1625,7 @@ async function doDownload(){
           else if(ext===".jpg"||ext===".jpeg"||ext===".png"){
             const doc=await PDFLib.PDFDocument.create();
             const img=(ext===".png")?await doc.embedPng(bytes):await doc.embedJpg(bytes);
-            const pg=doc.addPage([img.width,img.height]); pg.drawImage(img,{x:0,y:0,width:img.width,height:img.height});
+            addImageA4(doc,img);
             const out=await doc.save(); dlBlob(new Blob([out],{type:"application/pdf"}), base+".pdf"); pdfN++;
           }
           else { dlBlob(new Blob([bytes]), base+ext); origN++; }
