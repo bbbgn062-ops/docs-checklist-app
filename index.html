@@ -1499,14 +1499,23 @@ async function openPreview(cid,id,idx){
     modal(`
       <h3 style="font-size:15px;word-break:break-all;margin-bottom:8px">${esc(f.name)}</h3>
       <div id="pvBody" style="max-height:72vh;overflow:auto;background:#33373d;border-radius:10px;padding:8px;text-align:center"><div style="color:#fff;padding:24px">불러오는 중…</div></div>
-      <div class="modal-actions" style="gap:8px;margin-top:12px">
+      <div class="modal-actions" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+        ${isImg?`<button class="btn" id="pvA4Btn" onclick="pvShowA4(!_pvA4)">📄 A4 미리보기</button>`:""}
+        ${isImg?`<button class="btn" onclick="closeModal();openImgEditor('${cid}','${id}',${idx})">✏ 편집</button>`:""}
         <button class="btn btn-primary" onclick="dlPreview()">📥 다운로드</button>
         <button class="btn" onclick="closeModal()">닫기</button>
       </div>`,820);
+    _pvA4=false;
     const body=document.getElementById("pvBody");
     if(isImg){ body.innerHTML=`<img src="${_previewUrl}" style="max-width:100%;height:auto;border-radius:6px" alt="${esc(f.name)}">`; }
     else { await renderPdfPreview(bytes,body); }
   }catch(e){ console.error(e); toast("미리보기 실패: "+e.message); }
+}
+let _pvA4=false;
+function pvShowA4(on){ _pvA4=on; const pv=document.getElementById("pvBody"); if(!pv||!_previewUrl) return;
+  if(on){ pv.innerHTML=`<div style="width:340px;max-width:92%;aspect-ratio:1 / 1.414;background:#fff;margin:6px auto;position:relative;box-shadow:0 3px 14px rgba(0,0,0,.45);border-radius:2px"><img src="${_previewUrl}" style="position:absolute;top:0;left:50%;transform:translateX(-50%);max-width:100%;max-height:100%"></div><div style="color:#fff;font-size:12px;margin:8px 0 2px">A4 출력 미리보기 · 위쪽 정렬 · 잘림 없음</div>`; }
+  else { pv.innerHTML=`<img src="${_previewUrl}" style="max-width:100%;height:auto;border-radius:6px">`; }
+  const b=document.getElementById("pvA4Btn"); if(b) b.textContent= on?"🖼 원본 크게":"📄 A4 미리보기";
 }
 async function openFile(cid,id,idx){
   const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
