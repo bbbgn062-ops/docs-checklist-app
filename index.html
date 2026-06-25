@@ -1513,9 +1513,14 @@ async function openPreview(cid,id,idx){
 }
 let _pvA4=false;
 function pvShowA4(on){ _pvA4=on; const pv=document.getElementById("pvBody"); if(!pv||!_previewUrl) return;
-  if(on){ pv.innerHTML=`<div style="width:340px;max-width:92%;aspect-ratio:1 / 1.414;background:#fff;margin:6px auto;position:relative;box-shadow:0 3px 14px rgba(0,0,0,.45);border-radius:2px"><img src="${_previewUrl}" style="position:absolute;top:0;left:50%;transform:translateX(-50%);max-width:100%;max-height:100%"></div><div style="color:#fff;font-size:12px;margin:8px 0 2px">A4 출력 미리보기 · 위쪽 정렬 · 잘림 없음</div>`; }
-  else { pv.innerHTML=`<img src="${_previewUrl}" style="max-width:100%;height:auto;border-radius:6px">`; }
   const b=document.getElementById("pvA4Btn"); if(b) b.textContent= on?"🖼 원본 크게":"📄 A4 미리보기";
+  if(!on){ pv.innerHTML=`<img src="${_previewUrl}" style="max-width:100%;height:auto;border-radius:6px">`; return; }
+  pv.innerHTML=`<div style="color:#fff;padding:20px">A4 미리보기 준비 중…</div>`;
+  const im=new Image();
+  im.onload=()=>{ const land=im.naturalWidth>im.naturalHeight; const ar=land?"1.414 / 1":"1 / 1.414"; const ww=land?"94%":"340px";
+    pv.innerHTML=`<div style="width:${ww};max-width:96%;aspect-ratio:${ar};background:#fff;margin:6px auto;position:relative;box-shadow:0 3px 14px rgba(0,0,0,.45);border-radius:2px"><img src="${_previewUrl}" style="position:absolute;top:0;left:50%;transform:translateX(-50%);max-width:100%;max-height:100%"></div><div style="color:#fff;font-size:12px;margin:8px 0 2px">A4 ${land?"가로":"세로"} 출력 미리보기 · 위쪽 정렬 · 잘림 없음</div>`; };
+  im.onerror=()=>{ pv.innerHTML=`<img src="${_previewUrl}" style="max-width:100%;height:auto;border-radius:6px">`; };
+  im.src=_previewUrl;
 }
 async function openFile(cid,id,idx){
   const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
@@ -1666,7 +1671,7 @@ function renderDownloadModal(){
 }
 function dlToggle(k){ if(_dlCtx.sel.has(k)) _dlCtx.sel.delete(k); else _dlCtx.sel.add(k); const el=$("#dlCnt"); if(el) el.textContent=_dlCtx.sel.size; }
 function dlSelectAll(on){ _dlCtx.sel.clear(); if(on) _dlCtx.groups.forEach(g=>g.items.forEach(it=>it.files.forEach(fo=>_dlCtx.sel.add(g.bid+"|"+it.id+"|"+fo.idx)))); renderDownloadModal(); }
-function addImageA4(doc,img){ const A4W=595.28,A4H=841.89; const sc=Math.min(A4W/img.width, A4H/img.height); const w=img.width*sc, h=img.height*sc; const pg=doc.addPage([A4W,A4H]); pg.drawImage(img,{x:(A4W-w)/2, y:A4H-h, width:w, height:h}); } /* 이미지를 A4 한 장에 여백없이 최대한 크게(잘림 없음) · 위쪽 정렬 */
+function addImageA4(doc,img){ const SHORT=595.28,LONG=841.89; const land=img.width>img.height; const A4W=land?LONG:SHORT, A4H=land?SHORT:LONG; const sc=Math.min(A4W/img.width, A4H/img.height); const w=img.width*sc, h=img.height*sc; const pg=doc.addPage([A4W,A4H]); pg.drawImage(img,{x:(A4W-w)/2, y:A4H-h, width:w, height:h}); } /* 사진 방향에 맞춰 A4 세로/가로 자동 선택 · 여백없이 크게(잘림없음) · 위쪽 정렬 */
 async function doDownload(){
   const c=findClient(_dlCtx.cid); const nm=safeName(c.name||"의뢰인")||"의뢰인";
   const picked=_dlCtx.groups.map(g=>({bid:g.bid,btitle:g.btitle,bi:g.bi,items:g.items.map(it=>({id:it.id,name:it.name,files:it.files.filter(fo=>_dlCtx.sel.has(g.bid+"|"+it.id+"|"+fo.idx))})).filter(it=>it.files.length)})).filter(g=>g.items.length);
