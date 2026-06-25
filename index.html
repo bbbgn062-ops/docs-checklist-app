@@ -398,14 +398,14 @@ const TEMPLATE = [
       { id:"b2-2", name:"지방세 납세증명서(완납) 또는 체납증명서", note:"완납·체납 여부 확인 — 체납 시 채권자 목록 포함", mode:"self" },
       { id:"b2-4", name:"4대 사회보험료 완납증명서 / 미납내역서", note:"완납 시 '완납증명서', 체납·미납 시 '미납내역서'로 발급 — 체납 시 채권자 목록 포함", mode:"self" },
       { id:"b2-5", name:"신용정보조회서", note:"신용정보 전체 조회", mode:"request" },
-      { id:"b2-6", name:"신용인증송부서", note:"채권자 목록 작성용", mode:"request" },
-      { id:"b2-7", name:"채권자변동정보조회서", note:"신용정보조회서와 함께 발급(같은 사이트) — 채권자 변동내역 확인", mode:"request" },
+      { id:"b2-6", name:"신용인증송부서", note:"채권자 목록 작성용", mode:"na" },
+      { id:"b2-7", name:"채권자변동정보조회서", note:"신용정보조회서와 함께 발급(같은 사이트) — 채권자 변동내역 확인", mode:"na" },
     ]}
   ]},
   { id:"b3", title:"채무자 재산 소명자료", groups:[
     { id:"b3g0", title:"재산 현황 (공통 필수)", items:[
       { id:"b2-3", name:"지방세 세목별 과세증명서", note:"재산세·재산현황(부동산 등) 확인", mode:"self" },
-      { id:"b3-8", name:"계좌통합관리서비스 계좌잔액 상세조회", note:"채무자 명의 소유재산 확인", mode:"self" },
+      { id:"b3-8", name:"계좌통합관리서비스 계좌잔액 상세조회", note:"채무자 명의 소유재산 확인", mode:"na" },
       { id:"b3-11", name:"지적전산자료조회결과", note:"부동산 유무와 무관하게 항상 필요 (토지 현황 확인)", mode:"self" },
     ]},
     { id:"b3g2", title:"임차보증금 재산 (임차 시)", items:[
@@ -417,16 +417,16 @@ const TEMPLATE = [
       { id:"b3-10", name:"공시지가 확인서(개별공시지가)", note:"부동산 가액 확인", mode:"self" },
     ]},
     { id:"b3g1", title:"자동차 재산 (차량 보유 시)", items:[
-      { id:"b3-1", name:"자동차 보험증서", note:"환가예상액 확인", mode:"request" },
+      { id:"b3-1", name:"자동차 보험증서", note:"환가예상액 확인", mode:"na" },
       { id:"b3-2", name:"자동차등록원부", note:"", mode:"self" },
       { id:"b3-3", name:"자동차 중고시세", note:"엔카 시세 확인 (없으면 보험증권 요청)", mode:"self" },
     ]},
     { id:"b3g3", title:"보험 재산", items:[
       { id:"b3-6", name:"보험가입 조회결과표", note:"생명보험협회", mode:"self" },
-      { id:"b3-7", name:"보험 해약환급금 증명서", note:"예상보험금액 서류", mode:"request" },
+      { id:"b3-7", name:"보험 해약환급금 증명서", note:"예상보험금액 서류", mode:"na" },
     ]},
     { id:"b3g6", title:"사업용 재산 (사업자인 경우)", items:[
-      { id:"b3-12", name:"비품·재고품·설비 시가표", note:"사업용 자산의 시가 정리", mode:"request" },
+      { id:"b3-12", name:"비품·재고품·설비 시가표", note:"사업용 자산의 시가 정리", mode:"na" },
     ]},
     { id:"b3g5", title:"퇴직금·퇴직연금 재산", items:[
       { id:"b3-13", name:"예상퇴직금 확인서", note:"재직 중인 경우 예상 퇴직금", mode:"request" },
@@ -441,7 +441,7 @@ const TEMPLATE = [
     ]},
     { id:"b4g2", title:"사업자 자료", items:[
       { id:"b4-5", name:"사업자등록증명", note:"", mode:"self" },
-      { id:"b4-6", name:"매입·매출 내역", note:"", mode:"request" },
+      { id:"b4-6", name:"매입·매출 내역", note:"", mode:"na" },
       { id:"b4-7", name:"부가가치세 과세표준증명", note:"", mode:"self" },
     ]},
     { id:"b4g3", title:"기타 소득·납세 자료 (공통 필수)", items:[
@@ -459,13 +459,13 @@ const TEMPLATE = [
   { id:"b5", title:"채무자 기타서류", groups:[
     { id:"b5g0", title:null, items:[
       { id:"b5-1", name:"사무장 상담시트 및 기타메모", note:"", mode:"self" },
-      { id:"b5-2", name:"그 외 서류", note:"추가로 가져온 기타 서류", mode:"request" },
+      { id:"b5-2", name:"그 외 서류", note:"추가로 가져온 기타 서류", mode:"na" },
     ]}
   ]},
   { id:"b6", title:"채무자 통장 거래내역", groups:[
     { id:"b6g0", title:null, items:[
-      { id:"b6-1", name:"은행 거래내역서", note:"", mode:"request" },
-      { id:"b6-2", name:"카드 거래내역서", note:"", mode:"request" },
+      { id:"b6-1", name:"은행 거래내역서", note:"", mode:"na" },
+      { id:"b6-2", name:"카드 거래내역서", note:"", mode:"na" },
     ]}
   ]},
   { id:"b7", title:"채무자 채무증대 경위서", groups:[
@@ -732,7 +732,20 @@ function migrateV2(){
     applyTags(c); // 상황태그 정합성 재적용
   });
 }
-function migrateIfNeeded(){ if(state._ver>=5) return false; state.clients.forEach(ensureItems); migrateV2(); state._ver=5; state.updatedAt=now(); state.updatedBy=deviceName||state.updatedBy||"미설정"; return true; }
+function migrateIfNeeded(){ let changed=false;
+  if(state._ver<5){ state.clients.forEach(ensureItems); migrateV2(); state._ver=5; changed=true; }
+  if(state._ver<6){ state.clients.forEach(ensureItems); migrateHideOptional(); state._ver=6; changed=true; }
+  if(changed){ state.updatedAt=now(); state.updatedBy=deviceName||state.updatedBy||"미설정"; }
+  return changed;
+}
+/* 접수 시 선택서류 10종을 기본 '해당없음(숨김)'으로 — 단, 이미 손댄 항목(받음·요청중·파일·수동변경·보완)은 그대로 둠 */
+function migrateHideOptional(){
+  const OPT=["b3-7","b4-6","b3-12","b6-1","b6-2","b5-2","b3-1","b3-8","b2-7","b2-6"];
+  (state.clients||[]).forEach(c=>{ if(!c.items) return; OPT.forEach(id=>{ const s=c.items[id]; if(!s) return;
+    const untouched = !s.manual && !s.done && !(s.files&&s.files.length) && s.reqTag!=="received" && s.reqTag!=="requesting" && !s.rejected && !(s.memo&&String(s.memo).trim()) && !(s.link&&String(s.link).trim());
+    if(untouched) s.mode="na";
+  }); });
+}
 
 /* 완료율 계산 */
 function progress(client){
