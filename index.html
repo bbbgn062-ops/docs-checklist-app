@@ -1367,7 +1367,7 @@ function itemHtml(c,it,isExtra,bid){
       ${it.note?`<div class="item-note">${esc(it.note)}</div>`:""}
       ${WHERE[it.id]?`<div class="item-note">📍 ${esc(WHERE[it.id])}</div>`:""}
       ${s.link?`<div class="item-note"><a href="${esc(s.link)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700">🔗 링크 열기</a></div>`:""}
-      ${(s.files&&s.files.length)?`<div class="item-note">${s.files.map((f,fi)=>`📎 <a href="#" onclick="event.preventDefault();event.stopPropagation();openPreview('${c.id}','${it.id}',${fi})" style="color:var(--brand);font-weight:700" title="미리보기">${esc(f.name)}</a> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span> <button onclick="event.stopPropagation();openFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="다운로드">⤓</button> <button onclick="event.stopPropagation();removeFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px" title="삭제">×</button>`).join("<br>")}</div>`:""}
+      ${(s.files&&s.files.length)?`<div class="item-note">${s.files.map((f,fi)=>`📎 <a href="#" onclick="event.preventDefault();event.stopPropagation();openPreview('${c.id}','${it.id}',${fi})" style="color:var(--brand);font-weight:700" title="미리보기">${esc(f.name)}</a> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span> ${/\.(jpe?g|png|gif|webp)$/i.test(f.name)?`<button onclick="event.stopPropagation();openImgEditor('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="사진 편집(자르기·회전)">✏</button>`:""} <button onclick="event.stopPropagation();openFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="다운로드">⤓</button> <button onclick="event.stopPropagation();removeFile('${c.id}','${it.id}',${fi})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px" title="삭제">×</button>`).join("<br>")}</div>`:""}
       ${(function(){ let d=[]; if(s.reqDate&&!s.done) d.push(`요청 ${fmtD(s.reqDate)}${daysAgo(s.reqDate)>=3?` · ${daysAgo(s.reqDate)}일 경과`:''}`); if(s.recvDate&&s.done) d.push(`받음 ${fmtD(s.recvDate)}`); return d.length?`<div class="item-note" style="color:${(!s.done&&daysAgo(s.reqDate)>=7)?'var(--red)':'var(--brand)'}">🕒 ${d.join(" · ")}</div>`:""; })()}
       <div class="item-controls">
         <div class="seg">
@@ -1528,6 +1528,70 @@ async function removeFile(cid,id,idx){
   if(githubReady()){ try{ await fetch(ghContentsUrl(f.path),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),
     body:JSON.stringify({message:`delete ${f.name}`,sha:f.sha,branch:cfg.branch})}); }catch(e){ console.warn(e); } }
   c.items[id].files.splice(idx,1); touch(`[${c.name}] 첨부 삭제`); renderDetail(cid);
+}
+/* ---------- 6b-2. 사진 편집(자르기·회전) — 적용 시 원본을 편집본으로 교체 ---------- */
+let _cropper=null, _cropCtx=null, _cropUrl=null;
+function loadCropper(){ return new Promise((res,rej)=>{ if(window.Cropper) return res(window.Cropper);
+  const css=document.createElement("link"); css.rel="stylesheet"; css.href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css"; document.head.appendChild(css);
+  const st=document.createElement("style"); st.textContent='.cropper-point{background-color:#9B1B33!important;opacity:1!important;width:18px!important;height:18px!important;border-radius:50%!important;box-shadow:0 0 0 2px #fff,0 1px 3px rgba(0,0,0,.4)!important;display:block!important}.cropper-point::after{content:"";position:absolute;left:50%;top:50%;width:54px;height:54px;transform:translate(-50%,-50%)}.cropper-point.point-se{width:18px!important;height:18px!important}.cropper-line{background-color:#9B1B33!important;opacity:.45!important}.cropper-line.line-n,.cropper-line.line-s{height:10px}.cropper-line.line-w,.cropper-line.line-e{width:10px}'; document.head.appendChild(st);
+  const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"; s.onload=()=>res(window.Cropper); s.onerror=()=>rej(new Error("편집기 로드 실패(인터넷 필요)")); document.head.appendChild(s);
+}); }
+async function openImgEditor(cid,id,idx){
+  if(!githubReady()){ toast("깃헙 연결 후 편집 가능합니다"); return; }
+  const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
+  const ext=extOf(f.name).toLowerCase(); if(![".jpg",".jpeg",".png",".gif",".webp"].includes(ext)){ toast("이미지 파일만 편집할 수 있어요"); return; }
+  toast("편집기 여는 중…");
+  let Cropper, bytes;
+  try{ Cropper=await loadCropper(); bytes=await fetchFileBytes(f); }catch(e){ toast("열기 실패: "+e.message); return; }
+  const type = ext===".png"?"image/png":ext===".gif"?"image/gif":ext===".webp"?"image/webp":"image/jpeg";
+  if(_cropUrl){ try{URL.revokeObjectURL(_cropUrl);}catch(_){ } } _cropUrl=URL.createObjectURL(new Blob([bytes],{type}));
+  _cropCtx={cid,id,idx};
+  modal(`<h3 style="font-size:15px">✏ 사진 편집</h3>
+    <p class="hint" style="margin:-2px 0 8px">빨간 점·가장자리 선을 끌어 조절 · 박스 안을 끌면 이동. A4 비율로 자르면 PDF에 꽉 찹니다.</p>
+    <div style="background:#222;border-radius:10px;overflow:hidden;max-height:54vh"><img id="cropImg" src="${_cropUrl}" style="max-width:100%;display:block"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center">
+      <span style="font-size:12px;color:var(--muted);font-weight:800">비율</span>
+      <button class="btn btn-sm" id="rP" onclick="cropRatio('p')">A4 세로</button>
+      <button class="btn btn-sm" id="rL" onclick="cropRatio('l')">A4 가로</button>
+      <button class="btn btn-sm" id="rF" onclick="cropRatio('free')">자유</button>
+      <button class="btn btn-sm" onclick="cropDo('rotL')" title="왼쪽 회전">↺</button>
+      <button class="btn btn-sm" onclick="cropDo('rotR')" title="오른쪽 회전">↻</button>
+      <button class="btn btn-sm" onclick="cropDo('flipH')" title="좌우반전">↔</button>
+      <button class="btn btn-sm" onclick="cropDo('reset')">처음</button>
+    </div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn" onclick="closeCrop()">취소</button>
+      <button class="btn btn-primary" onclick="applyCrop()">적용(저장)</button>
+    </div>`,640);
+  const im=$("#cropImg");
+  const init=()=>{ if(_cropper)_cropper.destroy(); _cropper=new Cropper(im,{viewMode:1,autoCropArea:1,background:false,dragMode:"crop",aspectRatio:595.28/841.89}); im._fx=1; im._fy=1; cropMark("p"); };
+  if(im.complete) init(); else im.onload=init;
+}
+function cropMark(r){ ["rP","rL","rF"].forEach(i=>{const b=document.getElementById(i); if(b){b.style.background="";b.style.color="";}}); const on=document.getElementById(r==="p"?"rP":r==="l"?"rL":"rF"); if(on){on.style.background="var(--brand)";on.style.color="#fff";} }
+function cropRatio(r){ if(!_cropper)return; _cropper.setAspectRatio(r==="p"?595.28/841.89:r==="l"?841.89/595.28:NaN); cropMark(r); }
+function cropDo(a){ if(!_cropper)return; const im=$("#cropImg"); if(a==="rotL")_cropper.rotate(-90); else if(a==="rotR")_cropper.rotate(90); else if(a==="flipH"){im._fx=(im._fx||1)*-1;_cropper.scaleX(im._fx);} else if(a==="reset"){_cropper.reset();_cropper.clear();im._fx=1;im._fy=1;} }
+function closeCrop(){ if(_cropper){_cropper.destroy();_cropper=null;} if(_cropUrl){try{URL.revokeObjectURL(_cropUrl);}catch(_){ } _cropUrl=null;} closeModal(); }
+async function applyCrop(){
+  if(!_cropper||!_cropCtx) return;
+  const {cid,id,idx}=_cropCtx; const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f){ closeCrop(); return; }
+  const cv=_cropper.getCroppedCanvas({maxWidth:3000,maxHeight:3000,imageSmoothingQuality:"high"});
+  if(!cv){ toast("편집 영역이 없습니다"); return; }
+  toast("편집본 저장 중…"); setSync("saving");
+  cv.toBlob(async (blob)=>{
+    if(!blob){ toast("편집 변환 실패"); return; }
+    try{
+      const buf=await blob.arrayBuffer(); const b64=arrayBufferToBase64(buf);
+      const base=(f.name||"image").replace(/\.[^.]+$/,""); const newName=base.replace(/_편집$/,"")+"_편집.jpg";
+      const safe=newName.replace(/[^\w.\-가-힣]/g,"_"); const path=`files/${cid}/${id}/${Date.now()}_${safe}`;
+      const r=await fetch(ghContentsUrl(path),{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify({message:`edit ${newName}`,content:b64,branch:cfg.branch})});
+      if(!r.ok){ throw new Error("HTTP "+r.status); }
+      const j=await r.json(); const oldPath=f.path, oldSha=f.sha;
+      c.items[id].files[idx]={name:newName,size:blob.size,path,sha:j.content.sha,by:deviceName||"미설정",ts:now()};
+      try{ await fetch(ghContentsUrl(oldPath),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify({message:`delete original ${f.name}`,sha:oldSha,branch:cfg.branch})}); }catch(_){ }
+      touch(`[${c.name}] '${itemName(id,c)}' 사진 편집본으로 교체`);
+      closeCrop(); renderDetail(cid); toast("편집본으로 저장했습니다 ✓");
+    }catch(e){ console.error(e); toast("저장 실패: "+e.message); setSync("error"); }
+  },"image/jpeg",0.92);
 }
 
 /* ---------- 6c. 첨부 파일 다운로드 (선택/일괄, 묶음 ZIP / 파일별) ---------- */
