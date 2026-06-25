@@ -1621,6 +1621,8 @@ async function fetchFileBytes(f){
 }
 function extOf(name){ const i=(name||"").lastIndexOf("."); return i>0?name.slice(i):""; }
 function safeName(s){ return (s||"").replace(/[^\w가-힣().\- ]/g,"").trim().replace(/\s+/g,"_"); }
+function dlBlockLabel(bid,btitle){ const m={b1:"기본서류",b2:"채권자목록 소명자료",b3:"재산 소명자료",b4:"수입지출 소명자료",b5:"기타서류",b6:"통장 거래내역",b7:"채무증대 경위서"}; return m[bid]||(btitle||"").replace(/^채무자\s*/,""); }
+function dlItemLabel(n){ return (n||"").replace(/^채무자\s*/,""); }
 function dlBlob(blob,filename){ const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),20000); }
 function fileGroups(c){
   const out=[];
@@ -1690,14 +1692,14 @@ async function doDownload(){
             else leftovers.push({it,fo,bytes,i});
           }catch(e){ console.warn("PDF 합치기 건너뜀",fo.f.name,e); leftovers.push({it,fo,bytes,i}); }
         } }
-        if(doc.getPageCount()>0){ const out=await doc.save(); dlBlob(new Blob([out],{type:"application/pdf"}), nm+"_"+safeName(g.btitle)+".pdf"); merged++; await new Promise(r=>setTimeout(r,700)); }
-        for(const lo of leftovers){ const suffix=lo.it.files.length>1?("_"+lo.i):""; dlBlob(new Blob([lo.bytes]), nm+"_"+safeName(lo.it.name)+suffix+extOf(lo.fo.f.name)); others++; await new Promise(r=>setTimeout(r,450)); }
+        if(doc.getPageCount()>0){ const out=await doc.save(); dlBlob(new Blob([out],{type:"application/pdf"}), nm+"_"+safeName(dlBlockLabel(g.bid,g.btitle))+".pdf"); merged++; await new Promise(r=>setTimeout(r,700)); }
+        for(const lo of leftovers){ const suffix=lo.it.files.length>1?("_"+lo.i):""; dlBlob(new Blob([lo.bytes]), nm+"_"+safeName(dlItemLabel(lo.it.name))+suffix+extOf(lo.fo.f.name)); others++; await new Promise(r=>setTimeout(r,450)); }
       }
       toast(`PDF ${merged}개 합침${others?` · 기타 ${others}개 따로 받음`:""} ✓`);
     } else if(mode==="eachpdf"){
       const PDFLib=await loadPdfLib(); let pdfN=0, origN=0;
       for(const g of picked){ for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f);
-        const ext=extOf(fo.f.name).toLowerCase(); const suffix=it.files.length>1?("_"+i):""; const base=nm+"_"+safeName(it.name)+suffix;
+        const ext=extOf(fo.f.name).toLowerCase(); const suffix=it.files.length>1?("_"+i):""; const base=nm+"_"+safeName(dlItemLabel(it.name))+suffix;
         try{
           if(ext===".pdf"){ dlBlob(new Blob([bytes],{type:"application/pdf"}), base+".pdf"); pdfN++; }
           else if(ext===".jpg"||ext===".jpeg"||ext===".png"){
@@ -1713,7 +1715,7 @@ async function doDownload(){
       toast(`PDF ${pdfN}개 변환${origN?` · 기타 ${origN}개 원본`:""} ✓`);
     } else {
       for(const g of picked){ for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f);
-        const suffix=it.files.length>1?("_"+i):""; dlBlob(new Blob([bytes]), nm+"_"+safeName(it.name)+suffix+extOf(fo.f.name)); await new Promise(r=>setTimeout(r,450)); } } }
+        const suffix=it.files.length>1?("_"+i):""; dlBlob(new Blob([bytes]), nm+"_"+safeName(dlItemLabel(it.name))+suffix+extOf(fo.f.name)); await new Promise(r=>setTimeout(r,450)); } } }
       toast("파일 다운로드 완료 ✓");
     }
   }catch(e){ console.error(e); toast("다운로드 실패: "+e.message); }
