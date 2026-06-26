@@ -619,7 +619,7 @@ function clientStage(c){ return STAGES.includes(c.stage)?c.stage:"서류수집";
 /* ---------- 2. 상태 ---------- */
 const LS_DATA="ksdocs_data_v1", LS_CFG="ksdocs_cfg_v1", LS_DEVICE="ksdocs_device_v1";
 const LS_SNAP="ksdocs_snaps_v1", LS_DATA_BAK="ksdocs_data_bak_v1";
-const SNAP_MAX=20; // 보관할 자동 스냅샷 개수
+const SNAP_MAX=10; // 보관할 자동 스냅샷 개수
 let state = { clients:[], log:[], updatedAt:null, updatedBy:null };
 const DEFAULT_OWNER="bbbgn062-ops", DEFAULT_REPO="docs-checklist", DEFAULT_BRANCH="main"; // 우리 사무소 고정값 (자동 기입)
 let cfg = { repo:DEFAULT_REPO, owner:DEFAULT_OWNER, branch:DEFAULT_BRANCH, token:"", path:"data.json", firmName:"법무법인 이준 서초분사무소", gwUrl:"", gwSecret:"" };
@@ -800,13 +800,24 @@ function findClient(id){ return state.clients.find(c=>c.id===id); }
 
 /* ---------- 4. 저장 (로컬 + 깃헙) ---------- */
 /* 1단계: 로컬 즉시 저장 (+ 직전본을 이중 보관) */
+let _quotaWarned=false;
+function _trimStorage(keep){
+  try{ let snaps=JSON.parse(localStorage.getItem(LS_SNAP)||"[]"); if(snaps.length>keep){ snaps.length=keep; localStorage.setItem(LS_SNAP, JSON.stringify(snaps)); } }
+  catch(_){ try{ localStorage.removeItem(LS_SNAP); }catch(__){} }
+}
 function saveLocal(){
-  try{
-    const json=JSON.stringify(state);
-    const prev=localStorage.getItem(LS_DATA);
-    if(prev && prev.length>2) localStorage.setItem(LS_DATA_BAK, prev); // 직전본 백업(파손 대비)
-    localStorage.setItem(LS_DATA, json);
-  }catch(e){ console.error("로컬 저장 실패",e); toast("⚠️ 로컬 저장 실패 — 저장공간을 확인하세요"); }
+  const json=JSON.stringify(state);
+  const writeMain=()=>{ try{ const prev=localStorage.getItem(LS_DATA); if(prev && prev.length>2) localStorage.setItem(LS_DATA_BAK, prev); }catch(_){} localStorage.setItem(LS_DATA, json); };
+  try{ writeMain(); _quotaWarned=false; }
+  catch(e){
+    _trimStorage(5);                                   // 1차: 오래된 자동백업(스냅샷) 줄이고 재시도
+    try{ writeMain(); _quotaWarned=false; }
+    catch(e2){
+      try{ localStorage.removeItem(LS_SNAP); localStorage.removeItem(LS_DATA_BAK); }catch(_){}   // 2차: 스냅샷·직전백업 비우고 본 데이터만
+      try{ localStorage.setItem(LS_DATA, json); _quotaWarned=false; }
+      catch(e3){ console.error("로컬 저장 실패",e3); if(!_quotaWarned){ _quotaWarned=true; toast("⚠️ 이 브라우저 저장공간이 가득 찼어요. 데이터는 클라우드에 저장되니 안심하세요."); } }
+    }
+  }
 }
 function saveCfg(){ try{ localStorage.setItem(LS_CFG, JSON.stringify(cfg)); }catch(_){}}
 
@@ -3022,6 +3033,7 @@ function boot(){
   }
   try{ const c=localStorage.getItem(LS_CFG); if(c) cfg=Object.assign(cfg,JSON.parse(c)); }catch(_){}
   if(!state.clients) state.clients=[]; if(!state.log) state.log=[];
+  try{ _trimStorage(SNAP_MAX); }catch(_){}   // 시작 시 오래된 자동백업 정리(용량 확보)
   state.clients.forEach(ensureItems);
   if(migrateIfNeeded()) saveLocal();
   updateSyncPill();
