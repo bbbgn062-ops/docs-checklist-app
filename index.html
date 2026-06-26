@@ -2698,14 +2698,14 @@ function openInbox(cid){
   if(!filesReady()){ toast("여러 파일 올리기는 ⚙️설정에서 구글 드라이브 연결 후 가능합니다"); return; }
   _ibEnsureCss(); _ibCid=cid; _ib=[]; _ibSel=new Set(); _ibLast=null; _ibUid=1; _ibBusy=false;
   $("#modalRoot").innerHTML=`<div class="ib-ov" id="ibOv"><div class="ib-panel">
-    <div class="ib-head"><b>📥 받은 파일함</b><span style="flex:1"></span><button class="ib-btn sm" onclick="_ibClose()">닫기</button></div>
+    <div class="ib-head"><b>📥 받은 파일함</b><span id="ibTally" style="font-size:12px;color:#0a7d3c;background:#e7f5ec;border:1px solid #a9ddbd;border-radius:999px;padding:3px 10px;display:none"></span><span style="flex:1"></span><button class="ib-btn sm" onclick="_ibComplete()">닫기</button></div>
     <div class="ib-body">
       <div class="ib-bar">
         <button class="ib-btn pri" onclick="_ibPick()">＋ 여러 파일 올리기</button>
         <button class="ib-btn" onclick="_ibStartSolo()">▶ 한 장씩 보며 배정</button>
         <span class="ib-count">받은 <b id="ibT">0</b>개 · 미배정 <b id="ibN">0</b></span>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">여러 장을 한꺼번에 올린 뒤, 각 파일을 서류 칸에 배정하세요. 올린 파일은 <b>배정할 때만</b> 드라이브에 저장됩니다(닫으면 배정 안 한 건 사라짐). PDF는 “📑 페이지 나눠 배정”으로 한 파일을 서류별로 잘라 정리할 수 있어요.</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">여러 장을 한꺼번에 올린 뒤, 각 파일을 서류 칸에 배정하세요. 배정·분할하면 그 줄이 <b style="color:#0a7d3c">초록색 ‘정리됨’</b>으로 바뀝니다. 올린 파일은 <b>배정할 때만</b> 드라이브에 저장됩니다. PDF는 “📑 페이지 나눠 배정”으로 서류별로 잘라 정리할 수 있어요.</div>
       <div id="ibBulk" class="ib-bulk" style="display:none">
         <span><b id="ibSelN">0</b>개 선택됨 — 여러 장이 한 서류일 때 한 번에</span>
         <button class="ib-btn sm" style="margin-left:auto" onclick="_ibOpenPick('bulk')">한 서류에 배정 →</button>
@@ -2713,11 +2713,50 @@ function openInbox(cid){
       </div>
       <div id="ibList"></div>
     </div>
+    <div class="ib-foot"><button class="ib-cont" id="ibDoneBtn" style="margin:0" onclick="_ibComplete()">닫기</button></div>
   </div></div>`;
-  const ov=$("#ibOv"); ov.addEventListener("click",e=>{ if(e.target===ov) _ibClose(); });
+  const ov=$("#ibOv"); ov.addEventListener("click",e=>{ if(e.target===ov) _ibComplete(); });
   _ibRender();
 }
 function _ibClose(){ if(_ibBusy){ toast("저장 중입니다 — 잠시 후 닫아주세요"); return; } _ib.forEach(f=>{ try{URL.revokeObjectURL(f.url);}catch(_){ } }); _ib=[]; _ibSel=new Set(); closeModal(); if(_ibCid) renderDetail(_ibCid); }
+/* 정리 현황 집계 helper */
+function _ibFiledCount(f){ return f.filedSlots? Object.values(f.filedSlots).reduce((a,b)=>a+b,0):0; }
+function _ibIsFiled(f){ return _ibFiledCount(f)>0; }
+function _ibUnassigned(){ return _ib.filter(f=>!_ibIsFiled(f)); }
+function _ibAddFiled(f,label,n){ if(!f.filedSlots) f.filedSlots={}; f.filedSlots[label]=(f.filedSlots[label]||0)+n; }
+function _ibTallyTotal(){ let t=0,orig=0; _ib.forEach(f=>{ t+=_ibFiledCount(f); if(f.origSaved) orig++; }); return {t,orig}; }
+/* "정리 완료" — 무엇이 어디로 갔는지 요약 후 닫기 */
+function _ibComplete(){
+  if(_ibBusy){ toast("저장 중입니다 — 잠시만요"); return; }
+  const agg={}; _ib.forEach(f=>{ if(f.filedSlots){ for(const k in f.filedSlots) agg[k]=(agg[k]||0)+f.filedSlots[k]; } });
+  let origN=0; _ib.forEach(f=>{ if(f.origSaved) origN++; });
+  const rows=Object.keys(agg);
+  const unassigned=_ibUnassigned().length;
+  const totalFiled=rows.reduce((a,k)=>a+agg[k],0)+origN;
+  if(totalFiled===0){
+    if(unassigned>0){ if(!confirm(`아직 아무것도 배정하지 않았어요. 올린 ${unassigned}개는 저장되지 않습니다. 닫을까요?`)) return; }
+    _ibClose(); return;
+  }
+  let list=rows.map(k=>`<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#2b2b2b;padding:3px 0"><span style="color:#9B1B33">📄</span> ${esc(k)} <span style="margin-left:auto;color:#0a7d3c;font-weight:800">${agg[k]}장</span></div>`).join("");
+  if(origN>0) list+=`<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#2b2b2b;padding:3px 0"><span style="color:#9B1B33">🗂</span> 그 외 서류 · [원본] 보관 <span style="margin-left:auto;color:#0a7d3c;font-weight:800">${origN}건</span></div>`;
+  const warn = unassigned>0 ? `<div style="margin:6px 0 0;background:#fdf1df;border:1px solid #f0cd8f;border-radius:9px;padding:8px 11px;font-size:12px;color:#9a5a00">배정 안 한 <b>${unassigned}개</b>는 저장되지 않아요. 마저 배정할까요?</div>` : "";
+  const d=document.createElement("div"); d.className="ib-ov"; d.id="ibDoneOv"; d.style.zIndex="78";
+  d.innerHTML=`<div class="ib-modal" style="max-width:340px">
+    <div style="padding:20px 18px 8px;text-align:center">
+      <div style="width:46px;height:46px;border-radius:50%;background:#e7f5ec;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:24px;color:#0a7d3c">✓</div>
+      <div style="font-size:17px;font-weight:800;color:#2b2b2b">정리 완료</div>
+      <div style="font-size:12.5px;color:#7a756f;margin-top:3px">받은 파일이 각 서류 칸에 저장됐어요</div>
+    </div>
+    <div style="padding:2px 18px 8px">${list}${warn}</div>
+    <div style="padding:6px 16px 16px;display:flex;gap:8px">
+      <button class="ib-btn pri" style="flex:1;justify-content:center" onclick="_ibDoneClose()">확인 · 닫기</button>
+      ${unassigned>0?`<button class="ib-btn" onclick="_ibDoneStay()">계속 배정</button>`:""}
+    </div></div>`;
+  $("#modalRoot").appendChild(d);
+  d.addEventListener("click",e=>{ if(e.target===d) _ibDoneStay(); });
+}
+function _ibDoneStay(){ const d=$("#ibDoneOv"); if(d) d.remove(); }
+function _ibDoneClose(){ const d=$("#ibDoneOv"); if(d) d.remove(); _ibClose(); }
 function _ibPick(){ const inp=document.createElement("input"); inp.type="file"; inp.multiple=true; inp.accept="image/*,application/pdf,.pdf";
   inp.onchange=()=>{ let big=0; for(const f of inp.files){ if(f.size>40*1024*1024){ big++; continue; } _ib.push({id:_ibUid++, file:f, url:URL.createObjectURL(f), type:f.type||"", name:f.name, size:f.size, slot:null, splitPages:{}, origSaved:false}); } if(big) toast(`${big}개는 40MB 초과로 제외(큰 파일은 🔗링크 권장)`); _ibRender(); };
   inp.click(); }
@@ -2733,23 +2772,33 @@ function _ibThumb(f){
 function _ibRender(){
   const list=$("#ibList"); if(!list) return; list.innerHTML="";
   const t=$("#ibT"), n=$("#ibN"); if(t) t.textContent=_ib.length;
-  if(n) n.textContent=_ib.filter(f=>!f.slot && Object.keys(f.splitPages).length===0).length;
+  if(n) n.textContent=_ibUnassigned().length;
   if(_ib.length===0){ list.innerHTML='<div class="ib-empty">위 “＋ 여러 파일 올리기”로 사진·PDF를 한꺼번에 올려보세요.</div>'; }
   _ib.forEach(f=>{
+    const filed=_ibIsFiled(f);
     const row=document.createElement("div"); row.className="ib-frow"+(_ibSel.has(f.id)?" sel":"");
-    const ck=document.createElement("input"); ck.type="checkbox"; ck.className="ib-ck"; ck.checked=_ibSel.has(f.id);
-    ck.onclick=()=>{ _ibSel.has(f.id)?_ibSel.delete(f.id):_ibSel.add(f.id); _ibRender(); }; row.appendChild(ck);
+    if(filed){ row.style.background="#e7f5ec"; row.style.borderColor="#a9ddbd"; }
+    if(!filed){ const ck=document.createElement("input"); ck.type="checkbox"; ck.className="ib-ck"; ck.checked=_ibSel.has(f.id);
+      ck.onclick=()=>{ _ibSel.has(f.id)?_ibSel.delete(f.id):_ibSel.add(f.id); _ibRender(); }; row.appendChild(ck); }
     row.appendChild(_ibThumb(f));
     const mid=document.createElement("div"); mid.style.cssText="flex:1;min-width:120px";
-    const nSplit=Object.keys(f.splitPages).length;
-    mid.innerHTML=`<div class="ib-fn">${esc(f.name)}</div><div class="ib-fmeta">${_ibIsPdf(f)?"PDF":(_ibIsImg(f)?"이미지":"파일")} · ${fileSizeStr(f.size)}${nSplit?` · 분할 ${nSplit}p 배정됨`:""}</div>`;
+    if(filed){
+      const parts=Object.keys(f.filedSlots).map(k=>`${esc(k)} ${f.filedSlots[k]}장`);
+      if(f.origSaved) parts.push("[원본] 보관");
+      mid.innerHTML=`<div class="ib-fn">${esc(f.name)}</div><div class="ib-fmeta" style="color:#0a7d3c">정리됨 · ${parts.join(" · ")}</div>`;
+    } else {
+      mid.innerHTML=`<div class="ib-fn">${esc(f.name)}</div><div class="ib-fmeta">${_ibIsPdf(f)?"PDF":(_ibIsImg(f)?"이미지":"파일")} · ${fileSizeStr(f.size)}</div>`;
+    }
     row.appendChild(mid);
-    if(_ibIsPdf(f)){ const sb=document.createElement("button"); sb.className="ib-split"; sb.textContent="📑 페이지 나눠 배정"; sb.onclick=()=>_ibOpenSplit(f.id); row.appendChild(sb); }
-    const b=document.createElement("button"); b.className="ib-asgn need"; b.textContent="서류 선택";
-    b.onclick=()=>_ibOpenPick("one",f.id); row.appendChild(b);
+    if(_ibIsPdf(f)){ const sb=document.createElement("button"); sb.className="ib-split"; sb.textContent=filed?"📑 더 나누기":"📑 페이지 나눠 배정"; sb.onclick=()=>_ibOpenSplit(f.id); row.appendChild(sb); }
+    if(filed){ const tag=document.createElement("span"); tag.style.cssText="font-size:12px;font-weight:800;color:#0a7d3c;white-space:nowrap;padding:7px 4px"; tag.textContent="✓ 정리됨"; row.appendChild(tag); }
+    else { const b=document.createElement("button"); b.className="ib-asgn need"; b.textContent="서류 선택"; b.onclick=()=>_ibOpenPick("one",f.id); row.appendChild(b); }
     list.appendChild(row);
   });
   const bulk=$("#ibBulk"); if(bulk) bulk.style.display=_ibSel.size?"flex":"none"; const sn=$("#ibSelN"); if(sn) sn.textContent=_ibSel.size;
+  const {t:tot,orig}=_ibTallyTotal(); const tg=$("#ibTally");
+  if(tg){ if(tot+orig>0){ tg.style.display=""; tg.textContent=`✓ 이번에 정리 ${tot+orig}건`; } else tg.style.display="none"; }
+  const dn=$("#ibDoneBtn"); if(dn) dn.textContent=(tot+orig>0)?`✓ 정리 완료 (${tot+orig}건 저장됨)`:"닫기";
 }
 
 /* ---- 서류 선택(검색) 모달 ---- */
@@ -2799,12 +2848,12 @@ async function _ibDoAssign(slot){
       const ids=[..._ibSel]; const targets=_ib.filter(f=>ids.includes(f.id));
       if(!targets.length){ _ibClosePick(); _ibBusy=false; return; }
       toast(`${targets.length}개 업로드 중…`);
-      for(let i=0;i<targets.length;i++){ await _ibUploadFile(c,targets[i],slot); }
-      targets.forEach(t=>_ibRemove(t.id)); _ibSel=new Set();
+      for(let i=0;i<targets.length;i++){ await _ibUploadFile(c,targets[i],slot); _ibAddFiled(targets[i], itemName(slot,c), 1); }
+      _ibSel=new Set();
       touch(`[${c.name}] 받은 파일함 → '${itemName(slot,c)}' ${targets.length}개 배정`);
       _ibClosePick(); _ibRender(); toast(`'${_ibSlotName(slot)}'로 ${targets.length}개 배정 ✓`);
     } else { // one / solo
-      const f=_ib.find(x=>x.id===_ibPickCtx.id); if(f){ toast("업로드 중…"); await _ibUploadFile(c,f,slot); _ibRemove(f.id); touch(`[${c.name}] 받은 파일함 → '${itemName(slot,c)}' 1개 배정`); }
+      const f=_ib.find(x=>x.id===_ibPickCtx.id); if(f){ toast("업로드 중…"); await _ibUploadFile(c,f,slot); _ibAddFiled(f, itemName(slot,c), 1); touch(`[${c.name}] 받은 파일함 → '${itemName(slot,c)}' 1개 배정`); }
       _ibClosePick();
       if(mode==="solo"){ _ibRender(); _ibSoloNext(); } else { _ibRender(); toast("배정 완료 ✓"); }
     }
@@ -2813,15 +2862,15 @@ async function _ibDoAssign(slot){
 }
 
 /* ---- 한 장씩 보며 배정 ---- */
-function _ibStartSolo(){ const f=_ib[0]; if(!f){ toast(_ib.length?"배정할 파일이 없습니다 ✓":"먼저 파일을 올려주세요"); return; } _ibSolo=f.id; _ibRenderSolo(); }
-function _ibSoloNext(){ const f=_ib[0]; if(!f){ const d=$("#ibSoloOv"); if(d) d.remove(); _ibRender(); toast("미배정 파일을 모두 처리했습니다 ✓"); return; } _ibSolo=f.id; _ibRenderSolo(); }
-function _ibSoloSkip(){ const i=_ib.findIndex(x=>x.id===_ibSolo); if(i<0||_ib.length<2) return; _ibSolo=_ib[(i+1)%_ib.length].id; _ibRenderSolo(); }
+function _ibStartSolo(){ const arr=_ibUnassigned(); const f=arr[0]; if(!f){ toast(_ib.length?"배정할 파일이 없습니다 ✓":"먼저 파일을 올려주세요"); return; } _ibSolo=f.id; _ibRenderSolo(); }
+function _ibSoloNext(){ const arr=_ibUnassigned(); const f=arr[0]; if(!f){ const d=$("#ibSoloOv"); if(d) d.remove(); _ibRender(); toast("미배정 파일을 모두 처리했습니다 ✓"); return; } _ibSolo=f.id; _ibRenderSolo(); }
+function _ibSoloSkip(){ const arr=_ibUnassigned(); if(arr.length<2) return; const i=arr.findIndex(x=>x.id===_ibSolo); _ibSolo=arr[(i+1)%arr.length].id; _ibRenderSolo(); }
 function _ibCloseSolo(){ const d=$("#ibSoloOv"); if(d) d.remove(); }
 function _ibSoloKeep(slot){ _ibPickCtx={mode:"solo",id:_ibSolo}; _ibDoAssign(slot); }
-function _ibRenderSolo(){ const f=_ib.find(x=>x.id===_ibSolo)||_ib[0]; if(!f){ _ibCloseSolo(); return; } _ibSolo=f.id;
+function _ibRenderSolo(){ const f=_ib.find(x=>x.id===_ibSolo)||_ibUnassigned()[0]; if(!f){ _ibCloseSolo(); return; } _ibSolo=f.id;
   let d=$("#ibSoloOv"); if(!d){ d=document.createElement("div"); d.className="ib-ov"; d.id="ibSoloOv"; d.style.zIndex="65"; $("#modalRoot").appendChild(d); }
   d.innerHTML=`<div class="ib-big">
-    <div class="ib-bhead"><b>한 장씩 배정 · 남은 ${_ib.length}개</b><button class="ib-btn sm" onclick="_ibCloseSolo()">닫기</button></div>
+    <div class="ib-bhead"><b>한 장씩 배정 · 남은 ${_ibUnassigned().length}개</b><button class="ib-btn sm" onclick="_ibCloseSolo()">닫기</button></div>
     <div class="ib-pv" id="ibSoloPv"><div style="color:#fff;padding:30px">불러오는 중…</div></div>
     <div class="ib-foot">${_ibLast?`<button class="ib-cont" onclick="_ibSoloKeep('${esc(_ibLast)}')">＋ 방금 그 서류에 계속 담기 · ${esc(_ibSlotName(_ibLast))}</button>`:""}
       <div style="display:flex;gap:8px"><button class="ib-btn pri" style="flex:1;justify-content:center" onclick="_ibOpenPick('solo',${f.id})">서류 선택 / 검색</button><button class="ib-btn" onclick="_ibSoloSkip()">건너뛰기</button></div>
@@ -2932,6 +2981,7 @@ async function _ibBuildSplit(slot){
     const s=c.items[slot]; if(!s.files) s.files=[];
     s.files.push({name:pieceName,size:buf.byteLength,driveId:j.id,by:deviceName||"미설정",ts:now()});
     _ibMarkReceived(s);
+    _ibAddFiled(f, itemName(slot,c), pages.length);
     pages.forEach(p=>f.splitPages[p]=slot);
     const _keepOrig=(()=>{ const cb=$("#ibKeepOrig"); return cb?cb.checked:true; })();
     if(_keepOrig && !f.origSaved){ await _ibSaveOriginal(c,f); }
