@@ -1502,6 +1502,28 @@ function fileSizeStr(n){ return n<1024*1024 ? Math.max(1,Math.round(n/1024))+"KB
 function arrayBufferToBase64(buf){ const bytes=new Uint8Array(buf); let bin=""; const chunk=0x8000;
   for(let i=0;i<bytes.length;i+=chunk){ bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk)); } return btoa(bin); }
 function ghContentsUrl(path){ return `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}`; }
+/* 업로드 전 사진 자동압축: 큰 폰 사진을 화질 유지하며 용량↓ → 업로드 빨라짐.
+   - 이미지(jpg/png)만 대상, 까다로운 포맷(heic/gif/webp)·작은 파일은 원본 그대로
+   - 긴 변 2200px로 축소 + JPEG 품질 0.75 (서류 글자 또렷하게 유지) */
+function _loadImg(file){ return new Promise((res,rej)=>{ const u=URL.createObjectURL(file); const img=new Image(); img.onload=()=>res({img,u}); img.onerror=()=>{ try{URL.revokeObjectURL(u);}catch(_){ } rej(new Error("img load")); }; img.src=u; }); }
+async function compressImage(file, maxDim=2200, quality=0.75){
+  try{
+    const nm=file.name||"";
+    if(!/^image\//.test(file.type||"") && !/\.(jpe?g|png)$/i.test(nm)) return file;     // 이미지 아님
+    if(/\.(gif|webp|bmp|heic|heif)$/i.test(nm)) return file;                              // 변환 까다로운 포맷
+    if(file.size < 400*1024) return file;                                                 // 이미 작으면 그대로
+    const {img,u}=await _loadImg(file);
+    const scale=Math.min(1, maxDim/Math.max(img.width,img.height));
+    const cw=Math.max(1,Math.round(img.width*scale)), ch=Math.max(1,Math.round(img.height*scale));
+    const cv=document.createElement("canvas"); cv.width=cw; cv.height=ch;
+    const ctx=cv.getContext("2d"); ctx.fillStyle="#fff"; ctx.fillRect(0,0,cw,ch); ctx.drawImage(img,0,0,cw,ch);
+    try{URL.revokeObjectURL(u);}catch(_){}
+    const blob=await new Promise(r=>cv.toBlob(r,"image/jpeg",quality));
+    if(!blob || blob.size>=file.size) return file;                                        // 안 줄면 원본 유지
+    const base=nm.replace(/\.[^.]+$/,"")||"사진";
+    return new File([blob], base+".jpg", {type:"image/jpeg"});
+  }catch(e){ return file; }
+}
 function attachFiles(cid,id){
   if(!filesReady()){ toast("파일 첨부는 ⚙️설정에서 구글 드라이브 연결 후 가능합니다 (기기 간 공유를 위해)"); return; }
   const c=findClient(cid);
@@ -1518,7 +1540,7 @@ function attachFiles(cid,id){
     if(!valid.length){ renderDetail(cid); return; }
     setSync("saving"); toast(`${valid.length}개 업로드 중…`);
     const folder=clientFolder(c); const results=new Array(valid.length); let okN=0;
-    const up=async(f,i)=>{ try{ const b64=arrayBufferToBase64(await f.arrayBuffer()); const j=await gwUpload(folder,f.name,f.type||"application/octet-stream",b64); results[i]={name:f.name,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()}; }catch(e){ console.error(e); toast(`${f.name} 업로드 실패: ${e.message}`); setSync("error"); } };
+    const up=async(f0,i)=>{ try{ const f=await compressImage(f0); const b64=arrayBufferToBase64(await f.arrayBuffer()); const j=await gwUpload(folder,f.name,f.type||"application/octet-stream",b64); results[i]={name:f.name,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()}; }catch(e){ console.error(e); toast(`${f0.name} 업로드 실패: ${e.message}`); setSync("error"); } };
     await up(valid[0],0);                                       // 첫 파일이 폴더 생성
     await Promise.all(valid.slice(1).map((f,k)=>up(f,k+1)));    // 나머지는 동시에(빠름) · 순서 유지
     results.forEach(r=>{ if(r){ s.files.push(r); okN++; } });
@@ -2843,10 +2865,11 @@ function _ibOpenPick(mode,id){ _ibPickCtx={mode,id};
 function _ibClosePick(){ const d=$("#ibPickOv"); if(d) d.remove(); }
 
 async function _ibUploadFile(c, fobj, slot){
-  const b64=arrayBufferToBase64(await fobj.file.arrayBuffer());
-  const j=await gwUpload(clientFolder(c), fobj.name, fobj.type||"application/octet-stream", b64);
+  const file=await compressImage(fobj.file);
+  const b64=arrayBufferToBase64(await file.arrayBuffer());
+  const j=await gwUpload(clientFolder(c), file.name, file.type||"application/octet-stream", b64);
   const s=c.items[slot]; if(!s.files) s.files=[];
-  s.files.push({name:fobj.name,size:fobj.size,driveId:j.id,by:deviceName||"미설정",ts:now()});
+  s.files.push({name:file.name,size:file.size,driveId:j.id,by:deviceName||"미설정",ts:now()});
   _ibMarkReceived(s);
 }
 async function _ibDoAssign(slot){
