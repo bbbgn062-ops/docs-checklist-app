@@ -1223,6 +1223,7 @@ function renderDetail(id){
       <div style="display:flex;gap:18px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line);flex-wrap:wrap;align-items:center;justify-content:center">
         ${fbtn(`📝 메모${(c.memo&&c.memo.trim())?' ●':''}`,`toggleDetailPanel('memo')`)}
         ${fbtn(`🗓 기록${(c.timeline&&c.timeline.length)?' '+c.timeline.length:''}`,`toggleDetailPanel('timeline')`)}
+        ${fbtn('📥 여러 파일 한번에',`openInbox('${c.id}')`)}
         ${fbtn('📥 다운로드',`openDownload('${c.id}')`)}
         ${fbtn('✏ 수정',`openClientModal('${c.id}')`)}
         ${fbtn('⋯ 더보기',`openMore('${c.id}')`)}
@@ -2623,6 +2624,336 @@ function exportLog(){
 /* ---------- 10. 모달 ---------- */
 function modal(html,maxw){ $("#modalRoot").innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal" style="${maxw?'max-width:'+maxw+'px':''}"><button class="modal-x" onclick="closeModal()" aria-label="닫기">✕</button>${html}</div></div>`; }
 function closeModal(){ $("#modalRoot").innerHTML=""; if(_previewUrl){ try{URL.revokeObjectURL(_previewUrl);}catch(_){ } _previewUrl=null; } }
+
+/* ========== 6d. 받은 파일함 (여러 파일 한번에 배정 + PDF 페이지 분할) ==========
+   메모리 보관 후 '배정' 시에만 드라이브 업로드. 기존 데이터는 id 기준 '추가'만 — 무손실. */
+let _ib=[];                 // 받은 파일함(메모리): {id,file,url,name,size,type,slot,splitPages:{}, origSaved}
+let _ibSel=new Set();       // 다중선택
+let _ibLast=null;           // 직전 배정 서류 id (한장씩 '계속 담기'용)
+let _ibUid=1, _ibCid=null, _ibBusy=false, _ibSolo=null, _ibPickCtx=null;
+let _ibSplitFid=null, _ibSplitSel=new Set(), _ibPgSize="M";
+let _ibPgPending=false,_ibPgActive=false,_ibPgSX=0,_ibPgSY=0,_ibPgBase=null,_ibPgBox=null,_ibPgDownCell=null,_ibPgDownType="";
+
+function _ibEnsureCss(){
+  if(document.getElementById('ibCss')) return;
+  const st=document.createElement('style'); st.id='ibCss';
+  st.textContent=`
+  .ib-ov{position:fixed;inset:0;background:rgba(20,18,16,.5);display:flex;align-items:center;justify-content:center;padding:12px;z-index:60}
+  .ib-panel{background:#fff;border-radius:14px;max-width:720px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
+  .ib-head{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .ib-head b{font-size:16px}
+  .ib-body{flex:1;overflow:auto;padding:14px 16px;background:#faf9f7}
+  .ib-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .ib-btn{cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:999px;padding:9px 15px;font-size:14px;font-weight:700;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+  .ib-btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}
+  .ib-btn.sm{padding:6px 11px;font-size:12.5px}
+  .ib-count{font-size:12.5px;color:var(--muted)} .ib-count b{color:#9a5a00}
+  .ib-bulk{background:#e8effc;color:#1d4ed8;border-radius:10px;padding:9px 13px;font-size:13px;display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .ib-frow{display:flex;align-items:center;gap:11px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:9px;flex-wrap:wrap}
+  .ib-frow.sel{outline:2px solid #1d4ed8;outline-offset:-1px}
+  .ib-ck{width:20px;height:20px;flex:none;cursor:pointer}
+  .ib-thumb{width:46px;height:58px;border-radius:7px;background:#f0eee9;flex:none;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#9a948c;font-size:11px;font-weight:800;cursor:pointer}
+  .ib-thumb img,.ib-thumb canvas{width:100%;height:100%;object-fit:cover;display:block}
+  .ib-fn{font-size:13.5px;word-break:break-all}
+  .ib-fmeta{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .ib-asgn{cursor:pointer;border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:800;border:1px solid var(--line);background:#fff;color:var(--ink);white-space:nowrap}
+  .ib-asgn.need{background:#fdf1df;border-color:#f0cd8f;color:#9a5a00}
+  .ib-split{cursor:pointer;border-radius:999px;padding:7px 11px;font-size:12px;font-weight:800;border:1px solid #c9d3ea;background:#e8effc;color:#1d4ed8;white-space:nowrap}
+  .ib-empty{color:var(--muted);font-size:13px;background:#fff;border:1px dashed var(--line);border-radius:12px;padding:24px;text-align:center}
+  .ib-modal{background:#fff;border-radius:14px;max-width:460px;width:100%;max-height:86vh;display:flex;flex-direction:column;overflow:hidden}
+  .ib-modal h3{margin:0;padding:14px 16px 10px;font-size:16px}
+  .ib-srch{margin:0 16px 10px;display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:10px;padding:8px 11px}
+  .ib-srch input{border:none;outline:none;font-size:14px;flex:1;background:none}
+  .ib-slist{overflow:auto;padding:0 8px 8px}
+  .ib-sgrp{font-size:11.5px;font-weight:800;color:var(--muted);padding:9px 8px 4px}
+  .ib-sitem{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px;border-radius:9px;cursor:pointer;font-size:13.5px}
+  .ib-sitem:active{background:#f0eee9}
+  .ib-sitem .nt{font-size:11px;color:var(--muted);white-space:nowrap}
+  .ib-mfoot{padding:10px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end}
+  .ib-big{background:#fff;border-radius:14px;max-width:680px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
+  .ib-bhead{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .ib-pv{flex:1;overflow:auto;background:#33373d;padding:10px;text-align:center;min-height:200px}
+  .ib-pv img,.ib-pv canvas{max-width:100%;border-radius:6px;background:#fff;margin:0 auto 8px;display:block}
+  .ib-foot{padding:12px 16px;border-top:1px solid var(--line)}
+  .ib-cont{width:100%;background:#0a7d3c;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:800;cursor:pointer;margin-bottom:8px}
+  .ib-pgwrap{flex:1;overflow:auto;padding:12px;display:flex;flex-wrap:wrap;gap:10px;background:#f2f1ee;align-content:flex-start}
+  .ib-pgcell{width:158px;background:#fff;border:2px solid var(--line);border-radius:9px;padding:6px;cursor:pointer;text-align:center;position:relative}
+  .ib-pgcell.lg{width:248px}
+  .ib-pgzoom{position:absolute;top:5px;right:5px;border:none;background:rgba(255,255,255,.92);border-radius:7px;font-size:13px;padding:3px 7px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .ib-pgcell.on{border-color:#1d4ed8;background:#e8effc}
+  .ib-pgcell.done{border-color:#a9ddbd;background:#e7f5ec;cursor:default}
+  .ib-pgcell canvas{width:100%;height:auto;border-radius:4px;background:#fff;display:block}
+  .ib-pgnum{font-size:11px;font-weight:800;color:#6b665f;margin-top:4px}
+  .ib-pgtag{font-size:10px;color:#0a7d3c;font-weight:800;margin-top:2px;word-break:break-all}
+  `;
+  document.head.appendChild(st);
+}
+function _ibIsImg(f){ return (f.type||"").startsWith("image/") || /\.(jpe?g|png|gif|webp|bmp)$/i.test(f.name); }
+function _ibIsPdf(f){ return f.type==="application/pdf" || /\.pdf$/i.test(f.name); }
+function _ibSlotName(id){ const c=findClient(_ibCid); return c?itemName(id,c):id; }
+function _ibMarkReceived(s){ s.manual=true; if(s.mode!=="na" && !s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; } }
+function _ibRemove(id){ const i=_ib.findIndex(f=>f.id===id); if(i>=0){ try{URL.revokeObjectURL(_ib[i].url);}catch(_){ } _ib.splice(i,1); } _ibSel.delete(id); }
+
+function openInbox(cid){
+  if(!filesReady()){ toast("여러 파일 올리기는 ⚙️설정에서 구글 드라이브 연결 후 가능합니다"); return; }
+  _ibEnsureCss(); _ibCid=cid; _ib=[]; _ibSel=new Set(); _ibLast=null; _ibUid=1; _ibBusy=false;
+  $("#modalRoot").innerHTML=`<div class="ib-ov" id="ibOv"><div class="ib-panel">
+    <div class="ib-head"><b>📥 받은 파일함</b><span style="flex:1"></span><button class="ib-btn sm" onclick="_ibClose()">닫기</button></div>
+    <div class="ib-body">
+      <div class="ib-bar">
+        <button class="ib-btn pri" onclick="_ibPick()">＋ 여러 파일 올리기</button>
+        <button class="ib-btn" onclick="_ibStartSolo()">▶ 한 장씩 보며 배정</button>
+        <span class="ib-count">받은 <b id="ibT">0</b>개 · 미배정 <b id="ibN">0</b></span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">여러 장을 한꺼번에 올린 뒤, 각 파일을 서류 칸에 배정하세요. 올린 파일은 <b>배정할 때만</b> 드라이브에 저장됩니다(닫으면 배정 안 한 건 사라짐). PDF는 “📑 페이지 나눠 배정”으로 한 파일을 서류별로 잘라 정리할 수 있어요.</div>
+      <div id="ibBulk" class="ib-bulk" style="display:none">
+        <span><b id="ibSelN">0</b>개 선택됨 — 여러 장이 한 서류일 때 한 번에</span>
+        <button class="ib-btn sm" style="margin-left:auto" onclick="_ibOpenPick('bulk')">한 서류에 배정 →</button>
+        <button class="ib-btn sm" onclick="_ibClearSel()">선택 해제</button>
+      </div>
+      <div id="ibList"></div>
+    </div>
+  </div></div>`;
+  const ov=$("#ibOv"); ov.addEventListener("click",e=>{ if(e.target===ov) _ibClose(); });
+  _ibRender();
+}
+function _ibClose(){ if(_ibBusy){ toast("저장 중입니다 — 잠시 후 닫아주세요"); return; } _ib.forEach(f=>{ try{URL.revokeObjectURL(f.url);}catch(_){ } }); _ib=[]; _ibSel=new Set(); closeModal(); if(_ibCid) renderDetail(_ibCid); }
+function _ibPick(){ const inp=document.createElement("input"); inp.type="file"; inp.multiple=true; inp.accept="image/*,application/pdf,.pdf";
+  inp.onchange=()=>{ let big=0; for(const f of inp.files){ if(f.size>40*1024*1024){ big++; continue; } _ib.push({id:_ibUid++, file:f, url:URL.createObjectURL(f), type:f.type||"", name:f.name, size:f.size, slot:null, splitPages:{}, origSaved:false}); } if(big) toast(`${big}개는 40MB 초과로 제외(큰 파일은 🔗링크 권장)`); _ibRender(); };
+  inp.click(); }
+function _ibClearSel(){ _ibSel=new Set(); _ibRender(); }
+
+function _ibThumb(f){
+  const box=document.createElement("div"); box.className="ib-thumb"; box.title="크게 보기";
+  box.textContent=_ibIsPdf(f)?"PDF":(_ibIsImg(f)?"IMG":"?"); box.onclick=()=>_ibPreview(f.id);
+  if(_ibIsImg(f)){ const img=new Image(); img.onload=()=>{box.textContent="";box.appendChild(img);}; img.onerror=()=>{}; img.src=f.url; }
+  else if(_ibIsPdf(f)){ loadPdfJs().then(L=>L.getDocument(f.url).promise).then(p=>p.getPage(1)).then(pg=>{ const vp=pg.getViewport({scale:1}); const s=92/vp.width; const v=pg.getViewport({scale:s}); const cv=document.createElement("canvas"); cv.width=v.width; cv.height=v.height; return pg.render({canvasContext:cv.getContext("2d"),viewport:v}).promise.then(()=>{box.textContent="";box.appendChild(cv);}); }).catch(()=>{}); }
+  return box;
+}
+function _ibRender(){
+  const list=$("#ibList"); if(!list) return; list.innerHTML="";
+  const t=$("#ibT"), n=$("#ibN"); if(t) t.textContent=_ib.length;
+  if(n) n.textContent=_ib.filter(f=>!f.slot && Object.keys(f.splitPages).length===0).length;
+  if(_ib.length===0){ list.innerHTML='<div class="ib-empty">위 “＋ 여러 파일 올리기”로 사진·PDF를 한꺼번에 올려보세요.</div>'; }
+  _ib.forEach(f=>{
+    const row=document.createElement("div"); row.className="ib-frow"+(_ibSel.has(f.id)?" sel":"");
+    const ck=document.createElement("input"); ck.type="checkbox"; ck.className="ib-ck"; ck.checked=_ibSel.has(f.id);
+    ck.onclick=()=>{ _ibSel.has(f.id)?_ibSel.delete(f.id):_ibSel.add(f.id); _ibRender(); }; row.appendChild(ck);
+    row.appendChild(_ibThumb(f));
+    const mid=document.createElement("div"); mid.style.cssText="flex:1;min-width:120px";
+    const nSplit=Object.keys(f.splitPages).length;
+    mid.innerHTML=`<div class="ib-fn">${esc(f.name)}</div><div class="ib-fmeta">${_ibIsPdf(f)?"PDF":(_ibIsImg(f)?"이미지":"파일")} · ${fileSizeStr(f.size)}${nSplit?` · 분할 ${nSplit}p 배정됨`:""}</div>`;
+    row.appendChild(mid);
+    if(_ibIsPdf(f)){ const sb=document.createElement("button"); sb.className="ib-split"; sb.textContent="📑 페이지 나눠 배정"; sb.onclick=()=>_ibOpenSplit(f.id); row.appendChild(sb); }
+    const b=document.createElement("button"); b.className="ib-asgn need"; b.textContent="서류 선택";
+    b.onclick=()=>_ibOpenPick("one",f.id); row.appendChild(b);
+    list.appendChild(row);
+  });
+  const bulk=$("#ibBulk"); if(bulk) bulk.style.display=_ibSel.size?"flex":"none"; const sn=$("#ibSelN"); if(sn) sn.textContent=_ibSel.size;
+}
+
+/* ---- 서류 선택(검색) 모달 ---- */
+function _ibSlotsHtml(q){
+  q=(q||"").trim().toLowerCase(); const c=findClient(_ibCid); if(!c) return ""; let body="";
+  TEMPLATE.forEach(b=>{
+    const rows=[];
+    b.groups.forEach(g=>g.items.forEach(it=>{ if(!q||it.name.toLowerCase().includes(q)) rows.push({id:it.id,name:it.name,note:it.note}); }));
+    ((c.extra&&c.extra[b.id])||[]).forEach(ex=>{ if(!q||(ex.name||"").toLowerCase().includes(q)) rows.push({id:ex.id,name:ex.name,note:"추가서류"}); });
+    if(!rows.length) return;
+    body+=`<div class="ib-sgrp">${esc(b.title)}</div>`;
+    rows.forEach(it=>{ const nt=(it.note||"").slice(0,16); body+=`<div class="ib-sitem" data-s="${esc(it.id)}"><span>${esc(it.name)}</span>${nt?`<span class="nt">${esc(nt)}</span>`:""}</div>`; });
+  });
+  return body||'<div class="ib-sgrp">검색 결과 없음</div>';
+}
+function _ibOpenPick(mode,id){ _ibPickCtx={mode,id};
+  const tgt = mode==="bulk"?`선택한 ${_ibSel.size}개`:(mode==="split"?"이 페이지들":"이 파일");
+  const d=document.createElement("div"); d.className="ib-ov"; d.id="ibPickOv"; d.style.zIndex="70";
+  d.innerHTML=`<div class="ib-modal">
+    <h3>${esc(tgt)}를 어느 서류로?</h3>
+    <div class="ib-srch">🔎<input id="ibPq" placeholder="서류 이름 검색 (예: 주민, 통장)" autocomplete="off"></div>
+    <div class="ib-slist" id="ibSlist">${_ibSlotsHtml("")}</div>
+    <div class="ib-mfoot"><button class="ib-btn sm" onclick="_ibClosePick()">닫기</button></div>
+  </div>`;
+  $("#modalRoot").appendChild(d);
+  d.addEventListener("click",e=>{ if(e.target===d) _ibClosePick(); });
+  const pq=d.querySelector("#ibPq"); pq.addEventListener("input",()=>{ d.querySelector("#ibSlist").innerHTML=_ibSlotsHtml(pq.value); });
+  d.querySelector("#ibSlist").addEventListener("click",e=>{ const it=e.target.closest(".ib-sitem"); if(it&&it.dataset.s) _ibDoAssign(it.dataset.s); });
+  setTimeout(()=>pq.focus(),30);
+}
+function _ibClosePick(){ const d=$("#ibPickOv"); if(d) d.remove(); }
+
+async function _ibUploadFile(c, fobj, slot){
+  const b64=arrayBufferToBase64(await fobj.file.arrayBuffer());
+  const j=await gwUpload(clientFolder(c), fobj.name, fobj.type||"application/octet-stream", b64);
+  const s=c.items[slot]; if(!s.files) s.files=[];
+  s.files.push({name:fobj.name,size:fobj.size,driveId:j.id,by:deviceName||"미설정",ts:now()});
+  _ibMarkReceived(s);
+}
+async function _ibDoAssign(slot){
+  if(_ibBusy) return; const c=ensureItems(findClient(_ibCid)); if(!c){ _ibClosePick(); return; } _ibLast=slot;
+  const mode=_ibPickCtx&&_ibPickCtx.mode;
+  if(mode==="split"){ _ibClosePick(); await _ibBuildSplit(slot); return; }
+  _ibBusy=true;
+  try{
+    if(mode==="bulk"){
+      const ids=[..._ibSel]; const targets=_ib.filter(f=>ids.includes(f.id));
+      if(!targets.length){ _ibClosePick(); _ibBusy=false; return; }
+      toast(`${targets.length}개 업로드 중…`);
+      for(let i=0;i<targets.length;i++){ await _ibUploadFile(c,targets[i],slot); }
+      targets.forEach(t=>_ibRemove(t.id)); _ibSel=new Set();
+      touch(`[${c.name}] 받은 파일함 → '${itemName(slot,c)}' ${targets.length}개 배정`);
+      _ibClosePick(); _ibRender(); toast(`'${_ibSlotName(slot)}'로 ${targets.length}개 배정 ✓`);
+    } else { // one / solo
+      const f=_ib.find(x=>x.id===_ibPickCtx.id); if(f){ toast("업로드 중…"); await _ibUploadFile(c,f,slot); _ibRemove(f.id); touch(`[${c.name}] 받은 파일함 → '${itemName(slot,c)}' 1개 배정`); }
+      _ibClosePick();
+      if(mode==="solo"){ _ibRender(); _ibSoloNext(); } else { _ibRender(); toast("배정 완료 ✓"); }
+    }
+  }catch(e){ console.error(e); toast("배정 실패: "+(e.message||e)); setSync("error"); }
+  finally{ _ibBusy=false; }
+}
+
+/* ---- 한 장씩 보며 배정 ---- */
+function _ibStartSolo(){ const f=_ib[0]; if(!f){ toast(_ib.length?"배정할 파일이 없습니다 ✓":"먼저 파일을 올려주세요"); return; } _ibSolo=f.id; _ibRenderSolo(); }
+function _ibSoloNext(){ const f=_ib[0]; if(!f){ const d=$("#ibSoloOv"); if(d) d.remove(); _ibRender(); toast("미배정 파일을 모두 처리했습니다 ✓"); return; } _ibSolo=f.id; _ibRenderSolo(); }
+function _ibSoloSkip(){ const i=_ib.findIndex(x=>x.id===_ibSolo); if(i<0||_ib.length<2) return; _ibSolo=_ib[(i+1)%_ib.length].id; _ibRenderSolo(); }
+function _ibCloseSolo(){ const d=$("#ibSoloOv"); if(d) d.remove(); }
+function _ibSoloKeep(slot){ _ibPickCtx={mode:"solo",id:_ibSolo}; _ibDoAssign(slot); }
+function _ibRenderSolo(){ const f=_ib.find(x=>x.id===_ibSolo)||_ib[0]; if(!f){ _ibCloseSolo(); return; } _ibSolo=f.id;
+  let d=$("#ibSoloOv"); if(!d){ d=document.createElement("div"); d.className="ib-ov"; d.id="ibSoloOv"; d.style.zIndex="65"; $("#modalRoot").appendChild(d); }
+  d.innerHTML=`<div class="ib-big">
+    <div class="ib-bhead"><b>한 장씩 배정 · 남은 ${_ib.length}개</b><button class="ib-btn sm" onclick="_ibCloseSolo()">닫기</button></div>
+    <div class="ib-pv" id="ibSoloPv"><div style="color:#fff;padding:30px">불러오는 중…</div></div>
+    <div class="ib-foot">${_ibLast?`<button class="ib-cont" onclick="_ibSoloKeep('${esc(_ibLast)}')">＋ 방금 그 서류에 계속 담기 · ${esc(_ibSlotName(_ibLast))}</button>`:""}
+      <div style="display:flex;gap:8px"><button class="ib-btn pri" style="flex:1;justify-content:center" onclick="_ibOpenPick('solo',${f.id})">서류 선택 / 검색</button><button class="ib-btn" onclick="_ibSoloSkip()">건너뛰기</button></div>
+      <div class="ib-fmeta" style="margin-top:8px;text-align:center">${esc(f.name)}</div></div>
+  </div>`;
+  _ibPaintPreview(f,d.querySelector("#ibSoloPv"),3);
+}
+
+/* ---- 미리보기 ---- */
+function _ibPreview(id){ const f=_ib.find(x=>x.id===id); if(!f) return;
+  const d=document.createElement("div"); d.className="ib-ov"; d.style.zIndex="75"; d.onclick=e=>{ if(e.target===d) d.remove(); };
+  d.innerHTML=`<div class="ib-big"><div class="ib-bhead"><b style="font-size:14px;word-break:break-all">${esc(f.name)}</b><button class="ib-btn sm" id="ibPvX">닫기</button></div><div class="ib-pv" id="ibPvBody"><div style="color:#fff;padding:30px">불러오는 중…</div></div></div>`;
+  $("#modalRoot").appendChild(d); d.querySelector("#ibPvX").onclick=()=>d.remove();
+  _ibPaintPreview(f,d.querySelector("#ibPvBody"),99);
+}
+async function _ibPaintPreview(f,pv,maxPg){
+  if(!pv) return;
+  if(_ibIsImg(f)){ pv.innerHTML=""; const img=new Image(); img.src=f.url; img.onerror=()=>{ pv.innerHTML='<div style="color:#fff;padding:30px">미리보기 불가 — 파일은 정상, 배정 가능</div>'; }; pv.appendChild(img); return; }
+  if(_ibIsPdf(f)){ try{ const L=await loadPdfJs(); pv.innerHTML=""; const pdf=await L.getDocument(f.url).promise; const m=Math.min(pdf.numPages,maxPg); const dpr=window.devicePixelRatio||1;
+      for(let i=1;i<=m;i++){ const pg=await pdf.getPage(i); const vp=pg.getViewport({scale:1}); const s=Math.min(2,((pv.clientWidth||640)-20)/vp.width); const v=pg.getViewport({scale:s*dpr}); const cv=document.createElement("canvas"); cv.width=v.width; cv.height=v.height; cv.style.width=(vp.width*s)+"px"; await pg.render({canvasContext:cv.getContext("2d"),viewport:v}).promise; pv.appendChild(cv); }
+      if(pdf.numPages>m){ const x=document.createElement("div"); x.style.cssText="color:#fff;font-size:12px;padding:6px"; x.textContent=`(총 ${pdf.numPages}p 중 ${m}p 미리보기)`; pv.appendChild(x); }
+    }catch(e){ pv.innerHTML='<div style="color:#fff;padding:30px">미리보기 불가 — 배정 가능</div>'; } return; }
+  pv.innerHTML='<div style="color:#fff;padding:30px">이 형식은 미리보기를 못 해요(예: HEIC). 파일은 정상, 배정 가능.</div>';
+}
+
+/* ---- PDF 페이지 분할 ---- */
+function _ibPgCellAt(x,y){ const el=document.elementFromPoint(x,y); return el?el.closest(".ib-pgcell"):null; }
+function _ibPgRefresh(){ const g=$("#ibPgGrid"); if(!g)return; [...g.children].forEach(c=>{ if(c.classList.contains("done"))return; const p=+c.dataset.p; if(!p)return; c.classList.toggle("on", _ibSplitSel.has(p)); }); const sp=$("#ibSelPg"); if(sp)sp.textContent=_ibSplitSel.size; }
+function _ibPgDrawBox(x1,y1){ if(!_ibPgBox){ _ibPgBox=document.createElement("div"); document.body.appendChild(_ibPgBox); }
+  const l=Math.min(_ibPgSX,x1),t=Math.min(_ibPgSY,y1),w=Math.abs(x1-_ibPgSX),h=Math.abs(y1-_ibPgSY);
+  _ibPgBox.style.cssText=`position:fixed;left:${l}px;top:${t}px;width:${w}px;height:${h}px;border:1.5px solid #1d4ed8;background:rgba(29,78,216,.14);border-radius:4px;pointer-events:none;z-index:90`; }
+function _ibPgClearBox(){ if(_ibPgBox){ _ibPgBox.remove(); _ibPgBox=null; } }
+function _ibPgBoxSelect(x1,y1){ const g=$("#ibPgGrid"); if(!g)return; const l=Math.min(_ibPgSX,x1),r=Math.max(_ibPgSX,x1),t=Math.min(_ibPgSY,y1),b=Math.max(_ibPgSY,y1);
+  _ibSplitSel=new Set(_ibPgBase);
+  [...g.children].forEach(c=>{ if(c.classList.contains("done"))return; const p=+c.dataset.p; if(!p)return; const q=c.getBoundingClientRect(); const hit=!(q.right<l||q.left>r||q.bottom<t||q.top>b); if(hit) _ibSplitSel.add(p); });
+  _ibPgRefresh();
+}
+function _ibSetupPgDrag(g){ if(!g)return;
+  g.onpointerdown=e=>{ if(e.target.closest(".ib-pgzoom"))return; _ibPgDownType=e.pointerType; _ibPgDownCell=_ibPgCellAt(e.clientX,e.clientY); _ibPgSX=e.clientX; _ibPgSY=e.clientY;
+    if(e.pointerType==="mouse"){ e.preventDefault(); _ibPgPending=true; _ibPgActive=false; _ibPgBase=new Set(_ibSplitSel); document.body.style.userSelect="none"; } };
+  g.onpointermove=e=>{ if(!_ibPgPending)return; if(!_ibPgActive){ if(Math.abs(e.clientX-_ibPgSX)<5&&Math.abs(e.clientY-_ibPgSY)<5)return; _ibPgActive=true; } _ibPgDrawBox(e.clientX,e.clientY); _ibPgBoxSelect(e.clientX,e.clientY); };
+  if(!window._ibPgUpOn){ window._ibPgUpOn=true; window.addEventListener("pointerup",e=>{
+    document.body.style.userSelect="";
+    if(_ibPgActive){ _ibPgActive=false; _ibPgPending=false; _ibPgClearBox(); _ibPgDownCell=null; _ibPgDownType=""; return; }
+    if(_ibPgDownCell && !_ibPgDownCell.classList.contains("done")){ const dx=Math.abs(e.clientX-_ibPgSX),dy=Math.abs(e.clientY-_ibPgSY); if(dx<12&&dy<12){ const p=+_ibPgDownCell.dataset.p; if(_ibSplitSel.has(p))_ibSplitSel.delete(p); else _ibSplitSel.add(p); _ibPgRefresh(); } }
+    _ibPgPending=false; _ibPgDownCell=null; _ibPgDownType="";
+  }); }
+}
+function _ibOpenSplit(fid){ _ibSplitFid=fid; _ibSplitSel=new Set(); const f=_ib.find(x=>x.id===fid); if(!f) return;
+  const d=document.createElement("div"); d.className="ib-ov"; d.id="ibSplitOv"; d.style.zIndex="68";
+  d.innerHTML=`<div class="ib-big">
+    <div class="ib-bhead"><b style="word-break:break-all">📑 페이지 나눠 배정 · ${esc(f.name)}</b><button class="ib-btn sm" onclick="_ibCloseSplit()">닫기</button></div>
+    <div style="padding:8px 14px;font-size:12.5px;color:#555;line-height:1.5">페이지 선택: <b>마우스로 박스를 끌면</b> 박스에 닿는 페이지가 모두 선택(또는 톡톡 클릭·모바일은 탭). 🔍로 크게 보고 → “선택 페이지 배정”하면 그 페이지만 뽑은 PDF가 서류 칸에 정리됩니다.
+      <label style="display:flex;align-items:center;gap:7px;margin-top:7px;font-weight:700;color:#1d4ed8;cursor:pointer"><input type="checkbox" id="ibKeepOrig" checked style="width:16px;height:16px;flex:none"> 원본 통PDF도 ‘그 외 서류’에 보관 <span style="font-weight:400;color:#777">— 끄면 원본은 저장 안 함</span></label></div>
+    <div class="ib-pgwrap" id="ibPgGrid" style="touch-action:pan-y"><div style="padding:20px;color:#777">페이지 그리는 중…</div></div>
+    <div class="ib-foot" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <b><span id="ibSelPg">0</span>p 선택</b>
+      <button class="ib-btn" onclick="_ibTogglePgSize()" id="ibPgSizeBtn">썸네일 크게</button>
+      <button class="ib-btn" onclick="_ibSelAllPg()">전체 선택</button>
+      <button class="ib-btn pri" style="margin-left:auto" onclick="_ibAssignSplit()">선택 페이지 배정 →</button>
+    </div></div>`;
+  $("#modalRoot").appendChild(d);
+  _ibSetupPgDrag(d.querySelector("#ibPgGrid")); _ibDrawPages(f);
+}
+function _ibCloseSplit(){ const d=$("#ibSplitOv"); if(d) d.remove(); }
+async function _ibDrawPages(f){ const grid=$("#ibPgGrid"); if(!grid) return; if(!_ibIsPdf(f)){ grid.innerHTML='<div style="padding:20px;color:#777">PDF만 분할할 수 있어요.</div>'; return; }
+  const inner=_ibPgSize==="L"?248:158;
+  try{ const L=await loadPdfJs(); const pdf=await L.getDocument(f.url).promise; grid.innerHTML="";
+    for(let i=1;i<=pdf.numPages;i++){ const cell=document.createElement("div"); const done=f.splitPages[i];
+      cell.className="ib-pgcell"+(done?" done":"")+(_ibSplitSel.has(i)?" on":"")+(_ibPgSize==="L"?" lg":""); cell.dataset.p=i;
+      const cv=document.createElement("canvas"); cell.appendChild(cv);
+      const zb=document.createElement("button"); zb.className="ib-pgzoom"; zb.textContent="🔍"; zb.onclick=(e)=>{ e.stopPropagation(); _ibPreviewPage(f,i); }; cell.appendChild(zb);
+      const num=document.createElement("div"); num.className="ib-pgnum"; num.textContent="p"+i; cell.appendChild(num);
+      if(done){ const tg=document.createElement("div"); tg.className="ib-pgtag"; tg.textContent="✓ "+_ibSlotName(done); cell.appendChild(tg); }
+      grid.appendChild(cell);
+      const pg=await pdf.getPage(i); const vp=pg.getViewport({scale:1}); const s=(inner/vp.width)*(window.devicePixelRatio||1); const v=pg.getViewport({scale:s}); cv.width=v.width; cv.height=v.height; await pg.render({canvasContext:cv.getContext("2d"),viewport:v}).promise;
+    }
+  }catch(e){ grid.innerHTML='<div style="padding:20px;color:#c00">이 PDF는 미리보기를 못 그려요(암호 PDF 등). 통째 배정은 목록의 “서류 선택”으로 하세요.</div>'; }
+}
+function _ibTogglePgSize(){ _ibPgSize=_ibPgSize==="L"?"M":"L"; const b=$("#ibPgSizeBtn"); if(b)b.textContent=_ibPgSize==="L"?"썸네일 보통":"썸네일 크게"; const f=_ib.find(x=>x.id===_ibSplitFid); if(f)_ibDrawPages(f); }
+function _ibSelAllPg(){ const f=_ib.find(x=>x.id===_ibSplitFid); const grid=$("#ibPgGrid"); if(!f||!grid)return; [...grid.children].forEach(c=>{ const p=+c.dataset.p; if(p&&!f.splitPages[p]){ _ibSplitSel.add(p); c.classList.add("on"); } }); const sp=$("#ibSelPg"); if(sp)sp.textContent=_ibSplitSel.size; }
+function _ibPreviewPage(f,nn){ const d=document.createElement("div"); d.className="ib-ov"; d.style.zIndex="80"; d.onclick=e=>{ if(e.target===d) d.remove(); };
+  d.innerHTML=`<div class="ib-big"><div class="ib-bhead"><b style="word-break:break-all">${esc(f.name)} · ${nn}페이지</b><button class="ib-btn sm" id="ibZx">닫기</button></div><div class="ib-pv" id="ibZbody"><div style="color:#fff;padding:30px">불러오는 중…</div></div></div>`;
+  $("#modalRoot").appendChild(d); d.querySelector("#ibZx").onclick=()=>d.remove(); const pv=d.querySelector("#ibZbody");
+  loadPdfJs().then(L=>L.getDocument(f.url).promise).then(async pdf=>{ const pg=await pdf.getPage(nn); const vp=pg.getViewport({scale:1}); const s=Math.min(3,((pv.clientWidth||640)-20)/vp.width); const v=pg.getViewport({scale:s*(window.devicePixelRatio||1)}); const cv=document.createElement("canvas"); cv.width=v.width; cv.height=v.height; cv.style.width=(vp.width*s)+"px"; pv.innerHTML=""; await pg.render({canvasContext:cv.getContext("2d"),viewport:v}).promise; pv.appendChild(cv); }).catch(()=>{ pv.innerHTML='<div style="color:#fff;padding:30px">미리보기 불가</div>'; });
+}
+function _ibAssignSplit(){ if(_ibSplitSel.size===0){ toast("페이지를 먼저 선택하세요"); return; } _ibOpenPick("split"); }
+function _ibRangeLabel(pages){ const out=[]; let a=pages[0],prev=pages[0];
+  for(let i=1;i<=pages.length;i++){ const p=pages[i]; if(p===prev+1){ prev=p; continue; } out.push(a===prev?String(a):a+"-"+prev); a=p; prev=p; }
+  return out.join(","); }
+async function _ibBuildSplit(slot){
+  if(_ibBusy) return; const c=ensureItems(findClient(_ibCid)); const f=_ib.find(x=>x.id===_ibSplitFid); if(!c||!f) return;
+  const pages=[..._ibSplitSel].sort((a,b)=>a-b); if(!pages.length) return;
+  _ibBusy=true; toast("PDF 자르는 중…");
+  try{
+    const PDFLib=await loadPdfLib();
+    const ab=await f.file.arrayBuffer();
+    const src=await PDFLib.PDFDocument.load(ab,{ignoreEncryption:true});
+    const out=await PDFLib.PDFDocument.create();
+    const cp=await out.copyPages(src,pages.map(p=>p-1)); cp.forEach(p=>out.addPage(p));
+    const bytes=await out.save();
+    const buf=await new Blob([bytes],{type:"application/pdf"}).arrayBuffer();
+    const b64=arrayBufferToBase64(buf);
+    const sName=safeName(itemName(slot,c))||"서류";
+    const pieceName=`${sName}_p${_ibRangeLabel(pages)}.pdf`;
+    toast("저장 중…");
+    const j=await gwUpload(clientFolder(c), pieceName, "application/pdf", b64);
+    const s=c.items[slot]; if(!s.files) s.files=[];
+    s.files.push({name:pieceName,size:buf.byteLength,driveId:j.id,by:deviceName||"미설정",ts:now()});
+    _ibMarkReceived(s);
+    pages.forEach(p=>f.splitPages[p]=slot);
+    const _keepOrig=(()=>{ const cb=$("#ibKeepOrig"); return cb?cb.checked:true; })();
+    if(_keepOrig && !f.origSaved){ await _ibSaveOriginal(c,f); }
+    _ibSplitSel=new Set();
+    touch(`[${c.name}] 받은 파일함 PDF 분할 → '${itemName(slot,c)}' ${pages.length}p`);
+    _ibRender(); toast(`'${_ibSlotName(slot)}'로 ${pages.length}p 분할 완료 ✓`);
+    _ibDrawPages(f);
+  }catch(e){ console.error(e); toast("분할 실패: "+(e.message||e)); }
+  finally{ _ibBusy=false; }
+}
+async function _ibSaveOriginal(c,f){
+  try{
+    const oid="b5-2"; const s=c.items[oid]; if(!s) return;
+    const b64=arrayBufferToBase64(await f.file.arrayBuffer());
+    const oname="[원본]"+f.name.replace(/\.[^.]+$/,"")+".pdf";
+    const j=await gwUpload(clientFolder(c), oname, "application/pdf", b64);
+    if(!s.files) s.files=[];
+    s.files.push({name:oname,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()});
+    s.mode="self"; s.manual=true; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; }
+    f.origSaved=true;
+  }catch(e){ console.warn("원본 보관 실패",e); toast("원본 자동보관 실패(조각은 저장됨): "+(e.message||e)); }
+}
 
 /* ---------- 11. 시작 ---------- */
 function boot(){
