@@ -214,6 +214,20 @@
   .field input,.field select,.field textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none;}
   .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(155,27,51,.15);}
   .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;}
+  .pgcard{position:relative;background:#fff;border:1px solid var(--line);border-radius:13px;padding:12px 11px 9px;width:212px;box-shadow:var(--shadow);transition:border-color .12s,box-shadow .12s;}
+  .pgcard:hover{border-color:var(--gray);box-shadow:0 5px 16px rgba(60,40,30,.10);}
+  .pgnum{position:absolute;top:10px;left:13px;color:var(--muted);font-size:11.5px;font-weight:800;background:rgba(255,255,255,.82);padding:1px 6px;border-radius:6px;z-index:1;}
+  .pgthumb{height:262px;width:190px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin:2px auto 0;}
+  .pgctrl{display:flex;gap:1px;width:100%;justify-content:center;align-items:center;margin-top:7px;opacity:.55;transition:opacity .12s;}
+  .pgcard:hover .pgctrl{opacity:1;}
+  .pgbtn{border:none;background:none;color:var(--gray);font-size:15px;line-height:1;padding:6px;border-radius:8px;cursor:pointer;transition:background .12s,color .12s;}
+  .pgbtn:hover{background:var(--gray-soft);color:var(--brand);}
+  .pgbtn:disabled{opacity:.22;cursor:default;}
+  .pgbtn:disabled:hover{background:none;color:var(--gray);}
+  .pgx{position:absolute;top:7px;right:7px;border:none;background:rgba(255,255,255,.7);color:var(--gray);width:24px;height:24px;border-radius:8px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0;transition:all .12s;z-index:2;}
+  .pgcard:hover .pgx{opacity:1;}
+  .pgx:hover{background:var(--red-soft);color:var(--red);}
+  @media(hover:none){ .pgctrl{opacity:1;} .pgx{opacity:1;} }
   .steps{font-size:13px;color:var(--ink);}
   .steps ol{margin:8px 0;padding-left:20px;}
   .steps li{margin:7px 0;}
@@ -1544,6 +1558,7 @@ async function openPreview(cid,id,idx){
       <div class="modal-actions" style="gap:8px;margin-top:12px;flex-wrap:wrap">
         ${isImg?`<button class="btn" id="pvA4Btn" onclick="pvShowA4(!_pvA4)">📄 A4 미리보기</button>`:""}
         ${isImg?`<button class="btn" onclick="closeModal();openImgEditor('${cid}','${id}',${idx})">✏ 편집</button>`:""}
+        ${isPdf?`<button class="btn" onclick="closeModal();openPdfEditor('${cid}','${id}',${idx})">✏ 페이지 편집</button>`:""}
         <button class="btn btn-primary" onclick="dlPreview()">📥 다운로드</button>
         <button class="btn" onclick="closeModal()">닫기</button>
       </div>`,820);
@@ -1609,11 +1624,13 @@ function filesHtml(cid,id){
   const multi=files.length>1;
   const rows=files.map((f,fi)=>{
     const isImg=/\.(jpe?g|png|gif|webp)$/i.test(f.name);
+    const isPdf=/\.pdf$/i.test(f.name);
     return `<div class="frow" draggable="true" ondragstart="fileDragStart('${cid}','${id}',${fi})" ondragover="event.preventDefault()" ondrop="event.stopPropagation();fileDrop('${cid}','${id}',${fi})" style="display:flex;align-items:center;gap:5px;padding:2px 0;flex-wrap:wrap">`
       +(multi?`<span style="cursor:grab;color:var(--gray)" title="끌어서 순서 변경">⠿</span><span style="color:var(--muted);font-size:12px;min-width:16px;text-align:right">${fi+1}.</span>`:"")
       +`📎 <a href="#" onclick="event.preventDefault();event.stopPropagation();openPreview('${cid}','${id}',${fi})" style="color:var(--brand);font-weight:700" title="미리보기">${esc(f.name)}</a> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span>`
       +(multi?` <button onclick="event.stopPropagation();moveFile('${cid}','${id}',${fi},-1)" ${fi===0?'disabled':''} style="border:none;background:none;cursor:pointer;color:var(--brand);font-size:13px" title="위로">▲</button><button onclick="event.stopPropagation();moveFile('${cid}','${id}',${fi},1)" ${fi===files.length-1?'disabled':''} style="border:none;background:none;cursor:pointer;color:var(--brand);font-size:13px" title="아래로">▼</button>`:"")
       +(isImg?` <button onclick="event.stopPropagation();openImgEditor('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="사진 편집(자르기·회전)">✏</button>`:"")
+      +(isPdf?` <button onclick="event.stopPropagation();openPdfEditor('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="PDF 편집(페이지 삭제·순서·회전)">✏</button>`:"")
       +` <button onclick="event.stopPropagation();openFile('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="다운로드">⤓</button> <button onclick="event.stopPropagation();removeFile('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px" title="삭제">×</button></div>`;
   }).join("");
   const allBtn=multi?`<div style="margin-top:5px"><button class="memo-toggle" onclick="event.stopPropagation();openPreviewAll('${cid}','${id}')">👁 순서대로 모두 보기 (${files.length})</button></div>`:"";
@@ -1716,6 +1733,118 @@ async function applyCrop(){
       closeCrop(); renderDetail(cid); toast("편집본으로 저장했습니다 ✓");
     }catch(e){ console.error(e); toast("저장 실패: "+e.message); setSync("error"); }
   },"image/jpeg",0.92);
+}
+
+/* ---------- 6b-4. PDF 페이지 편집(삭제·순서변경·회전) — 적용 시 원본을 편집본으로 교체 ---------- */
+let _pdfEdit=null; // {cid,id,idx,name,srcBytes, pages:[{i,rot,del,thumb}]}
+async function openPdfEditor(cid,id,idx){
+  if(!filesReady()){ toast("드라이브 연결 후 편집 가능합니다"); return; }
+  const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
+  if(extOf(f.name).toLowerCase()!==".pdf"){ toast("PDF 파일만 편집할 수 있어요"); return; }
+  toast("PDF 편집기 여는 중…");
+  let pdfjsLib, bytes;
+  try{ pdfjsLib=await loadPdfJs(); bytes=await fetchFileBytes(f); }
+  catch(e){ toast("열기 실패: "+(e.message||e)); return; }
+  let pdf;
+  try{ const data=(bytes instanceof Uint8Array)?bytes.slice(0):new Uint8Array(bytes); pdf=await pdfjsLib.getDocument({data}).promise; }
+  catch(e){ toast("PDF 읽기 실패: "+(e.message||e)); return; }
+  const n=pdf.numPages;
+  _pdfEdit={cid,id,idx,name:f.name,srcBytes:bytes, pages:Array.from({length:n},(_,k)=>({i:k,rot:0,del:false,thumb:null}))};
+  modal(`<h3>PDF 페이지 편집</h3>
+    <p class="hint" style="margin:0 0 14px;line-height:1.6"><b style="color:var(--ink);font-weight:700">${esc(f.name)}</b><br>페이지에 마우스를 올리면 도구가 나타납니다 · <b>×</b> 삭제 · <b>↺↻</b> 회전 · <b>◀▶</b> 또는 드래그로 순서 변경.</p>
+    <div id="pdfEditBody" style="max-height:62vh;overflow:auto;background:var(--gray-soft);border:1px solid var(--line);border-radius:14px;padding:14px"><div style="color:var(--muted);padding:28px;text-align:center;font-size:13.5px">페이지 불러오는 중… (${n}쪽)</div></div>
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn" onclick="closePdfEdit()">취소</button>
+      <button class="btn btn-primary" id="pdfEditApply" onclick="applyPdfEdit()" disabled>적용</button>
+    </div>`,900);
+  // 썸네일 렌더링(작게) — 순서 바뀌어도 다시 안 그리도록 dataURL로 보관
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  for(let k=0;k<n;k++){
+    try{
+      const page=await pdf.getPage(k+1);
+      const base=page.getViewport({scale:1});
+      const scale=Math.min(2.2,300/base.width);
+      const vp=page.getViewport({scale:scale*dpr});
+      const cv=document.createElement("canvas"); cv.width=vp.width; cv.height=vp.height;
+      await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise;
+      _pdfEdit.pages[k].thumb=cv.toDataURL("image/jpeg",0.82);
+    }catch(_){ _pdfEdit.pages[k].thumb=null; }
+    if(k===0 || k===n-1 || k%3===0) renderPdfEditGrid();
+  }
+  renderPdfEditGrid();
+  const ab=document.getElementById("pdfEditApply"); if(ab) ab.disabled=false;
+}
+function renderPdfEditGrid(){
+  const E=_pdfEdit; const body=document.getElementById("pdfEditBody"); if(!E||!body) return;
+  const keep=E.pages.filter(p=>!p.del).length;
+  const cards=E.pages.map((p,di)=>{
+    const num=di+1;
+    if(p.del){
+      return `<div class="pgcard pdfpg" style="background:var(--red-soft);border-color:var(--brand);box-shadow:none;display:flex;flex-direction:column;align-items:center;gap:9px">
+        <div class="pgnum" style="color:var(--brand)">${num} · 삭제됨</div>
+        <div class="pgthumb" style="color:var(--brand);font-size:26px;opacity:.4">✕</div>
+        <button class="btn btn-sm" onclick="pdfPgDel(${di},false)" style="width:100%">↩ 되돌리기</button>
+      </div>`;
+    }
+    const tf=(p.rot===90||p.rot===270)?`rotate(${p.rot}deg) scale(.72)`:`rotate(${p.rot}deg)`;
+    const thumb=p.thumb? `<img src="${p.thumb}" style="max-width:190px;max-height:262px;display:block;border-radius:3px;box-shadow:0 1px 6px rgba(60,40,30,.18);transform:${tf};transition:transform .15s">`
+                        : `<span style="color:var(--gray);font-size:11px">로딩…</span>`;
+    const rotBadge=p.rot? ` <span style="color:var(--brand);font-weight:700">· ${p.rot}°</span>`:"";
+    return `<div class="pgcard pdfpg" draggable="true" style="cursor:grab"
+        ondragstart="pdfPgDrag(${di})" ondragover="event.preventDefault()" ondrop="event.preventDefault();pdfPgDrop(${di})">
+      <div class="pgnum">${num}${rotBadge}</div>
+      <button class="pgx" title="이 페이지 삭제" onclick="pdfPgDel(${di},true)">✕</button>
+      <div class="pgthumb">${thumb}</div>
+      <div class="pgctrl">
+        <button class="pgbtn" title="앞으로 이동" onclick="pdfPgMove(${di},-1)" ${di===0?'disabled':''}>◀</button>
+        <button class="pgbtn" title="왼쪽으로 회전" onclick="pdfPgRot(${di},-90)">↺</button>
+        <button class="pgbtn" title="오른쪽으로 회전" onclick="pdfPgRot(${di},90)">↻</button>
+        <button class="pgbtn" title="뒤로 이동" onclick="pdfPgMove(${di},1)" ${di===E.pages.length-1?'disabled':''}>▶</button>
+      </div>
+    </div>`;
+  }).join("");
+  body.innerHTML=`<div style="font-size:12.5px;color:var(--muted);margin-bottom:13px">총 ${E.pages.length}쪽 · 남는 페이지 <b style="color:var(--green)">${keep}</b>쪽${keep===0?' <span style="color:var(--red);font-weight:700">— 최소 1쪽은 남겨야 저장돼요</span>':''}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:13px;justify-content:center">${cards}</div>`;
+}
+let _pdfDragFrom=null;
+function pdfPgDrag(di){ _pdfDragFrom=di; }
+function pdfPgDrop(di){ const from=_pdfDragFrom; _pdfDragFrom=null; if(from==null||from===di||!_pdfEdit) return;
+  const arr=_pdfEdit.pages; const m=arr.splice(from,1)[0]; arr.splice(di,0,m); renderPdfEditGrid(); }
+function pdfPgRot(di,deg){ if(!_pdfEdit) return; const p=_pdfEdit.pages[di]; p.rot=((p.rot+deg)%360+360)%360; renderPdfEditGrid(); }
+function pdfPgMove(di,dir){ if(!_pdfEdit) return; const arr=_pdfEdit.pages; const j=di+dir; if(j<0||j>=arr.length) return; const t=arr[di]; arr[di]=arr[j]; arr[j]=t; renderPdfEditGrid(); }
+function pdfPgDel(di,on){ if(!_pdfEdit) return; _pdfEdit.pages[di].del=!!on; renderPdfEditGrid(); }
+function closePdfEdit(){ _pdfEdit=null; _pdfDragFrom=null; closeModal(); }
+async function applyPdfEdit(){
+  const E=_pdfEdit; if(!E) return;
+  const keep=E.pages.filter(p=>!p.del);
+  if(!keep.length){ toast("최소 1페이지는 남겨야 해요"); return; }
+  const same=(keep.length===E.pages.length) && keep.every((p,k)=>p.i===k && p.rot===0);
+  if(same){ toast("변경된 내용이 없습니다"); return; }
+  let PDFLib; try{ PDFLib=await loadPdfLib(); }catch(e){ toast("PDF 라이브러리 로드 실패: "+(e.message||e)); return; }
+  toast("편집본 저장 중…"); setSync("saving");
+  try{
+    const src=await PDFLib.PDFDocument.load(E.srcBytes,{ignoreEncryption:true});
+    const out=await PDFLib.PDFDocument.create();
+    const copied=await out.copyPages(src, keep.map(p=>p.i));
+    copied.forEach((pg,k)=>{
+      let baseAngle=0; try{ baseAngle=pg.getRotation().angle||0; }catch(_){ }
+      const rot=((baseAngle+keep[k].rot)%360+360)%360;
+      try{ pg.setRotation(PDFLib.degrees(rot)); }catch(_){ }
+      out.addPage(pg);
+    });
+    const outBytes=await out.save();
+    const buf=await new Blob([outBytes],{type:"application/pdf"}).arrayBuffer();
+    const b64=arrayBufferToBase64(buf);
+    const c=findClient(E.cid); const f=(c.items[E.id].files||[])[E.idx]; if(!f){ closePdfEdit(); return; }
+    const base=(f.name||"문서").replace(/\.[^.]+$/,""); const newName=base.replace(/_편집$/,"")+"_편집.pdf";
+    const j=await gwUpload(clientFolder(c), newName, "application/pdf", b64);
+    const oldF=f;
+    c.items[E.id].files[E.idx]={name:newName,size:buf.byteLength,driveId:j.id,by:deviceName||"미설정",ts:now()};
+    try{ if(oldF.driveId) await gwDelete(oldF.driveId);
+         else if(githubReady() && oldF.path) await fetch(ghContentsUrl(oldF.path),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify({message:`delete original ${oldF.name}`,sha:oldF.sha,branch:cfg.branch})}); }catch(_){ }
+    touch(`[${c.name}] '${itemName(E.id,c)}' PDF 페이지 편집본으로 교체`);
+    closePdfEdit(); renderDetail(E.cid); toast("편집본으로 저장했습니다 ✓");
+  }catch(e){ console.error(e); toast("저장 실패: "+(e.message||e)); setSync("error"); }
 }
 
 /* ---------- 6c. 첨부 파일 다운로드 (선택/일괄, 묶음 ZIP / 파일별) ---------- */
