@@ -186,6 +186,13 @@
   .memo-box{margin-top:8px;}
   .memo-box textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical;min-height:42px;outline:none;}
   .memo-box textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(155,27,51,.12);}
+  /* 의뢰인 메모 — 항상 펼침 + 자동확장(연노란 배경·주황 점선 테두리) */
+  .memo-always label{display:block;font-size:12.5px;font-weight:800;color:var(--muted);margin-bottom:6px;}
+  .memo-always textarea{width:100%;border:1.5px dashed var(--amber);border-radius:10px;background:#FFFBE9;
+    padding:10px 12px;font:inherit;font-size:14px;line-height:1.6;color:var(--ink);
+    resize:none;overflow:hidden;outline:none;min-height:44px;box-sizing:border-box;}
+  .memo-always textarea:focus{border-color:#B45309;box-shadow:0 0 0 3px rgba(217,119,6,.15);}
+  .memo-always textarea::placeholder{color:#bfa66a;}
   .additem{margin:8px 0 4px;}
 
   /* ── 토스식 컴팩트 서류 행 (한 줄 + 탭하면 펼침) ── */
@@ -421,6 +428,8 @@ const TEMPLATE = [
       { id:"b2-3", name:"지방세 세목별 과세증명서", note:"재산세·재산현황(부동산 등) 확인", mode:"self" },
       { id:"b3-8", name:"계좌통합관리서비스 계좌잔액 상세조회", note:"채무자 명의 소유재산 확인", mode:"na" },
       { id:"b3-11", name:"지적전산자료조회결과", note:"부동산 유무와 무관하게 항상 필요 (토지 현황 확인)", mode:"self" },
+      { id:"b3-6", name:"보험가입 조회결과표(내보험찾기)", note:"보험 유무와 무관하게 항상 필요 (생명·손해보험협회 내보험찾기)", mode:"self" },
+      { id:"b3-7", name:"보험 해약환급금 증명서", note:"보험 유무와 무관하게 항상 필요 (의뢰인이 보험사에 해약환급금 예상액 증명 요청)", mode:"request" },
     ]},
     { id:"b3g2", title:"임차보증금 재산 (임차 시)", items:[
       { id:"b3-4", name:"임대차계약서", note:"임차보증금 확인", mode:"request" },
@@ -434,10 +443,6 @@ const TEMPLATE = [
       { id:"b3-1", name:"자동차 보험증서", note:"환가예상액 확인", mode:"na" },
       { id:"b3-2", name:"자동차등록원부", note:"", mode:"self" },
       { id:"b3-3", name:"자동차 중고시세", note:"엔카 시세 확인 (없으면 보험증권 요청)", mode:"self" },
-    ]},
-    { id:"b3g3", title:"보험 재산", items:[
-      { id:"b3-6", name:"보험가입 조회결과표", note:"생명보험협회", mode:"self" },
-      { id:"b3-7", name:"보험 해약환급금 증명서", note:"예상보험금액 서류", mode:"na" },
     ]},
     { id:"b3g6", title:"사업용 재산 (사업자인 경우)", items:[
       { id:"b3-12", name:"비품·재고품·설비 시가표", note:"사업용 자산의 시가 정리", mode:"na" },
@@ -711,10 +716,10 @@ function formatPhone(v){ const d=(v||"").replace(/\D/g,"").slice(0,11);
 const TAG_GROUPS={
   income:{ "직장인":["b4g1","b3g5"], "자영업자":["b4g2","b3g6"], "이중소득":["b4g1","b4g2","b3g5","b3g6"] },
   housing:{ "임차":["b3g2"], "자가":["b3g4"] },
-  assets:{ "자가":["b3g4"], "임차보증금":["b3g2"], "차량":["b3g1"], "토지":["b3g4"], "보험환급금":["b3g3"], "사업용재산":["b3g6"] }
+  assets:{ "자가":["b3g4"], "임차보증금":["b3g2"], "차량":["b3g1"], "토지":["b3g4"], "사업용재산":["b3g6"] }
 };
-const TAG_CONTROLLED=["b4g1","b4g2","b3g5","b3g6","b3g1","b3g2","b3g3","b3g4"];
-const ASSET_OPTS=["자가","임차보증금","차량","토지","보험환급금","사업용재산","기타재산"];
+const TAG_CONTROLLED=["b4g1","b4g2","b3g5","b3g6","b3g1","b3g2","b3g4"];
+const ASSET_OPTS=["자가","임차보증금","차량","토지","사업용재산","기타재산"];
 const FIRMS=["법무법인 이준 서초분사무소","법률사무소 블루"]; // 소속 사무소 구분 (요청 메시지·태그에 반영)
 function firmShort(f){ if(!f) return "사무소"; if(f.includes("블루")) return "블루"; if(f.includes("이준")) return "이준"; return f.length>6?f.slice(0,6):f; }
 function firmColor(f){ return (f&&f.includes("블루"))?"#2563EB":"#9B1B33"; }
@@ -749,12 +754,21 @@ function migrateV2(){
 function migrateIfNeeded(){ let changed=false;
   if(state._ver<5){ state.clients.forEach(ensureItems); migrateV2(); state._ver=5; changed=true; }
   if(state._ver<6){ state.clients.forEach(ensureItems); migrateHideOptional(); state._ver=6; changed=true; }
+  if(state._ver<8){ state.clients.forEach(ensureItems); migrateInsuranceRequired(); state._ver=8; changed=true; }
   if(changed){ state.updatedAt=now(); state.updatedBy=deviceName||state.updatedBy||"미설정"; }
   return changed;
 }
+/* 보험서류(내보험찾기·해약환급금)를 항상 필수로 복구 — 과거 '해당없음'에 갇혔던 기존 의뢰인 데이터 되살림.
+   내보험찾기(b3-6)=직접발급, 해약환급금(b3-7)=의뢰인 요청. 직원이 수동 변경(manual)한 건은 존중. */
+function migrateInsuranceRequired(){
+  (state.clients||[]).forEach(c=>{ if(!c.items) return;
+    const s6=c.items["b3-6"]; if(s6 && !s6.manual && s6.mode==="na") s6.mode="self";
+    const s7=c.items["b3-7"]; if(s7 && !s7.manual && (s7.mode==="na" || s7.mode==="self")) s7.mode="request";
+  });
+}
 /* 접수 시 선택서류 10종을 기본 '해당없음(숨김)'으로 — 단, 이미 손댄 항목(받음·요청중·파일·수동변경·보완)은 그대로 둠 */
 function migrateHideOptional(){
-  const OPT=["b3-7","b4-6","b3-12","b6-1","b6-2","b5-2","b3-1","b3-8","b2-7","b2-6"];
+  const OPT=["b4-6","b3-12","b6-1","b6-2","b5-2","b3-1","b3-8","b2-7","b2-6"];
   (state.clients||[]).forEach(c=>{ if(!c.items) return; OPT.forEach(id=>{ const s=c.items[id]; if(!s) return;
     const untouched = !s.manual && !s.done && !(s.files&&s.files.length) && s.reqTag!=="received" && s.reqTag!=="requesting" && !s.rejected && !(s.memo&&String(s.memo).trim()) && !(s.link&&String(s.link).trim());
     if(untouched) s.mode="na";
@@ -1219,8 +1233,9 @@ function renderDetail(id){
   if(detailPanel==='stage'){
     html+=`<div class="overall" style="margin-top:-6px;margin-bottom:14px"><div style="font-size:12.5px;font-weight:800;color:var(--muted);margin-bottom:8px">사건 단계 선택</div><div class="stage-bar" style="margin-bottom:0">`+STAGES.map(s=>{const on=clientStage(c)===s; return `<button class="stage-step ${on?'on':''}" style="${on?`background:${STAGE_COLOR[s]};border-color:${STAGE_COLOR[s]}`:''}" onclick="setStage('${c.id}','${s}')">${s}</button>`;}).join("")+`</div></div>`;
   }
-  if(detailPanel==='memo'){
-    html+=`<div class="overall" style="margin-top:-6px;margin-bottom:14px"><div class="field" style="margin:0"><label>📝 의뢰인 메모 (상황·특이사항)</label><textarea id="clientMemo" rows="2" placeholder="예: 배우자 명의 차량 있음 / 전세보증금 확인 필요 / 사업자 폐업" oninput="onClientMemo('${c.id}')">${esc(c.memo||"")}</textarea></div></div>`;
+  // 의뢰인 메모: 내용이 있으면 항상 펼쳐서 전부 보임(자동확장) / 비어 있으면 📝메모 버튼을 눌렀을 때만 입력칸 표시
+  if(detailPanel==='memo' || (c.memo && c.memo.trim())){
+    html+=`<div class="overall memo-always" style="margin-top:-6px;margin-bottom:14px"><div class="field" style="margin:0"><label>📝 의뢰인 메모 (상황·특이사항)</label><textarea id="clientMemo" rows="1" placeholder="예: 배우자 명의 차량 있음 / 전세보증금 확인 필요 / 사업자 폐업" oninput="autoGrowMemo(this);onClientMemo('${c.id}')">${esc(c.memo||"")}</textarea></div></div>`;
   }
   if(detailPanel==='timeline'){
     html+=`<div class="overall" style="margin-top:-6px;margin-bottom:14px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><label style="font-size:12.5px;font-weight:800;color:var(--muted)">🗓️ 상담·연락 기록</label><button class="btn btn-sm" onclick="addTimeline('${c.id}')">+ 기록 추가</button></div>${(c.timeline&&c.timeline.length)?`<div class="tl">`+c.timeline.map((t,i)=>`<div class="tl-row"><span class="tl-date">${fmt(t.ts)}</span><span class="tl-who">${esc(t.by||'')}</span><span class="tl-txt">${esc(t.text)}</span><button class="tl-del" onclick="delTimeline('${c.id}',${i})">×</button></div>`).join("")+`</div>`:`<div style="font-size:12.5px;color:var(--muted)">아직 기록이 없습니다. "+기록 추가"로 상담·통화 내용을 남기세요.</div>`}</div>`;
@@ -1350,6 +1365,7 @@ function renderDetail(id){
   html+=`</div>`; // .detail-grid
 
   v.innerHTML=html;
+  { const _m=document.getElementById('clientMemo'); if(_m) autoGrowMemo(_m); } // 메모 내용에 맞춰 칸 높이 자동 맞춤
 }
 
 function collectBundleItems(c,b){ let arr=[]; b.groups.forEach(g=>g.items.forEach(it=>arr.push(it))); (c.extra[b.id]||[]).forEach(ex=>arr.push(ex)); return arr; }
@@ -1989,6 +2005,8 @@ function onItemMemo(cid,id){ const c=findClient(cid); const ta=event.target; c.i
   state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
 function onClientMemo(cid){ const c=findClient(cid); c.memo=event.target.value;
   state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
+/* 메모 입력칸을 내용 길이에 맞춰 자동으로 늘림(스크롤 없이 전부 보이게) */
+function autoGrowMemo(t){ if(!t) return; t.style.height='auto'; t.style.height=(t.scrollHeight+2)+'px'; }
 function debounceLogSync(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ state.updatedBy=deviceName||"미설정"; pushSnapshot(); scheduleSync(); }, 1200); }
 function isEditing(){ const a=document.activeElement; return !!(a && (a.tagName==="TEXTAREA" || a.tagName==="INPUT" || a.isContentEditable)); }
 function itemName(id,c){ let n=null; TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{if(it.id===id)n=it.name;}))); if(!n){ Object.values(c.extra||{}).forEach(arr=>arr.forEach(ex=>{if(ex.id===id)n=ex.name;})); } return n||id; }
