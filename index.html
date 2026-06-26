@@ -2931,11 +2931,13 @@ function _ibOpenSplit(fid){ _ibSplitFid=fid; _ibSplitSel=new Set(); const f=_ib.
       <button class="ib-btn" onclick="_ibTogglePgSize()" id="ibPgSizeBtn">썸네일 크게</button>
       <button class="ib-btn" onclick="_ibSelAllPg()">전체 선택</button>
       <button class="ib-btn pri" style="margin-left:auto" onclick="_ibAssignSplit()">선택 페이지 배정 →</button>
+      <button class="ib-btn" style="background:#0a7d3c;border-color:#0a7d3c;color:#fff;font-weight:800" onclick="_ibSplitDone()">✓ 완료</button>
     </div></div>`;
   $("#modalRoot").appendChild(d);
   _ibSetupPgDrag(d.querySelector("#ibPgGrid")); _ibDrawPages(f);
 }
 function _ibCloseSplit(){ const d=$("#ibSplitOv"); if(d) d.remove(); }
+function _ibSplitDone(){ const f=_ib.find(x=>x.id===_ibSplitFid); _ibCloseSplit(); _ibRender(); if(f&&_ibIsFiled(f)) toast(f.name+" 정리 완료 ✓"); else toast("받은 파일함으로 돌아왔어요"); }
 async function _ibDrawPages(f){ const grid=$("#ibPgGrid"); if(!grid) return; if(!_ibIsPdf(f)){ grid.innerHTML='<div style="padding:20px;color:#777">PDF만 분할할 수 있어요.</div>'; return; }
   const inner=_ibPgSize==="L"?248:158;
   try{ const L=await loadPdfJs(); const pdf=await L.getDocument(f.url).promise; grid.innerHTML="";
