@@ -2848,7 +2848,9 @@ async function _ibDoAssign(slot){
       const ids=[..._ibSel]; const targets=_ib.filter(f=>ids.includes(f.id));
       if(!targets.length){ _ibClosePick(); _ibBusy=false; return; }
       toast(`${targets.length}개 업로드 중…`);
-      for(let i=0;i<targets.length;i++){ await _ibUploadFile(c,targets[i],slot); _ibAddFiled(targets[i], itemName(slot,c), 1); }
+      const _nm=itemName(slot,c);
+      await _ibUploadFile(c,targets[0],slot); _ibAddFiled(targets[0], _nm, 1);          // 첫 파일이 폴더 생성
+      await Promise.all(targets.slice(1).map(async t=>{ await _ibUploadFile(c,t,slot); _ibAddFiled(t, _nm, 1); }));  // 나머지는 동시에(빠름)
       _ibSel=new Set();
       touch(`[${c.name}] 받은 파일함 → '${itemName(slot,c)}' ${targets.length}개 배정`);
       _ibClosePick(); _ibRender(); toast(`'${_ibSlotName(slot)}'로 ${targets.length}개 배정 ✓`);
@@ -2948,7 +2950,7 @@ async function _ibDrawPages(f){ const grid=$("#ibPgGrid"); if(!grid) return; if(
       const num=document.createElement("div"); num.className="ib-pgnum"; num.textContent="p"+i; cell.appendChild(num);
       if(done){ const tg=document.createElement("div"); tg.className="ib-pgtag"; tg.textContent="✓ "+_ibSlotName(done); cell.appendChild(tg); }
       grid.appendChild(cell);
-      const pg=await pdf.getPage(i); const vp=pg.getViewport({scale:1}); const s=(inner/vp.width)*(window.devicePixelRatio||1); const v=pg.getViewport({scale:s}); cv.width=v.width; cv.height=v.height; await pg.render({canvasContext:cv.getContext("2d"),viewport:v}).promise;
+      const pg=await pdf.getPage(i); const vp=pg.getViewport({scale:1}); const s=(inner/vp.width)*Math.min(1.5,(window.devicePixelRatio||1)); const v=pg.getViewport({scale:s}); cv.width=v.width; cv.height=v.height; await pg.render({canvasContext:cv.getContext("2d"),viewport:v}).promise;
     }
   }catch(e){ grid.innerHTML='<div style="padding:20px;color:#c00">이 PDF는 미리보기를 못 그려요(암호 PDF 등). 통째 배정은 목록의 “서류 선택”으로 하세요.</div>'; }
 }
@@ -2985,9 +2987,9 @@ async function _ibBuildSplit(slot){
     _ibMarkReceived(s);
     _ibAddFiled(f, itemName(slot,c), pages.length);
     pages.forEach(p=>f.splitPages[p]=slot);
-    const _keepOrig=(()=>{ const cb=$("#ibKeepOrig"); return cb?cb.checked:true; })();
-    if(_keepOrig && !f.origSaved){ await _ibSaveOriginal(c,f); }
     _ibSplitSel=new Set();
+    const _keepOrig=(()=>{ const cb=$("#ibKeepOrig"); return cb?cb.checked:true; })();
+    if(_keepOrig && !f.origSaved){ _ibSaveOriginal(c,f); }   // 원본은 백그라운드 보관(완료를 막지 않음 — 조각은 이미 저장됨)
     touch(`[${c.name}] 받은 파일함 PDF 분할 → '${itemName(slot,c)}' ${pages.length}p`);
     _ibRender(); toast(`'${_ibSlotName(slot)}'로 ${pages.length}p 분할 완료 ✓`);
     _ibDrawPages(f);
@@ -3004,6 +3006,7 @@ async function _ibSaveOriginal(c,f){
     s.files.push({name:oname,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()});
     s.mode="self"; s.manual=true; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; }
     f.origSaved=true;
+    _ibRender(); touch(`[${c.name}] 받은 파일함 PDF 원본 보관`);
   }catch(e){ console.warn("원본 보관 실패",e); toast("원본 자동보관 실패(조각은 저장됨): "+(e.message||e)); }
 }
 
