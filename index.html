@@ -8,6 +8,7 @@
 <meta http-equiv="Expires" content="0" />
 <title>이준 회생서류 취합 시스템</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#FAF9F7; --panel:#ffffff; --line:#ECE7E1; --ink:#1C1917; --muted:#857D76;
@@ -622,7 +623,7 @@ const LS_SNAP="ksdocs_snaps_v1", LS_DATA_BAK="ksdocs_data_bak_v1";
 const SNAP_MAX=10; // 보관할 자동 스냅샷 개수
 let state = { clients:[], log:[], updatedAt:null, updatedBy:null };
 const DEFAULT_OWNER="bbbgn062-ops", DEFAULT_REPO="docs-checklist", DEFAULT_BRANCH="main"; // 우리 사무소 고정값 (자동 기입)
-let cfg = { repo:DEFAULT_REPO, owner:DEFAULT_OWNER, branch:DEFAULT_BRANCH, token:"", path:"data.json", firmName:"법무법인 이준 서초분사무소", gwUrl:"", gwSecret:"" };
+let cfg = { repo:DEFAULT_REPO, owner:DEFAULT_OWNER, branch:DEFAULT_BRANCH, token:"", path:"data.json", firmName:"법무법인 이준 서초 분사무소", gwUrl:"", gwSecret:"" };
 let deviceName = localStorage.getItem(LS_DEVICE) || "";
 let currentClientId = null;
 let detailFilter = "all";
@@ -720,7 +721,7 @@ const TAG_GROUPS={
 };
 const TAG_CONTROLLED=["b4g1","b4g2","b3g5","b3g6","b3g1","b3g2","b3g4"];
 const ASSET_OPTS=["자가","임차보증금","차량","토지","사업용재산","기타재산"];
-const FIRMS=["법무법인 이준 서초분사무소","법률사무소 블루"]; // 소속 사무소 구분 (요청 메시지·태그에 반영)
+const FIRMS=["법무법인 이준 서초 분사무소","법률사무소 블루"]; // 소속 사무소 구분 (요청 메시지·태그에 반영)
 function firmShort(f){ if(!f) return "사무소"; if(f.includes("블루")) return "블루"; if(f.includes("이준")) return "이준"; return f.length>6?f.slice(0,6):f; }
 function firmColor(f){ return (f&&f.includes("블루"))?"#2563EB":"#9B1B33"; }
 function firmChip(c){ const f=(c&&c.firm)||""; return `<span class="tagchip" style="background:${firmColor(f)};color:#fff;font-weight:800">🏛 ${esc(firmShort(f))}</span>`; }
@@ -852,6 +853,13 @@ function touch(logText){
   scheduleSync();   // 3단계
 }
 function scheduleSync(){
+  if(BACKEND==="supabase"){            // 케이스허브 모드: Supabase로 자동저장
+    if(!sbInit()||!sbUser) return;
+    setSync("saving");
+    clearTimeout(syncTimer);
+    syncTimer=setTimeout(()=>pushToSupabase(true), 1500); // 1.5초 후 변경분 저장
+    return;
+  }
   if(!githubReady()) return;
   setSync("saving");
   clearTimeout(syncTimer);
@@ -864,7 +872,7 @@ function ghHeaders(){ return { "Authorization":"Bearer "+cfg.token, "Accept":"ap
 
 /* ===== 구글 드라이브 "문지기"(Apps Script) 연동 — 첨부파일 저장소 ===== */
 function driveReady(){ return !!(cfg.gwUrl && cfg.gwSecret); }
-function filesReady(){ return driveReady(); }
+function filesReady(){ if(BACKEND==="supabase") return !!(sbInit()&&sbUser); return driveReady(); }
 function clientFolder(c){ return (safeName(c&&c.name)||"의뢰인")+"_"+String((c&&c.id)||"").slice(-5); }
 async function gwPost(payload){
   payload.secret=cfg.gwSecret; let last;
@@ -885,9 +893,32 @@ async function gwGet(params){
   }catch(e){ last=e; if(a===0) await new Promise(rs=>setTimeout(rs,800)); } }
   throw last;
 }
-async function gwUpload(folder,name,mime,b64){ return gwPost({action:"upload",folder:folder,name:name,mime:mime,content:b64,user:deviceName||"미설정"}); }
-async function gwDelete(id){ return gwPost({action:"delete",id:id,user:deviceName||"미설정"}); }
+/* 파일 저장소: 케이스허브 모드면 Supabase Storage(docs 버킷), 아니면 드라이브 문지기.
+   업로드는 {id: 저장경로} 를 돌려주므로, 호출부는 기존처럼 file.driveId 에 저장경로를 담는다(코드 재사용). */
+function b64ToBytes(b64){ const bin=atob((b64||"").replace(/\n/g,"")); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return a; }
+async function gwUpload(folder,name,mime,b64){
+  if(BACKEND==="supabase"){
+    if(!sbInit()) throw new Error("저장소 미연결");
+    // ★ 저장소 키는 영문만 허용(한글 불가). 실제 파일명은 documents.file_name에 한글 그대로 보관됨.
+    const dir=String(folder||"").replace(/[^\w\-]/g,"")||"uploads";
+    const ni=String(name||"").lastIndexOf("."); const ext=ni>0?String(name).slice(ni).replace(/[^.\w]/g,"").slice(0,10):"";
+    const path="u/"+dir+"/"+Date.now()+"_"+Math.random().toString(36).slice(2,8)+ext;
+    const {error}=await sb.storage.from("docs").upload(path, b64ToBytes(b64), {contentType:mime||"application/octet-stream", upsert:false});
+    if(error) throw error;
+    return { id: path };
+  }
+  return gwPost({action:"upload",folder:folder,name:name,mime:mime,content:b64,user:deviceName||"미설정"});
+}
+async function gwDelete(id){
+  if(BACKEND==="supabase"){ if(!sbInit()) return; const {error}=await sb.storage.from("docs").remove([id]); if(error) throw error; return {ok:true}; }
+  return gwPost({action:"delete",id:id,user:deviceName||"미설정"});
+}
 async function gwFetchBytes(id){
+  if(BACKEND==="supabase"){
+    if(!sbInit()) throw new Error("저장소 미연결");
+    const {data,error}=await sb.storage.from("docs").download(id); if(error) throw error;
+    return new Uint8Array(await data.arrayBuffer());
+  }
   const j=await gwGet({action:"file",id:id});
   const bin=atob((j.content||"").replace(/\n/g,""));
   const bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i); return bytes;
@@ -1189,6 +1220,7 @@ function renderDashboard(){
       ${chipHtml?`<div class="card-stats">${chipHtml}</div>`:""}
       <div style="display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap">
         ${c.phone?`<a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()" style="font-size:12px;color:var(--brand);font-weight:700;text-decoration:none">📞 ${esc(c.phone)}</a>`:""}<span style="flex:1"></span>
+        <button class="qbtn" onclick="event.stopPropagation();togglePublic('${c.id}')" title="원사무실 공개 여부 (비공개=관리자만)" style="${c.isPublic?'color:#0A7D3C':'color:var(--muted)'}">${c.isPublic?'🌐 공개':'🔒 비공개'}</button>
         <button class="qbtn" onclick="event.stopPropagation();openRequestMsg('${c.id}')">📨 요청</button>
         <button class="qbtn" onclick="event.stopPropagation();openReminder('${c.id}')">⏰ 리마인더</button>
       </div>
@@ -1662,7 +1694,8 @@ async function openFile(cid,id,idx){
 async function removeFile(cid,id,idx){
   const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
   if(!confirm(`'${f.name}' 첨부를 삭제할까요?`)) return;
-  if(f.driveId){ try{ await gwDelete(f.driveId); }catch(e){ console.warn(e); } }
+  if(f.driveId){ try{ await gwDelete(f.driveId); }catch(e){ console.warn(e); }
+    if(BACKEND==="supabase" && f.docId){ try{ await sb.from("documents").delete().eq("id",f.docId); }catch(_){} } }
   else if(githubReady() && f.path){ try{ await fetch(ghContentsUrl(f.path),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),
     body:JSON.stringify({message:`delete ${f.name}`,sha:f.sha,branch:cfg.branch})}); }catch(e){ console.warn(e); } }
   c.items[id].files.splice(idx,1); touch(`[${c.name}] 첨부 삭제`); renderDetail(cid);
@@ -2181,6 +2214,8 @@ function deleteClient(id){
   touch(`의뢰인 삭제 '${c.name}'`); showDashboard();
 }
 function togglePin(id){ const c=findClient(id); c.pinned=!c.pinned; touch(`[${c.name}] ${c.pinned?'중요 고정':'고정 해제'}`); renderDetail(id); }
+/* 의뢰인 공개/비공개 (기본 비공개=관리자만, 공개=이준 직원·해당 원사무실에 노출). 실제 접근차단은 컷오버에서 RLS로. */
+function togglePublic(id){ const c=findClient(id); if(!c) return; c.isPublic=!c.isPublic; touch(`[${c.name}] ${c.isPublic?'공개 전환(원사무실 공유)':'비공개 전환(관리자만)'}`); toast(c.isPublic?`${esc(c.name||"의뢰인")} 공개로 전환`:`${esc(c.name||"의뢰인")} 비공개로 전환`); if(currentClientId===id) renderDetail(id); else renderDashboard(); }
 function toggleArchive(id){ const c=findClient(id); c.archived=!c.archived; touch(`[${c.name}] ${c.archived?'보관(아카이브)':'보관 해제'}`); if(c.archived){ toast("보관함으로 이동했습니다"); showDashboard(); } else renderDetail(id); }
 function bulkRequesting(cid){ const c=findClient(cid);
   if(!confirm("모든 '의뢰인요청' 미수령 서류를 '요청중'으로 표시할까요?")) return;
@@ -3045,6 +3080,248 @@ async function _ibSaveOriginal(c,f){
 }
 
 /* ---------- 11. 시작 ---------- */
+/* ============================================================
+   ★ 케이스허브(Supabase) 연결 — 이전 작업본 전용 (읽기 단계)
+   - BACKEND 를 "github" 로 바꾸면 기존 깃헙 방식으로 즉시 복귀(되돌리기).
+   - 이 단계는 '읽기'만: Supabase에서 읽어 화면에 표시. 저장(쓰기)은 다음 단계.
+   ============================================================ */
+const SB_URL="https://zxwsfwhyjkixsnfpzpkt.supabase.co";
+const SB_ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4d3Nmd2h5amtpeHNuZnB6cGt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NjUxMzIsImV4cCI6MjA5ODA0MTEzMn0.mHfZJNRMmH-I2XI3ISutaYNemIbjKvWzFlOzMLmi-aQ";
+let BACKEND="supabase";   // ← "github" 로 바꾸면 기존 깃헙 방식 그대로 복귀
+let sb=null, sbUser=null;
+function sbInit(){ try{ if(!sb && window.supabase) sb=window.supabase.createClient(SB_URL,SB_ANON); }catch(_){} return sb; }
+
+/* 단계(stage) 되돌림: 케이스허브 → 서류취합 화면 단계 */
+const SB_STAGE_BACK={"서류취합중":"서류수집","취합완료":"검토","접수완료":"법원접수","개시결정":"개시결정","인가결정":"완료",
+  "서류취합":"서류수집","작성":"검토","접수":"법원접수","인가":"완료"};
+/* 묶음(bundle) 제목 → 화면 블록 id (매칭 안 된 서류를 넣을 곳) */
+const SB_BUNDLE_BID={"기본서류":"b1","채권자목록":"b2","재산":"b3","수입지출":"b4","기타":"b5","통장거래내역":"b6","경위서":"b7"};
+/* 서류명 → 화면 항목 id 매핑(시험데이터엔 doc_key가 없어 이름으로 매칭) */
+function sbNorm(s){ return (s||"").replace(/\s/g,""); }
+const SB_NAME2ID={}; TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{ SB_NAME2ID[sbNorm(it.name)]=it.id; })));
+
+/* 케이스허브 status → 화면 항목 상태로 환원.
+   ★ 원래 화면 로직 존중: 기본 표시여부(mode=na 등)는 템플릿/소득유형 로직(applyTags)이 정하고,
+     여기서는 받음/요청중/보완필요/해당없음만 덮어쓴다. '미요청'은 기본값 그대로(해당없음 숨김 유지). */
+function sbApplyStatus(s, status, reason){
+  if(status==="해당없음"){ s.mode="na"; return; }
+  if(status==="받음"){ s.done=true; s.reqTag="received"; }
+  else if(status==="요청중"){ s.reqTag="requesting"; }
+  else if(status==="보완필요"){ s.rejected=true; s.rejectReason=reason||""; }
+  // '미요청'은 손대지 않음(템플릿 기본 표시여부 유지)
+  if((status==="받음"||status==="요청중"||status==="보완필요") && s.mode==="na") s.mode="request"; // 받았는데 숨김이면 보이게
+}
+/* Supabase 한 줄(clients row) + 그 의뢰인의 체크리스트 줄들 → 화면 client 객체로 재조립 */
+function sbBuildClient(row, rows, docs, memos, secret){
+  let aj={}; try{ aj=(typeof row.app_json==="string")?JSON.parse(row.app_json):(row.app_json||{}); }catch(_){ aj={}; }
+  const c={ id:row.id, name:row.name, caseType:row.case_type||"개인회생", assignee:row.assignee||"",
+    caseNo:row.case_no||"", phone:row.phone||"", incomeType:row.income_type||"", housing:aj.housing||"미정",
+    assets: row.asset_type ? String(row.asset_type).split(",").map(x=>x.trim()).filter(Boolean) : [],
+    pinned:!!row.pinned, urgent:!!row.urgent, archived:!!row.archived,
+    stage: SB_STAGE_BACK[row.stage]||"서류수집", deadline: row.court_deadline||null,
+    deadlineLabel: row.deadline_kind||"보정기한", amending:!!(row.amending||row.correcting),
+    memo:"", items:{}, extra:{}, cert:{files:[],pw:""}, timeline:Array.isArray(aj.timeline)?aj.timeline:[], msgLog:Array.isArray(aj.msgLog)?aj.msgLog:[],
+    firm: aj.firm || sbFirmFromOffice(row.office_id) || cfg.firmName, isPublic:!!row.is_public, updatedAt: row.updated_at, _sbId: row.id, office_id: row.office_id };
+  ensureItems(c);   // 화면 기본 서류목록(템플릿) 깔기
+  applyTags(c);     // 소득유형·주거·재산에 따른 기본 표시여부(해당없음 자동 숨김 등) — 원래 앱과 동일
+  (rows||[]).forEach(r=>{
+    let id = (r.doc_key && ITEM_BY_ID[r.doc_key]) ? r.doc_key : SB_NAME2ID[sbNorm(r.doc_name)];
+    if(id && c.items[id]){
+      sbApplyStatus(c.items[id], r.status, r.reject_reason);
+      if(r.memo) c.items[id].memo=r.memo;
+      c.items[id]._sbRow=r.id;
+    } else {                       // 템플릿에 없는 서류 → 추가서류(extra)로
+      const bid=SB_BUNDLE_BID[r.bundle]||"b5", xid="sb_"+r.id;
+      c.items[xid]={ mode:"request", reqTag:"none", done:false, memo:r.memo||"", reqDate:null, recvDate:null, link:"", rejected:false, rejectReason:"", files:[], manual:true, _sbRow:r.id };
+      sbApplyStatus(c.items[xid], r.status, r.reject_reason);
+      (c.extra[bid]=c.extra[bid]||[]).push({ id:xid, name:r.doc_name||"서류", mode:c.items[xid].mode });
+    }
+  });
+  /* 첨부파일(documents) 붙이기 → 새로고침해도 유지. 케이스허브 전용 '접수'서류는 서류취합 화면에 안 붙임 */
+  (docs||[]).forEach(d=>{
+    if(d.kind==="접수") return;
+    let id=(d.doc_key && c.items[d.doc_key])?d.doc_key:null;
+    if(!id){ id="doc_"+d.id; if(!c.items[id]){ c.items[id]={mode:"request",reqTag:"received",done:true,memo:"",reqDate:null,recvDate:d.created_at,link:"",rejected:false,rejectReason:"",files:[],manual:true}; (c.extra["b5"]=c.extra["b5"]||[]).push({id,name:d.file_name||"첨부",mode:"request"}); } }
+    const s=c.items[id]; if(!s.files) s.files=[];
+    s.files.push({ name:d.file_name, size:0, driveId:d.storage_path, by:d.uploaded_by||"", ts:d.created_at, docId:d.id, is_public:!!d.is_public });
+  });
+  /* 의뢰인 메모 / 인증서 붙이기 */
+  const _memo=(memos||[]).find(x=>x.kind!=="접수")||null; if(_memo){ c.memo=_memo.body||""; c._sbMemoId=_memo.id; }
+  if(secret){ c.cert={ files:Array.isArray(secret.cert_files)?secret.cert_files:[], pw:secret.password||"" }; c._sbSecretId=secret.id; }
+  /* ②쓰기 기준선: 지금 서버에 있는 값을 기록(이후 바뀐 것만 저장) */
+  Object.keys(c.items).forEach(id=>{ try{ c.items[id]._sbSig=sbItemSig(c,id,c.items[id]); }catch(_){} });
+  c._sbSig=sbClientSig(c); c._sbMemo=c.memo||""; c._sbCertSig=JSON.stringify({f:(c.cert&&c.cert.files)||[],p:(c.cert&&c.cert.pw)||""});
+  return c;
+}
+
+/* Supabase에서 전체 읽어와 화면에 표시 (읽기 전용) */
+async function pullFromSupabase(silent){
+  if(!sbInit()) return false;
+  setSync("saving");
+  try{
+    const BASE="id,name,office_id,case_type,assignee,stage,phone,income_type,asset_type,court_deadline,deadline_kind,urgent,pinned,archived,amending,correcting,case_no,updated_at";
+    let cRes=await sb.from("clients").select(BASE+",is_public,app_json").order("name");
+    if(cRes.error) cRes=await sb.from("clients").select(BASE+",app_json").order("name"); // is_public 칸 없을 때
+    if(cRes.error) cRes=await sb.from("clients").select(BASE).order("name");            // app_json 칸도 없을 때
+    const [ciRes, dRes, mRes, sRes, oRes, pRes] = await Promise.all([
+      sb.from("checklist_items").select("id,client_id,doc_key,doc_name,bundle,status,reject_reason,memo"),
+      sb.from("documents").select("id,client_id,doc_key,file_name,storage_path,uploaded_by,is_public,created_at,kind"),
+      sb.from("memos").select("id,client_id,body,created_at,kind").order("created_at"),
+      sb.from("secrets").select("id,client_id,cert_files,password"),
+      sb.from("offices").select("id,name"),
+      sb.rpc("my_progress")
+    ]);
+    if(cRes.error) throw cRes.error;
+    if(ciRes.error) throw ciRes.error;
+    SB_OFFICES=(oRes&&oRes.data)||[];   // 사무소(이준/블루) 매핑용
+    const byClient={}; (ciRes.data||[]).forEach(r=>{ (byClient[r.client_id]=byClient[r.client_id]||[]).push(r); });
+    const docBy={}; ((dRes&&dRes.data)||[]).forEach(d=>{ (docBy[d.client_id]=docBy[d.client_id]||[]).push(d); });
+    const memoBy={}; ((mRes&&mRes.data)||[]).forEach(m=>{ (memoBy[m.client_id]=memoBy[m.client_id]||[]).push(m); });
+    const secBy={}; ((sRes&&sRes.data)||[]).forEach(s=>{ secBy[s.client_id]=s; });
+    const clients=(cRes.data||[]).map(row=> sbBuildClient(row, byClient[row.id]||[], docBy[row.id]||[], memoBy[row.id]||[], secBy[row.id]||null) );
+    state={ clients, log:(state&&state.log)||[], updatedAt: now(), updatedBy: deviceName||"미설정", _ver:8 };
+    saveLocal();
+    currentClientId=null; renderDashboard();
+    setSync("ok");
+    if(!silent) toast("케이스허브에서 불러왔습니다 ✓");
+    /* 검증용 콘솔 로그: 화면 완료율 vs 서버(my_progress) 비교 */
+    try{ const pg={}; (pRes&&pRes.data||[]).forEach(p=>pg[p.client_id]=p);
+      console.log("[읽기검증] 의뢰인 "+clients.length+"명");
+      clients.forEach(c=>{ const mine=progress(c), srv=pg[c._sbId]||{};
+        console.log("  "+c.name+" | 화면 "+mine.done+"/"+mine.total+"("+mine.pct+"%)  서버 "+(srv.done)+"/"+(srv.total)+"("+srv.pct+"%)"); });
+    }catch(_){}
+    return true;
+  }catch(e){ console.error(e); setSync("error"); showBanner("케이스허브 읽기 오류: "+(e.message||e),"err"); return false; }
+}
+
+/* 직원 로그인 화면(최소) — 한 번 로그인하면 이 기기는 자동 유지 */
+function showLoginGate(msg){
+  let el=document.getElementById("sbLoginGate");
+  if(!el){
+    el=document.createElement("div"); el.id="sbLoginGate";
+    el.style.cssText="position:fixed;inset:0;z-index:99999;background:#FAF9F7;display:flex;align-items:center;justify-content:center;padding:20px";
+    el.innerHTML='<div style="width:100%;max-width:340px;background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:26px 22px;box-shadow:0 8px 30px rgba(0,0,0,.08)">'
+      +'<div style="font-weight:800;font-size:18px;color:#9B1B33;margin-bottom:4px">법무법인 이준 서초 분사무소 · 서류취합</div>'
+      +'<div style="font-size:13px;color:#6B655F;margin-bottom:18px">직원 로그인 (한 번만 하면 이 기기는 자동 유지됩니다)</div>'
+      +'<input id="sbEmail" type="email" placeholder="이메일" autocomplete="username" style="width:100%;padding:11px 12px;border:1px solid #E7E2DC;border-radius:10px;font-size:15px;margin-bottom:10px">'
+      +'<input id="sbPw" type="password" placeholder="비밀번호" autocomplete="current-password" style="width:100%;padding:11px 12px;border:1px solid #E7E2DC;border-radius:10px;font-size:15px;margin-bottom:14px">'
+      +'<button id="sbLoginBtn" onclick="sbLogin()" style="width:100%;padding:12px;border:0;border-radius:10px;background:#9B1B33;color:#fff;font-weight:800;font-size:15px;cursor:pointer">들어가기</button>'
+      +'<div id="sbLoginMsg" style="font-size:12.5px;color:#9A5A00;margin-top:10px;min-height:16px"></div></div>';
+    document.body.appendChild(el);
+    const pw=el.querySelector("#sbPw"); if(pw) pw.addEventListener("keydown",e=>{ if(e.key==="Enter") sbLogin(); });
+  }
+  el.style.display="flex";
+  const m=document.getElementById("sbLoginMsg"); if(m) m.textContent=msg||"";
+}
+function hideLoginGate(){ const el=document.getElementById("sbLoginGate"); if(el) el.style.display="none"; }
+async function sbLogin(){
+  if(!sbInit()){ showLoginGate("로그인 모듈 로딩 실패 — 새로고침 해주세요"); return; }
+  const email=(document.getElementById("sbEmail").value||"").trim();
+  const pw=document.getElementById("sbPw").value||"";
+  if(!email||!pw){ showLoginGate("이메일과 비밀번호를 입력하세요"); return; }
+  showLoginGate("로그인 중…");
+  try{
+    const {data,error}=await sb.auth.signInWithPassword({email,password:pw});
+    if(error){ showLoginGate("로그인 실패: 이메일/비밀번호를 확인하세요"); return; }
+    sbUser=data.user; hideLoginGate(); await pullFromSupabase(false);
+  }catch(e){ showLoginGate("로그인 오류: "+(e.message||e)); }
+}
+async function sbLogout(){ try{ if(sbInit()) await sb.auth.signOut(); }catch(_){} sbUser=null; showLoginGate("로그아웃됨"); }
+
+/* ============================================================
+   ★ ②쓰기: 변경된 의뢰인만 골라 케이스허브(Supabase)에 저장
+   - 모든 변경은 scheduleSync() 한 길목을 지나므로 거기서 호출.
+   - 화면 항목 상태 → 케이스허브 status 로 변환해 저장(+doc_key 채움).
+   ============================================================ */
+const OURS_OFFICE_ID="689027dc-305f-43ba-9870-e3978f6e8b01"; // 우리(이준 서초) 사무소 id
+const SB_STAGE_FWD={"상담":"서류취합중","서류수집":"서류취합중","검토":"취합완료","법원접수":"접수완료","개시결정":"개시결정","완료":"인가결정"};
+const BID_BUNDLE={b1:"기본서류",b2:"채권자목록",b3:"재산",b4:"수입지출",b5:"기타",b6:"통장거래내역",b7:"경위서"};
+const ITEM_BLOCK={}; TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{ ITEM_BLOCK[it.id]=b.id; })));
+function isUuid(v){ return typeof v==="string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v); }
+/* 화면 항목 상태 → 케이스허브 status (데이터매핑 3번 규칙) */
+function sbStatusFwd(s){ if(!s) return "미요청"; if(s.mode==="na") return "해당없음"; if(s.rejected) return "보완필요"; if(s.done) return "받음"; if(s.mode==="request"&&s.reqTag==="requesting") return "요청중"; return "미요청"; }
+function sbItemMeta(c,id){
+  if(ITEM_BY_ID[id]) return { bundle: BID_BUNDLE[ITEM_BLOCK[id]]||"기타", name: ITEM_BY_ID[id].name };
+  let found=null; Object.keys(c.extra||{}).forEach(bid=>{ (c.extra[bid]||[]).forEach(x=>{ if(x.id===id) found={ bundle:BID_BUNDLE[bid]||"기타", name:x.name||"서류" }; }); });
+  return found;
+}
+function sbItemSig(c,id,s){ const m=sbItemMeta(c,id)||{}; return sbStatusFwd(s)+"|"+(s.rejectReason||"")+"|"+(s.memo||"")+"|"+(m.bundle||"")+"|"+(m.name||""); }
+/* 사무소(이준/블루) ↔ office_id 매핑 (SB_OFFICES는 pull에서 채움) */
+let SB_OFFICES=[];
+function sbFirmFromOffice(oid){ const o=SB_OFFICES.find(x=>x.id===oid); if(!o) return null; const n=o.name||""; if(n.includes("블루")) return "법률사무소 블루"; if(n.includes("이준")) return "법무법인 이준 서초 분사무소"; return n; }
+function sbOfficeFromFirm(firm){ const blue=(firm||"").includes("블루"); const o=SB_OFFICES.find(x=> blue ? (x.name||"").includes("블루") : (x.name||"").includes("이준")); return o? o.id : OURS_OFFICE_ID; }
+/* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
+function sbAppJson(c){ return { firm:c.firm||null, housing:c.housing||"미정", msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[] }; }
+function sbClientPayload(c){ return { name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
+  stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
+  asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
+  urgent:!!c.urgent, pinned:!!c.pinned, archived:!!c.archived, amending:!!c.amending, case_no:c.caseNo||null,
+  is_public:!!c.isPublic, office_id: sbOfficeFromFirm(c.firm), app_json: sbAppJson(c) }; }
+function sbClientSig(c){ return JSON.stringify(sbClientPayload(c)); }
+
+async function sbSyncClient(c){
+  const sig=sbClientSig(c);
+  const payload=sbClientPayload(c); payload.updated_at=new Date().toISOString();
+  if(!isUuid(c.id)){                       // 앱에서 새로 만든 의뢰인 → insert
+    if(!payload.office_id) payload.office_id=OURS_OFFICE_ID;   // 사무소는 firm 기준(없으면 이준)
+    const {data,error}=await sb.from("clients").insert(payload).select("id").single();
+    if(error) throw error;
+    const oldId=c.id; c.id=data.id; if(currentClientId===oldId) currentClientId=c.id;
+    c._sbSig=null;                         // 새 의뢰인은 항목 전부 insert
+  } else if(c._sbSig!==sig){               // 기존 의뢰인 정보 변경 → update
+    const {error}=await sb.from("clients").update(payload).eq("id",c.id);
+    if(error) throw error;
+  }
+  // 체크리스트: 바뀐 줄만
+  const jobs=[];
+  Object.keys(c.items).forEach(id=>{
+    const s=c.items[id]; const meta=sbItemMeta(c,id); if(!meta) return;
+    const status=sbStatusFwd(s); const isig=sbItemSig(c,id,s); const dkey=ITEM_BY_ID[id]?id:(s.doc_key||null);
+    if(s._sbRow){
+      if(s._sbSig!==isig){ jobs.push(sb.from("checklist_items").update({status,reject_reason:s.rejectReason||null,memo:s.memo||null,doc_key:dkey,bundle:meta.bundle,doc_name:meta.name}).eq("id",s._sbRow).then(r=>{ if(r.error) throw r.error; s._sbSig=isig; })); }
+    } else {
+      jobs.push(sb.from("checklist_items").insert({client_id:c.id,doc_key:dkey,doc_name:meta.name,bundle:meta.bundle,status,reject_reason:s.rejectReason||null,memo:s.memo||null}).select("id").single().then(r=>{ if(r.error) throw r.error; s._sbRow=r.data.id; s._sbSig=isig; }));
+    }
+  });
+  if(jobs.length) await Promise.all(jobs);
+  // 첨부파일 메타(documents): 아직 기록 안 된 새 파일만 insert
+  const docJobs=[];
+  Object.keys(c.items).forEach(id=>{
+    const s=c.items[id]; if(!s.files||!s.files.length) return;
+    const dkey=ITEM_BY_ID[id]?id:(s.doc_key||id);
+    s.files.forEach(f=>{ if(f.driveId && !f.docId){ docJobs.push(sb.from("documents").insert({client_id:c.id,doc_key:dkey,file_name:f.name,storage_path:f.driveId,uploaded_by:f.by||deviceName||"직원",is_public:!!f.is_public,kind:"취합"}).select("id").single().then(r=>{ if(r.error) throw r.error; f.docId=r.data.id; })); } });
+  });
+  if(docJobs.length) await Promise.all(docJobs);
+  // 의뢰인 메모(한 줄로 유지)
+  if((c.memo||"")!==(c._sbMemo||"")){
+    if(c._sbMemoId){ const {error}=await sb.from("memos").update({body:c.memo||""}).eq("id",c._sbMemoId); if(error) throw error; }
+    else if(c.memo){ const {data,error}=await sb.from("memos").insert({client_id:c.id,body:c.memo,author:deviceName||"직원",is_public:false,kind:"취합"}).select("id").single(); if(error) throw error; c._sbMemoId=data.id; }
+    c._sbMemo=c.memo||"";
+  }
+  // 인증서·비번(고보안)
+  const certSig=JSON.stringify({f:(c.cert&&c.cert.files)||[],p:(c.cert&&c.cert.pw)||""});
+  if(certSig!==(c._sbCertSig||JSON.stringify({f:[],p:""}))){
+    const hasCert=c.cert&&((c.cert.pw)||(c.cert.files&&c.cert.files.length));
+    if(c._sbSecretId){ const {error}=await sb.from("secrets").update({cert_files:(c.cert&&c.cert.files)||[],password:(c.cert&&c.cert.pw)||null}).eq("id",c._sbSecretId); if(error) throw error; }
+    else if(hasCert){ const {data,error}=await sb.from("secrets").insert({client_id:c.id,cert_files:(c.cert.files)||[],password:c.cert.pw||null,staff_only:true}).select("id").single(); if(error) throw error; c._sbSecretId=data.id; }
+    c._sbCertSig=certSig;
+  }
+  c._sbSig=sbClientSig(c);
+}
+
+async function pushToSupabase(silent){
+  if(!sbInit()||!sbUser) return false;
+  setSync("saving");
+  try{
+    const delUuids=(state.deleted||[]).filter(isUuid);
+    if(delUuids.length){ try{ await sb.from("clients").delete().in("id",delUuids); }catch(_){} }
+    for(const c of (state.clients||[])){ await sbSyncClient(c); }
+    setSync("ok");
+    if(!silent) toast("케이스허브에 저장됨 ✓");
+    return true;
+  }catch(e){ console.error(e); setSync("error"); showBanner("케이스허브 저장 오류: "+(e.message||e),"err"); return false; }
+}
+
 function boot(){
   let loaded=false;
   try{ const d=localStorage.getItem(LS_DATA); if(d){ state=JSON.parse(d); loaded=true; } }catch(_){}
@@ -3062,7 +3339,14 @@ function boot(){
   updateSyncPill();
   renderDashboard();
   if(location.protocol==="file:"){ showBanner("⚠️ <b>이 파일이 아니라 인터넷 링크(github.io 주소)로 여세요.</b> 파일로 열면 다른 기기와 동기화·자동연결이 되지 않고, 입력이 이 컴퓨터에만 남습니다.","warn"); }
-  if(githubReady()){ pullFromGithub(true).then(()=>startPolling()); }
+  if(BACKEND==="supabase"){
+    if(sbInit()){
+      sb.auth.getSession().then(({data})=>{
+        if(data && data.session){ sbUser=data.session.user; pullFromSupabase(true); }
+        else { showLoginGate(""); }
+      }).catch(()=>showLoginGate(""));
+    } else { showLoginGate("로그인 모듈 로딩 실패 — 새로고침 해주세요"); }
+  } else if(githubReady()){ pullFromGithub(true).then(()=>startPolling()); }
 }
 window.addEventListener("DOMContentLoaded",boot);
 window.addEventListener("beforeunload",()=>{ saveLocal(); });
