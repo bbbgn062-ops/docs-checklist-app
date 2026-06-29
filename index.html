@@ -3256,14 +3256,15 @@ function sbClientPayload(c){ return { name:c.name||"이름없음", case_type:c.c
   stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
   urgent:!!c.urgent, pinned:!!c.pinned, archived:!!c.archived, amending:!!c.amending, case_no:c.caseNo||null,
-  is_public:!!c.isPublic, office_id: sbOfficeFromFirm(c.firm), app_json: sbAppJson(c) }; }
+  is_public:!!c.isPublic, app_json: sbAppJson(c) }; }
+/* office_id는 의뢰인 저장 페이로드에서 제외 — 수정 시 관리자가 정한 사무소를 덮어쓰지 않도록. 신규 생성 때만 아래에서 지정. */
 function sbClientSig(c){ return JSON.stringify(sbClientPayload(c)); }
 
 async function sbSyncClient(c){
   const sig=sbClientSig(c);
   const payload=sbClientPayload(c); payload.updated_at=new Date().toISOString();
   if(!isUuid(c.id)){                       // 앱에서 새로 만든 의뢰인 → insert
-    if(!payload.office_id) payload.office_id=OURS_OFFICE_ID;   // 사무소는 firm 기준(없으면 이준)
+    payload.office_id = sbOfficeFromFirm(c.firm) || OURS_OFFICE_ID;   // 신규 생성 때만 사무소 지정(수정 시엔 보존)
     const {data,error}=await sb.from("clients").insert(payload).select("id").single();
     if(error) throw error;
     const oldId=c.id; c.id=data.id; if(currentClientId===oldId) currentClientId=c.id;
