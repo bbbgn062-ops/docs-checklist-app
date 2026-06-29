@@ -184,6 +184,9 @@
   .tag.on.t-req{background:var(--amber);color:#fff;border-color:var(--amber);}
   .tag.on.t-recv{background:var(--green);color:#fff;border-color:var(--green);}
   .memo-toggle{font-size:12px;color:var(--brand);font-weight:700;background:none;border:none;padding:4px 2px;}
+  .sw{position:relative;display:inline-block;width:40px;height:22px;vertical-align:middle;cursor:pointer}.sw input{opacity:0;width:0;height:0}
+  .sw span{position:absolute;inset:0;background:#cfcac3;border-radius:99px;transition:.2s}.sw span:before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+  .sw input:checked + span{background:#0A7D3C}.sw input:checked + span:before{transform:translateX(18px)}
   .memo-box{margin-top:8px;}
   .memo-box textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical;min-height:42px;outline:none;}
   .memo-box textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(155,27,51,.12);}
@@ -1212,7 +1215,7 @@ function renderDashboard(){
         <span class="card-name">${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</span>
         <span style="flex:1"></span>
         ${urgentToggle(c)}
-        <span class="badge" style="background:${firmColor(c.firm)};color:#fff;margin-left:6px">${esc(firmShort(c.firm))}</span></div>
+        <span class="badge" style="background:${firmColor(c.firm)};color:#fff;margin-left:6px">${esc(firmShort(c.firm))}</span> <label class="sw" title="원사무실 공개" onclick="event.stopPropagation()"><input type="checkbox" ${c.isPublic?"checked":""} onchange="togglePublic('${c.id}')"><span></span></label><span style="font-size:11px;color:var(--muted);margin-left:4px;vertical-align:3px">${c.isPublic?"공개":"비공개"}</span></div>
       <div class="meta">${esc(c.caseType||"개인회생")} · <span style="color:${stgColor};font-weight:700">${stg}</span>${c.assignee?(" · 담당 "+esc(c.assignee)):""}${c.caseNo?(" · "+esc(c.caseNo)):""} · 수정 ${fmt(c.updatedAt)}</div>
       <div class="bar"><i style="width:${p.pct}%;background:${p.rejected>0?'linear-gradient(90deg,#f87171,#dc2626)':(p.pct===100?'#059669':'linear-gradient(90deg,#e14b6f,#9B1B33)')}"></i></div>
       <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);font-weight:700;margin-top:6px">
@@ -1220,7 +1223,6 @@ function renderDashboard(){
       ${chipHtml?`<div class="card-stats">${chipHtml}</div>`:""}
       <div style="display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap">
         ${c.phone?`<a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()" style="font-size:12px;color:var(--brand);font-weight:700;text-decoration:none">📞 ${esc(c.phone)}</a>`:""}<span style="flex:1"></span>
-        <button class="qbtn" onclick="event.stopPropagation();togglePublic('${c.id}')" title="원사무실 공개 여부 (비공개=관리자만)" style="${c.isPublic?'color:#0A7D3C':'color:var(--muted)'}">${c.isPublic?'🌐 공개':'🔒 비공개'}</button>
         <button class="qbtn" onclick="event.stopPropagation();openRequestMsg('${c.id}')">📨 요청</button>
         <button class="qbtn" onclick="event.stopPropagation();openReminder('${c.id}')">⏰ 리마인더</button>
       </div>
