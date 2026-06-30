@@ -2699,9 +2699,11 @@ function closeModal(){ $("#modalRoot").innerHTML=""; if(_previewUrl){ try{URL.re
 /* ========== 6d. 받은 파일함 (여러 파일 한번에 배정 + PDF 페이지 분할) ==========
    메모리 보관 후 '배정' 시에만 드라이브 업로드. 기존 데이터는 id 기준 '추가'만 — 무손실. */
 let _ib=[];                 // 받은 파일함(메모리): {id,file,url,name,size,type,slot,splitPages:{}, origSaved}
-let _ibSel=new Set();       // 다중선택
+let _ibSel=new Set();       // 다중선택(미배정 → 배정용)
+let _ibSelF=new Set();      // 다중선택(배정됨 → 배정취소용)
 let _ibLast=null;           // 직전 배정 서류 id (한장씩 '계속 담기'용)
 let _ibUid=1, _ibCid=null, _ibBusy=false, _ibSolo=null, _ibPickCtx=null;
+function _ibCli(){ return findClient(_ibCid) || (window.state&&state.clients&&state.clients.find(c=>String(c.id)===String(_ibCid))) || null; }
 let _ibSplitFid=null, _ibSplitSel=new Set(), _ibPgSize="M";
 let _ibPgPending=false,_ibPgActive=false,_ibPgSX=0,_ibPgSY=0,_ibPgBase=null,_ibPgBox=null,_ibPgDownCell=null,_ibPgDownType="";
 
@@ -2761,13 +2763,13 @@ function _ibEnsureCss(){
 }
 function _ibIsImg(f){ return (f.type||"").startsWith("image/") || /\.(jpe?g|png|gif|webp|bmp)$/i.test(f.name); }
 function _ibIsPdf(f){ return f.type==="application/pdf" || /\.pdf$/i.test(f.name); }
-function _ibSlotName(id){ const c=findClient(_ibCid); return c?itemName(id,c):id; }
+function _ibSlotName(id){ const c=_ibCli(); return c?itemName(id,c):id; }
 function _ibMarkReceived(s){ s.manual=true; if(s.mode!=="na" && !s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; } }
 function _ibRemove(id){ const i=_ib.findIndex(f=>f.id===id); if(i>=0){ try{URL.revokeObjectURL(_ib[i].url);}catch(_){ } _ib.splice(i,1); } _ibSel.delete(id); }
 
 function openInbox(cid){
   if(!filesReady()){ toast("여러 파일 올리기는 ⚙️설정에서 구글 드라이브 연결 후 가능합니다"); return; }
-  _ibEnsureCss(); _ibCid=cid; _ib=[]; _ibSel=new Set(); _ibLast=null; _ibUid=1; _ibBusy=false;
+  _ibEnsureCss(); _ibCid=cid; _ib=[]; _ibSel=new Set(); _ibSelF=new Set(); _ibLast=null; _ibUid=1; _ibBusy=false;
   $("#modalRoot").innerHTML=`<div class="ib-ov" id="ibOv"><div class="ib-panel">
     <div class="ib-head"><b>📥 받은 파일함</b><span id="ibTally" style="font-size:12px;color:#0a7d3c;background:#e7f5ec;border:1px solid #a9ddbd;border-radius:999px;padding:3px 10px;display:none"></span><span style="flex:1"></span><button class="ib-btn sm" onclick="_ibComplete()">닫기</button></div>
     <div class="ib-body">
@@ -2782,6 +2784,11 @@ function openInbox(cid){
         <button class="ib-btn sm" style="margin-left:auto" onclick="_ibOpenPick('bulk')">한 서류에 배정 →</button>
         <button class="ib-btn sm" onclick="_ibClearSel()">선택 해제</button>
       </div>
+      <div id="ibBulkCancel" class="ib-bulk" style="display:none;background:#fdecea;border-color:#e6b3b0">
+        <span>배정됨 <b id="ibSelFN">0</b>개 선택됨 — 잘못 배정한 것만 골라서</span>
+        <button class="ib-btn sm" style="margin-left:auto;color:#b3261e;border-color:#e6b3b0" onclick="_ibUnassignBulk()">✕ 선택한 것 배정취소</button>
+        <button class="ib-btn sm" onclick="_ibClearSelF()">선택 해제</button>
+      </div>
       <div id="ibList"></div>
     </div>
     <div class="ib-foot"><button class="ib-cont" id="ibDoneBtn" style="margin:0" onclick="_ibComplete()">닫기</button></div>
@@ -2789,7 +2796,7 @@ function openInbox(cid){
   const ov=$("#ibOv"); ov.addEventListener("click",e=>{ if(e.target===ov) _ibComplete(); });
   _ibRender();
 }
-function _ibClose(){ if(_ibBusy){ toast("저장 중입니다 — 잠시 후 닫아주세요"); return; } _ib.forEach(f=>{ try{URL.revokeObjectURL(f.url);}catch(_){ } }); _ib=[]; _ibSel=new Set(); closeModal(); if(_ibCid) renderDetail(_ibCid); }
+function _ibClose(){ if(_ibBusy){ toast("저장 중입니다 — 잠시 후 닫아주세요"); return; } _ib.forEach(f=>{ try{URL.revokeObjectURL(f.url);}catch(_){ } }); _ib=[]; _ibSel=new Set(); _ibSelF=new Set(); closeModal(); if(_ibCid) renderDetail(_ibCid); }
 /* 정리 현황 집계 helper */
 function _ibFiledCount(f){ return f.filedSlots? Object.values(f.filedSlots).reduce((a,b)=>a+b,0):0; }
 function _ibIsFiled(f){ return _ibFiledCount(f)>0; }
@@ -2797,27 +2804,37 @@ function _ibUnassigned(){ return _ib.filter(f=>!_ibIsFiled(f)); }
 function _ibAddFiled(f,label,n){ if(!f.filedSlots) f.filedSlots={}; f.filedSlots[label]=(f.filedSlots[label]||0)+n; }
 function _ibTrackRef(f,slot,driveId){ if(!f._refs) f._refs=[]; f._refs.push({slot,driveId}); }
 function _ibUnmarkReceived(s){ if(s.files&&s.files.length) return; s.done=false; s.recvDate=null; s.rejected=false; if(s.reqTag==="received") s.reqTag=(s.mode==="request"?"requested":null); }
+function _ibClearSelF(){ _ibSelF=new Set(); _ibRender(); }
+async function _ibUnassignOne(c,f){
+  const refs=(f._refs||[]).slice();
+  for(const ref of refs){
+    const s=c.items[ref.slot]; if(!s||!s.files) continue;
+    const idx=s.files.findIndex(x=>x.driveId===ref.driveId);
+    if(idx>=0){ const fe=s.files[idx];
+      try{ await gwDelete(fe.driveId); }catch(_){}
+      if(BACKEND==="supabase" && fe.docId){ try{ await sb.from("documents").delete().eq("id",fe.docId); }catch(_){} }
+      s.files.splice(idx,1);
+    }
+    _ibUnmarkReceived(s);
+  }
+  f.filedSlots={}; f.origSaved=false; f.splitPages={}; f._refs=[];
+}
 async function _ibUnassign(fileId){
   if(_ibBusy){ toast("처리 중입니다 — 잠시만요"); return; }
   const f=_ib.find(x=>x.id===fileId); if(!f) return;
-  const c=ensureItems(findClient(_ibCid)); if(!c){ toast("의뢰인을 찾을 수 없습니다"); return; }
-  const refs=(f._refs||[]).slice();
+  const c=ensureItems(_ibCli()); if(!c){ toast("의뢰인을 찾을 수 없습니다"); return; }
   _ibBusy=true; toast("배정 취소 중…");
-  try{
-    for(const ref of refs){
-      const s=c.items[ref.slot]; if(!s||!s.files) continue;
-      const idx=s.files.findIndex(x=>x.driveId===ref.driveId);
-      if(idx>=0){ const fe=s.files[idx];
-        try{ await gwDelete(fe.driveId); }catch(_){}
-        if(BACKEND==="supabase" && fe.docId){ try{ await sb.from("documents").delete().eq("id",fe.docId); }catch(_){} }
-        s.files.splice(idx,1);
-      }
-      _ibUnmarkReceived(s);
-    }
-    f.filedSlots={}; f.origSaved=false; f.splitPages={}; f._refs=[];
-    touch(`[${c.name}] 받은 파일함 배정 취소: ${f.name}`);
-    _ibRender(); toast("배정을 취소했습니다 — 다시 배정할 수 있어요");
-  }catch(e){ console.error(e); toast("취소 실패: "+(e.message||e)); setSync("error"); }
+  try{ await _ibUnassignOne(c,f); _ibSelF.delete(fileId); touch(`[${c.name}] 받은 파일함 배정 취소: ${f.name}`); _ibRender(); toast("배정을 취소했습니다 — 다시 배정할 수 있어요"); }
+  catch(e){ console.error(e); toast("취소 실패: "+(e.message||e)); setSync("error"); }
+  finally{ _ibBusy=false; }
+}
+async function _ibUnassignBulk(){
+  if(_ibBusy){ toast("처리 중입니다 — 잠시만요"); return; }
+  const ids=[..._ibSelF]; if(!ids.length){ toast("취소할 항목을 선택하세요"); return; }
+  const c=ensureItems(_ibCli()); if(!c){ toast("의뢰인을 찾을 수 없습니다"); return; }
+  _ibBusy=true; toast(`${ids.length}개 배정 취소 중…`);
+  try{ for(const id of ids){ const f=_ib.find(x=>x.id===id); if(f) await _ibUnassignOne(c,f); } _ibSelF=new Set(); touch(`[${c.name}] 받은 파일함 ${ids.length}개 배정 취소`); _ibRender(); toast(`${ids.length}개 배정을 취소했습니다`); }
+  catch(e){ console.error(e); toast("취소 실패: "+(e.message||e)); setSync("error"); }
   finally{ _ibBusy=false; }
 }
 function _ibTallyTotal(){ let t=0,orig=0; _ib.forEach(f=>{ t+=_ibFiledCount(f); if(f.origSaved) orig++; }); return {t,orig}; }
@@ -2872,10 +2889,11 @@ function _ibRender(){
   if(_ib.length===0){ list.innerHTML='<div class="ib-empty">위 “＋ 여러 파일 올리기”로 사진·PDF를 한꺼번에 올려보세요.</div>'; }
   _ib.forEach(f=>{
     const filed=_ibIsFiled(f);
-    const row=document.createElement("div"); row.className="ib-frow"+(_ibSel.has(f.id)?" sel":"");
+    const selSet=filed?_ibSelF:_ibSel;
+    const row=document.createElement("div"); row.className="ib-frow"+(selSet.has(f.id)?" sel":"");
     if(filed){ row.style.background="#e7f5ec"; row.style.borderColor="#a9ddbd"; }
-    if(!filed){ const ck=document.createElement("input"); ck.type="checkbox"; ck.className="ib-ck"; ck.checked=_ibSel.has(f.id);
-      ck.onclick=()=>{ _ibSel.has(f.id)?_ibSel.delete(f.id):_ibSel.add(f.id); _ibRender(); }; row.appendChild(ck); }
+    { const ck=document.createElement("input"); ck.type="checkbox"; ck.className="ib-ck"; ck.checked=selSet.has(f.id);
+      ck.onclick=()=>{ selSet.has(f.id)?selSet.delete(f.id):selSet.add(f.id); _ibRender(); }; row.appendChild(ck); }
     row.appendChild(_ibThumb(f));
     const mid=document.createElement("div"); mid.style.cssText="flex:1;min-width:120px";
     if(filed){
@@ -2893,6 +2911,7 @@ function _ibRender(){
     list.appendChild(row);
   });
   const bulk=$("#ibBulk"); if(bulk) bulk.style.display=_ibSel.size?"flex":"none"; const sn=$("#ibSelN"); if(sn) sn.textContent=_ibSel.size;
+  const bulkC=$("#ibBulkCancel"); if(bulkC) bulkC.style.display=_ibSelF.size?"flex":"none"; const snf=$("#ibSelFN"); if(snf) snf.textContent=_ibSelF.size;
   const {t:tot,orig}=_ibTallyTotal(); const tg=$("#ibTally");
   if(tg){ if(tot+orig>0){ tg.style.display=""; tg.textContent=`✓ 이번에 정리 ${tot+orig}건`; } else tg.style.display="none"; }
   const dn=$("#ibDoneBtn"); if(dn) dn.textContent=(tot+orig>0)?`✓ 정리 완료 (${tot+orig}건 저장됨)`:"닫기";
@@ -2900,11 +2919,11 @@ function _ibRender(){
 
 /* ---- 서류 선택(검색) 모달 ---- */
 function _ibSlotsHtml(q){
-  q=(q||"").trim().toLowerCase(); const c=findClient(_ibCid); if(!c) return ""; let body="";
+  q=(q||"").trim().toLowerCase(); const c=_ibCli(); let body="";
   TEMPLATE.forEach(b=>{
     const rows=[];
     b.groups.forEach(g=>g.items.forEach(it=>{ if(!q||it.name.toLowerCase().includes(q)) rows.push({id:it.id,name:it.name,note:it.note}); }));
-    ((c.extra&&c.extra[b.id])||[]).forEach(ex=>{ if(!q||(ex.name||"").toLowerCase().includes(q)) rows.push({id:ex.id,name:ex.name,note:"추가서류"}); });
+    (((c&&c.extra&&c.extra[b.id]))||[]).forEach(ex=>{ if(!q||(ex.name||"").toLowerCase().includes(q)) rows.push({id:ex.id,name:ex.name,note:"추가서류"}); });
     if(!rows.length) return;
     body+=`<div class="ib-sgrp">${esc(b.title)}</div>`;
     rows.forEach(it=>{ const nt=(it.note||"").slice(0,16); body+=`<div class="ib-sitem" data-s="${esc(it.id)}"><span>${esc(it.name)}</span>${nt?`<span class="nt">${esc(nt)}</span>`:""}</div>`; });
@@ -2938,7 +2957,7 @@ async function _ibUploadFile(c, fobj, slot){
   _ibMarkReceived(s);
 }
 async function _ibDoAssign(slot){
-  if(_ibBusy) return; const c=ensureItems(findClient(_ibCid)); if(!c){ _ibClosePick(); return; } _ibLast=slot;
+  if(_ibBusy) return; const c=ensureItems(_ibCli()); if(!c){ _ibClosePick(); return; } _ibLast=slot;
   const mode=_ibPickCtx&&_ibPickCtx.mode;
   if(mode==="split"){ _ibClosePick(); await _ibBuildSplit(slot); return; }
   _ibBusy=true;
@@ -3065,7 +3084,7 @@ function _ibRangeLabel(pages){ const out=[]; let a=pages[0],prev=pages[0];
   for(let i=1;i<=pages.length;i++){ const p=pages[i]; if(p===prev+1){ prev=p; continue; } out.push(a===prev?String(a):a+"-"+prev); a=p; prev=p; }
   return out.join(","); }
 async function _ibBuildSplit(slot){
-  if(_ibBusy) return; const c=ensureItems(findClient(_ibCid)); const f=_ib.find(x=>x.id===_ibSplitFid); if(!c||!f) return;
+  if(_ibBusy) return; const c=ensureItems(_ibCli()); const f=_ib.find(x=>x.id===_ibSplitFid); if(!c||!f) return;
   const pages=[..._ibSplitSel].sort((a,b)=>a-b); if(!pages.length) return;
   _ibBusy=true; toast("PDF 자르는 중…");
   try{
