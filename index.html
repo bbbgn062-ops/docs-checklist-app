@@ -354,6 +354,7 @@
       <select id="sortSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
         <option value="recent">최근 수정순</option>
         <option value="name">이름순</option>
+        <option value="progress_desc">완료율 높은순</option>
         <option value="progress">완료율 낮은순</option>
         <option value="deadline">마감 임박순</option>
       </select>
@@ -1180,6 +1181,7 @@ function renderDashboard(){
   list.sort((a,b)=>{
     if((b.pinned?1:0)!==(a.pinned?1:0)) return (b.pinned?1:0)-(a.pinned?1:0);
     if(sort==="name") return (a.name||"").localeCompare(b.name||"","ko");
+    if(sort==="progress_desc") return progress(b).pct - progress(a).pct;
     if(sort==="progress") return progress(a).pct - progress(b).pct;
     if(sort==="deadline"){ const da=dDay(a), db=dDay(b); return (da===null?99999:da)-(db===null?99999:db); }
     return (b.updatedAt||"").localeCompare(a.updatedAt||"");
