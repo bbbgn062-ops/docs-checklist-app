@@ -36,6 +36,19 @@
  .filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
  .fchip{font-size:13.5px;font-weight:700;padding:7px 14px;border-radius:999px;border:1px solid #ddd9d5;background:#fff;cursor:pointer;color:#57534e}
  .fchip.on{background:var(--fg);color:#fff;border-color:var(--fg)}
+ .db-kpis{display:flex;border-top:2.5px solid var(--fg);border-bottom:1px solid var(--line);padding:18px 0;margin:0 0 8px}
+ .db-kpi{flex:1;text-align:center;border-right:1px solid var(--line)}.db-kpi:last-child{border-right:none}
+ .db-kpi .v{font-size:38px;font-weight:900;letter-spacing:-1px;line-height:1}
+ .db-kpi .l{font-size:14px;color:#4a463f;font-weight:800;margin-top:7px}
+ .db-h{font-size:15px;font-weight:900;margin:16px 2px 10px;display:flex;align-items:center;gap:7px}.db-h::before{content:"";width:4px;height:16px;background:var(--primary);border-radius:2px}
+ .db-pipe{display:flex;justify-content:space-between;gap:6px}
+ .db-st{flex:1;text-align:center;padding:10px 2px 8px;border-bottom:4px solid var(--line);cursor:pointer;border-radius:0}
+ .db-st.hot{border-bottom-color:var(--primary)}.db-st .n{font-size:24px;font-weight:900}.db-st.hot .n{color:var(--primary)}
+ .db-st .x{font-size:12.5px;color:#4a463f;font-weight:800;margin-top:4px}
+ .db-orow{display:flex;align-items:center;gap:14px;padding:13px 2px;border-bottom:1px solid var(--line)}.db-orow:last-child{border-bottom:none}
+ .db-dot{width:11px;height:11px;border-radius:50%;flex:none}.db-nm{font-weight:800;font-size:15px;min-width:130px}
+ .db-tr{flex:1;height:11px;background:#efeae1;border-radius:999px;overflow:hidden}.db-tr i{display:block;height:100%;border-radius:999px}
+ .db-pc{font-weight:900;min-width:96px;text-align:right;font-size:14.5px}
  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
  .card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px 22px 22px 20px;box-shadow:0 1px 2px rgba(20,20,20,.04),0 6px 20px rgba(20,20,20,.05)}
  .odot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
@@ -192,7 +205,7 @@
    <div class="wrap" id="listWrap">
      <h1 class="htitle">서류취합 작업</h1>
      <div id="previewBar"></div>
-     <div class="board" id="board"></div>
+     <div id="board"></div>
      <div id="dash"></div>
      <div class="toolbar" id="toolbar"></div>
      <div class="searchbar"><input class="searchin" id="searchIn" placeholder="의뢰인 이름 · 담당자 · 사무소 검색" oninput="onSearch(this.value)"></div>
@@ -306,27 +319,25 @@
 
  function renderDash(active){
    const el=$("#dash");if(!el)return;
-   if(!canEdit()){el.innerHTML="";return;}
-   const stageC=STAGES.map(s=>({s,n:active.filter(c=>c.stage===s).length}));
-   const offC={};active.forEach(c=>{offC[c.office_id]=(offC[c.office_id]||0)+1;});
-   const soon=active.filter(c=>c.court_deadline).map(c=>({c,dd:dday(c.court_deadline)})).filter(x=>x.dd&&x.dd.d<=7).sort((a,b)=>a.dd.d-b.dd.d);
-   const amend=active.filter(c=>c.amending);
-   let h=`<details class="dashwrap" open><summary><span>관리 대시보드</span><span class="logtag">펼치기 / 접기</span></summary><div class="dashgrid">`;
-   h+=`<div class="dashcol"><div class="dashh">단계별</div>`+stageC.map(x=>`<div class="dashline"><span>${x.s}</span><b>${x.n}</b></div>`).join("")+`</div>`;
-   h+=`<div class="dashcol"><div class="dashh">원사무소별</div>`+(Object.keys(offC).length?Object.keys(offC).map(id=>`<div class="dashline"><span>${esc(OFFNAME[id]||"")}</span><b>${offC[id]}</b></div>`).join(""):`<div class="sd">없음</div>`)+`</div>`;
-   h+=`<div class="dashcol"><div class="dashh">기한 임박 (7일내·지남)</div>`+(soon.length?soon.map(x=>`<div class="dashline"><a onclick="openDetail('${x.c.id}')">${esc(x.c.name)}</a><b class="${x.dd.cls}">${x.dd.txt}</b></div>`).join(""):`<div class="sd">없음</div>`)+`</div>`;
-   h+=`<div class="dashcol"><div class="dashh">보정중</div>`+(amend.length?amend.map(c=>`<div class="dashline"><a onclick="openDetail('${c.id}')">${esc(c.name)}</a><b>ON</b></div>`).join(""):`<div class="sd">없음</div>`)+`</div>`;
-   h+=`</div></details>`;
-   el.innerHTML=h;
+   if(!canEdit()){el.innerHTML="";return;}   // 원사무소: 사무소별 안 보임 (핵심 숫자+파이프라인만)
+   const offIds=[...new Set(active.map(c=>c.office_id))];
+   const rows=offIds.map(id=>{
+     const cs=active.filter(c=>c.office_id===id);
+     const avg=cs.length?Math.round(cs.reduce((s,c)=>s+(PCT[c.id]||0),0)/cs.length):0;
+     const col=officeColor[id]||{dot:"#9B1B33"};
+     return `<div class="db-orow"><span class="db-dot" style="background:${col.dot}"></span><span class="db-nm">${esc(OFFNAME[id]||"사무소")}</span><span class="db-tr"><i style="width:${avg}%;background:${col.dot}"></i></span><span class="db-pc">${cs.length}건 · ${avg}%</span></div>`;
+   }).join("");
+   el.innerHTML=`<div class="db-h">사무소별 현황</div>`+(rows||`<div class="sd">없음</div>`);
  }
+ function dbFilter(v){ viewF=v; document.querySelectorAll(".fchip").forEach(c=>c.classList.toggle("on",c.dataset.v===v)); renderList(); }
  function renderList(){
    const active=CLIENTS.filter(c=>!c.archived);
-   const inProg=active.filter(c=>c.stage==="서류취합중").length;
-   let missTotal=0;active.forEach(c=>missTotal+=(MISS[c.id]||[]).length);
-   const avg=active.length?Math.round(active.reduce((s,c)=>s+(PCT[c.id]||0),0)/active.length):0;
-   $("#board").innerHTML=`<div class="bd"><div class="l">서류취합 중</div><div class="v">${inProg}<small>건</small></div></div>`+
-     `<div class="bd alert"><div class="l">미수령 서류</div><div class="v">${missTotal}<small>건</small></div></div>`+
-     `<div class="bd"><div class="l">평균 완료율</div><div class="v">${avg}<small>%</small></div></div>`;
+   const stN={}; STAGES.forEach(s=>stN[s]=active.filter(c=>c.stage===s).length);
+   const received=active.length, inProg=stN["서류취합중"]||0, done=received-inProg;
+   const maxS=STAGES.reduce((a,b)=>(stN[b]>stN[a]?b:a),STAGES[0]);
+   $("#board").innerHTML=
+     `<div class="db-kpis"><div class="db-kpi"><div class="v">${received}</div><div class="l">받은 사건</div></div><div class="db-kpi"><div class="v">${inProg}</div><div class="l">취합 중</div></div><div class="db-kpi"><div class="v">${done}</div><div class="l">취합 완료</div></div></div>`+
+     `<div class="db-h">단계별 사건</div><div class="db-pipe">`+STAGES.map(s=>`<div class="db-st ${(s===maxS&&stN[s]>0)?'hot':''}" onclick="dbFilter('${s}')"><div class="n">${stN[s]}</div><div class="x">${esc(s)}</div></div>`).join("")+`</div>`;
    renderDash(active);
    const offIds=[...new Set(CLIENTS.map(c=>c.office_id))];
    const offOpts=offIds.map(id=>`<option value="${id}" ${officeF===id?"selected":""}>${esc(OFFNAME[id]||"")}</option>`).join("");
