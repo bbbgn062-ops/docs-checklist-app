@@ -626,7 +626,7 @@ function clientStage(c){ return STAGES.includes(c.stage)?c.stage:"서류수집";
 /* ---------- 2. 상태 ---------- */
 const LS_DATA="ksdocs_data_v1", LS_CFG="ksdocs_cfg_v1", LS_DEVICE="ksdocs_device_v1";
 const LS_SNAP="ksdocs_snaps_v1", LS_DATA_BAK="ksdocs_data_bak_v1";
-const SNAP_MAX=10; // 보관할 자동 스냅샷 개수
+const SNAP_MAX=3; // 보관할 자동 스냅샷 개수 (클라우드가 본저장소라 로컬 백업은 최소만)
 let state = { clients:[], log:[], updatedAt:null, updatedBy:null };
 const DEFAULT_OWNER="bbbgn062-ops", DEFAULT_REPO="docs-checklist", DEFAULT_BRANCH="main"; // 우리 사무소 고정값 (자동 기입)
 let cfg = { repo:DEFAULT_REPO, owner:DEFAULT_OWNER, branch:DEFAULT_BRANCH, token:"", path:"data.json", firmName:"법무법인 이준 서초 분사무소", gwUrl:"", gwSecret:"" };
@@ -817,7 +817,7 @@ function saveLocal(){
   const writeMain=()=>{ try{ const prev=localStorage.getItem(LS_DATA); if(prev && prev.length>2) localStorage.setItem(LS_DATA_BAK, prev); }catch(_){} localStorage.setItem(LS_DATA, json); };
   try{ writeMain(); _quotaWarned=false; }
   catch(e){
-    _trimStorage(5);                                   // 1차: 오래된 자동백업(스냅샷) 줄이고 재시도
+    _trimStorage(2);                                   // 1차: 오래된 자동백업(스냅샷) 줄이고 재시도
     try{ writeMain(); _quotaWarned=false; }
     catch(e2){
       try{ localStorage.removeItem(LS_SNAP); localStorage.removeItem(LS_DATA_BAK); }catch(_){}   // 2차: 스냅샷·직전백업 비우고 본 데이터만
