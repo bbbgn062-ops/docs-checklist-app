@@ -1965,40 +1965,57 @@ function openDownload(cid){
   const c=ensureItems(findClient(cid));
   const groups=fileGroups(c);
   if(groups.length===0){ modal(`<h3>📥 파일 다운로드</h3><p class="hint">아직 첨부된 파일이 없습니다. 각 서류의 <b>📎 파일</b>로 업로드한 뒤 이용하세요.</p><div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">닫기</button></div>`); return; }
-  const sel=new Set(); groups.forEach(g=>g.items.forEach(it=>it.files.forEach(fo=>sel.add(g.bid+"|"+it.id+"|"+fo.idx))));
-  _dlCtx={cid, groups, sel, mode:"pdf"};
+  const rows=[]; groups.forEach(g=>g.items.forEach(it=>it.files.forEach(fo=>rows.push({bid:g.bid,btitle:g.btitle,bi:g.bi,id:it.id,name:it.name,fo,k:g.bid+"|"+it.id+"|"+fo.idx}))));
+  const sel=new Set(rows.map(r=>r.k));
+  _dlCtx={cid, groups, rows, sel, mode:"pdf"};
   renderDownloadModal();
 }
 function renderDownloadModal(){
   const total=_dlCtx.sel.size;
+  const _prev=document.getElementById('dlList'); const _sc=_prev?_prev.scrollTop:0;
   let body="";
-  _dlCtx.groups.forEach(g=>{
-    body+=`<div style="margin:9px 0 3px;font-weight:800;font-size:12.5px;color:var(--brand)">${g.bi+1}. ${esc(g.btitle)}</div>`;
-    g.items.forEach(it=>it.files.forEach(fo=>{ const k=g.bid+"|"+it.id+"|"+fo.idx;
-      body+=`<label style="display:flex;gap:8px;align-items:center;padding:3px 0 3px 8px;font-size:13px;cursor:pointer">
-        <input type="checkbox" ${_dlCtx.sel.has(k)?"checked":""} onchange="dlToggle('${k}')">
-        <span>${esc(it.name)} <span style="color:var(--muted)">· ${esc(fo.f.name)} (${fileSizeStr(fo.f.size)})</span></span></label>`; }));
+  _dlCtx.groups.forEach((g,gi)=>{
+    const grows=[]; _dlCtx.rows.forEach((r,idx)=>{ if(r.bid===g.bid) grows.push({r,idx}); });
+    if(!grows.length) return;
+    const allSel=grows.every(x=>_dlCtx.sel.has(x.r.k));
+    body+=`<label style="display:flex;align-items:center;gap:7px;margin:11px 2px 5px;font-weight:800;font-size:12px;color:var(--brand);cursor:pointer">
+      <input type="checkbox" id="bchk${gi}" ${allSel?"checked":""} onchange="dlToggleBundle('${esc(g.bid)}')"><span>${g.bi+1}. ${esc(g.btitle)}</span></label>`;
+    grows.forEach(({r,idx})=>{
+      body+=`<div draggable="true" ondragstart="dlDragStart(event,${idx})" ondragover="dlDragOver(event,${idx})" ondrop="dlDrop(event,${idx})" ondragend="dlDragEnd(event)"
+        style="display:flex;gap:8px;align-items:center;padding:7px 9px;border:1px solid var(--line);border-radius:9px;margin-bottom:5px;background:#fff;font-size:13px">
+        <span style="cursor:grab;color:var(--muted);font-size:15px;user-select:none" title="끌어서 순서 변경(같은 묶음 안)">⠿</span>
+        <input type="checkbox" ${_dlCtx.sel.has(r.k)?"checked":""} onchange="dlToggle('${r.k}')">
+        <span style="flex:1;min-width:0">${esc(r.name)} <span style="color:var(--muted)">· ${esc(r.fo.f.name)} (${fileSizeStr(r.fo.f.size)})</span></span></div>`;
+    });
   });
   modal(`<h3>📥 파일 다운로드</h3>
-    <p class="hint">받을 파일을 고르고 방식을 선택하세요. (선택 <b id="dlCnt">${total}</b>개)</p>
+    <p class="hint">받을 파일을 고르고 방식을 선택하세요. <b>⠿ 끌어서 순서 변경</b> 가능 — 묶음 안에서 계약서 바로 뒤에 등본이 오도록 정돈하면 그 순서대로 합쳐집니다. (선택 <b id="dlCnt">${total}</b>개)</p>
     <div class="field"><label>받는 방식</label>
       <div class="seg" style="display:flex;gap:4px">
         <button style="flex:1" class="${_dlCtx.mode==='pdf'?'on-self':''}" onclick="_dlCtx.mode='pdf';renderDownloadModal()">묶음 PDF로 합치기<br><span style="font-size:11px;font-weight:400">홍길동_기본서류.pdf</span></button>
         <button style="flex:1" class="${_dlCtx.mode==='eachpdf'?'on-self':''}" onclick="_dlCtx.mode='eachpdf';renderDownloadModal()">파일별 PDF로<br><span style="font-size:11px;font-weight:400">이미지도 PDF 변환</span></button>
         <button style="flex:1" class="${_dlCtx.mode==='each'?'on-self':''}" onclick="_dlCtx.mode='each';renderDownloadModal()">파일별 원본<br><span style="font-size:11px;font-weight:400">올린 그대로(jpg 등)</span></button>
       </div>
-      ${_dlCtx.mode==='pdf'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· 묶음별로 처리돼요. 이미지·PDF는 그 묶음 안에서 한 개의 PDF로 합쳐집니다.<br>· 그 묶음에 한글·엑셀이 섞이면 [합친 PDF + 원본]을 <b>그 묶음 이름의 ZIP</b> 하나로 받습니다.</div>`:""}
+      ${_dlCtx.mode==='pdf'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· 묶음별로 처리돼요. 이미지·PDF는 그 묶음 안에서 <b>위에 놓은 순서대로</b> 한 개의 PDF로 합쳐집니다.<br>· 그 묶음에 한글·엑셀이 섞이면 [합친 PDF + 원본]을 <b>그 묶음 이름의 ZIP</b> 하나로 받습니다.</div>`:""}
       ${_dlCtx.mode==='eachpdf'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· 이미지는 각각 1개의 PDF로 변환, PDF는 그대로, 한글·엑셀은 원본 — <b>파일별로 따로</b> 받아집니다.</div>`:""}
       ${_dlCtx.mode==='each'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· 올린 파일을 원본 그대로 <b>파일별로</b> 받습니다.</div>`:""}</div>
     <div style="margin-bottom:8px"><button class="btn btn-sm" onclick="dlSelectAll(true)">전체선택</button> <button class="btn btn-sm" onclick="dlSelectAll(false)">전체해제</button></div>
-    <div style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 10px">${body}</div>
+    <div id="dlList" style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 10px">${body}</div>
     <div class="modal-actions" style="flex-direction:column;gap:8px;margin-top:16px">
       <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14.5px" onclick="doDownload()">다운로드</button>
       <button class="btn" style="width:100%;padding:12px" onclick="closeModal()">닫기</button>
     </div>`,540);
+  const _el=document.getElementById('dlList'); if(_el) _el.scrollTop=_sc;
+  _dlCtx.groups.forEach((g,gi)=>{ const cb=document.getElementById('bchk'+gi); if(!cb) return; const rs=_dlCtx.rows.filter(r=>r.bid===g.bid); if(!rs.length) return; const sc=rs.filter(r=>_dlCtx.sel.has(r.k)).length; cb.indeterminate = sc>0 && sc<rs.length; });
 }
-function dlToggle(k){ if(_dlCtx.sel.has(k)) _dlCtx.sel.delete(k); else _dlCtx.sel.add(k); const el=$("#dlCnt"); if(el) el.textContent=_dlCtx.sel.size; }
-function dlSelectAll(on){ _dlCtx.sel.clear(); if(on) _dlCtx.groups.forEach(g=>g.items.forEach(it=>it.files.forEach(fo=>_dlCtx.sel.add(g.bid+"|"+it.id+"|"+fo.idx)))); renderDownloadModal(); }
+function dlToggle(k){ if(_dlCtx.sel.has(k)) _dlCtx.sel.delete(k); else _dlCtx.sel.add(k); renderDownloadModal(); }
+function dlToggleBundle(bid){ const rs=_dlCtx.rows.filter(r=>r.bid===bid); const all=rs.every(r=>_dlCtx.sel.has(r.k)); rs.forEach(r=>{ if(all) _dlCtx.sel.delete(r.k); else _dlCtx.sel.add(r.k); }); renderDownloadModal(); }
+function dlSelectAll(on){ _dlCtx.sel.clear(); if(on) _dlCtx.rows.forEach(r=>_dlCtx.sel.add(r.k)); renderDownloadModal(); }
+let _dlDragIdx=null;
+function dlDragStart(e,i){ _dlDragIdx=i; e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text/plain",String(i));}catch(_){} }
+function dlDragOver(e,i){ e.preventDefault(); e.dataTransfer.dropEffect="move"; }
+function dlDragEnd(e){ _dlDragIdx=null; }
+function dlDrop(e,i){ e.preventDefault(); const from=_dlDragIdx; if(from===null||from===i) return; if(_dlCtx.rows[from].bid!==_dlCtx.rows[i].bid){ _dlDragIdx=null; toast("순서 변경은 같은 묶음 안에서만 돼요"); return; } const r=_dlCtx.rows.splice(from,1)[0]; _dlCtx.rows.splice(i,0,r); _dlDragIdx=null; renderDownloadModal(); }
 function addImageA4(doc,img){ const SHORT=595.28,LONG=841.89; const land=img.width>img.height; const A4W=land?LONG:SHORT, A4H=land?SHORT:LONG; const sc=Math.min(A4W/img.width, A4H/img.height); const w=img.width*sc, h=img.height*sc; const pg=doc.addPage([A4W,A4H]); pg.drawImage(img,{x:(A4W-w)/2, y:(A4H-h)/2, width:w, height:h}); } /* 이미지 모양에 맞춰 A4 세로/가로 자동 선택 · A4 비율에 비율유지 최대한 크게(잘림없음) · 가운데 정렬 */
 function loadJSZip(){ return new Promise((res,rej)=>{ if(window.JSZip) return res(window.JSZip);
   const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
@@ -2011,7 +2028,11 @@ async function deliverEach(outs){
 }
 async function doDownload(){
   const c=findClient(_dlCtx.cid); const nm=safeName(c.name||"의뢰인")||"의뢰인";
-  const picked=_dlCtx.groups.map(g=>({bid:g.bid,btitle:g.btitle,bi:g.bi,items:g.items.map(it=>({id:it.id,name:it.name,files:it.files.filter(fo=>_dlCtx.sel.has(g.bid+"|"+it.id+"|"+fo.idx))})).filter(it=>it.files.length)})).filter(g=>g.items.length);
+  const _bm={}, picked=[];
+  (_dlCtx.rows||[]).forEach(r=>{ if(!_dlCtx.sel.has(r.k)) return;
+    let g=_bm[r.bid]; if(!g){ g={bid:r.bid,btitle:r.btitle,bi:r.bi,items:[],_im:{}}; _bm[r.bid]=g; picked.push(g); }
+    let it=g._im[r.id]; if(!it){ it={id:r.id,name:r.name,files:[]}; g._im[r.id]=it; g.items.push(it); }
+    it.files.push(r.fo); });
   if(picked.length===0){ toast("선택된 파일이 없습니다"); return; }
   const mode=_dlCtx.mode; closeModal(); toast("다운로드 준비 중…");
   try{
