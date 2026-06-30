@@ -299,7 +299,7 @@
      db.from("checklist_items").select("client_id,doc_name,status")
    ]);
    officeColor={};OFFNAME={};
-   (offRes.data||[]).forEach((o,i)=>{officeColor[o.id]=PALETTE[i%PALETTE.length];OFFNAME[o.id]=o.name;});
+   (offRes.data||[]).forEach((o,i)=>{ const ours=(o.type==="ours")||((o.name||"").includes("이준")); officeColor[o.id]= ours ? {bg:"#FDECEF",dash:"#f0c9d2",dot:"#9B1B33"} : PALETTE[i%PALETTE.length]; OFFNAME[o.id]=o.name;});
    PCT={};(progRes.data||[]).forEach(r=>PCT[r.client_id]=r.pct);
    MISS={};
    (itemRes.data||[]).forEach(it=>{if(it.status==="미요청"||it.status==="요청중"){(MISS[it.client_id]=MISS[it.client_id]||[]).push(it.doc_name);}});
