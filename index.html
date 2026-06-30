@@ -1102,40 +1102,31 @@ function renderDashHeaderStatsBoard(){
   const hdr=$("#dashHeader"), stat=$("#dashStats"), board=$("#dashBoard");
   const active=state.clients.filter(c=>!c.archived && (!firmF || firmShort(c.firm)===firmF));
   if(active.length===0){ if(hdr)hdr.innerHTML=""; if(stat)stat.innerHTML=""; if(board)board.innerHTML=""; return; }
-  let tReq=0,tNot=0,tRej=0,avg=0,inProg=0,dueSoon=0;
-  active.forEach(c=>{ const p=progress(c); tReq+=p.requesting; tNot+=p.notReq; tRej+=p.rejected; avg+=p.pct; if(p.pct<100)inProg++; const d=dDay(c); if(d!==null&&d<=7)dueSoon++; });
-  avg=Math.round(avg/active.length);
-  // 동적 헤더
+  const cnt=s=>active.filter(c=>clientStage(c)===s).length;
+  const received=active.length, inG=cnt("상담")+cnt("서류수집"), doneG=cnt("검토"), filed=cnt("법원접수");
   const today=new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric",weekday:"short"});
-  let msg = tRej>0 ? `오늘 <b style="color:var(--red)">보완 ${tRej}건</b>을 처리해 주세요`
-          : dueSoon>0 ? `<b style="color:var(--amber)">마감 임박 ${dueSoon}명</b>을 먼저 챙기세요`
-          : tNot>0 ? `아직 <b style="color:var(--red)">요청 안 한 서류 ${tNot}건</b>이 있어요`
-          : tReq>0 ? `회신 대기 중인 <b style="color:var(--amber)">요청 ${tReq}건</b>이 있어요`
-          : `모든 의뢰인이 안정 상태예요 ✓`;
-  if(hdr) hdr.innerHTML=`<div style="margin-bottom:14px">
-    <div style="font-size:12px;color:var(--muted);font-weight:800;letter-spacing:.5px">${today}</div>
-    <div style="font-size:22px;font-weight:800;letter-spacing:-.4px;margin-top:2px">${msg}</div>
-    <div style="font-size:12.5px;color:var(--muted);font-weight:600;margin-top:3px">전체 ${active.length}명 · 진행중 ${inProg}명 · 평균 완료 ${avg}%</div></div>`;
-  // 통계 카드 5종
-  const card=(label,val,color)=>`<div style="cursor:default;flex:1;min-width:100px;background:var(--gray-soft);border-radius:14px;padding:11px 15px"><div style="font-size:12px;color:var(--muted);font-weight:700">${label}</div><div style="font-size:21px;font-weight:800;color:${color||'var(--ink)'};margin-top:1px">${val}</div></div>`;
-  if(stat) stat.innerHTML=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-    ${card("의뢰인", active.length+"명")}
-    ${card("평균 완료율", avg+"%","var(--green)")}
-    ${card("요청중", tReq+"건","var(--amber)")}
-    ${card("미요청", tNot+"건","var(--red)")}
-    ${card("보완필요", tRej+"건","var(--red)")}
-  </div>`;
-  // 오늘 할 일 보드: 급건 의뢰인만 표시
-  const urgentRows=active.filter(c=>c.urgent);
-  let boardHtml="";
-  if(urgentRows.length){
-    boardHtml+=`<div style="font-size:13px;font-weight:900;color:var(--ink);margin:2px 0 9px;display:flex;align-items:center;gap:4px">${URGENT_ICON}오늘 할 일 · 급건 ${urgentRows.length}명</div>`;
-    boardHtml+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:16px">`;
-    boardHtml+=`<div class="card" style="cursor:default;padding:0;overflow:hidden;grid-column:1/-1"><div style="background:#fdecec;color:#d11;font-weight:800;font-size:13px;padding:10px 13px;display:flex;align-items:center;gap:5px">${URGENT_ICON} 급건 ${urgentRows.length}명 — 우선 처리</div><div style="max-height:240px;overflow:auto">${urgentRows.map(c=>{const p=progress(c);const dd=dDay(c);return `<div onclick="openDetail('${c.id}')" style="cursor:pointer;padding:9px 13px;border-top:1px solid var(--line);font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(c.name)}</b> <span style="color:var(--muted)">· ${esc(c.caseType||"개인회생")}${dd!==null?` · ${dd<0?`마감 ${-dd}일 지남`:dd===0?"D-DAY":"D-"+dd}`:""}</span></span><span style="font-weight:800;color:${p.pct===100?'var(--green)':'var(--red)'}">${p.pct}%</span></div>`;}).join("")}</div></div>`;
-    boardHtml+=`</div>`;
+  if(hdr) hdr.innerHTML=`<div style="font-size:12px;color:var(--muted);font-weight:800;letter-spacing:.5px;margin-bottom:10px">${today}</div>`;
+  const kp=(v,l,st,hot,last)=>`<div onclick="setStageFilter('${st}')" style="flex:1;text-align:center;${last?'':'border-right:1px solid var(--line);'}cursor:pointer"><div style="font-size:34px;font-weight:900;letter-spacing:-1px;line-height:1;color:${hot?'var(--brand)':'var(--ink)'}">${v}</div><div style="font-size:13.5px;color:#4a463f;font-weight:800;margin-top:6px">${l}</div></div>`;
+  if(stat) stat.innerHTML=`<div style="display:flex;border-top:2.5px solid var(--ink);border-bottom:1px solid var(--line);padding:16px 0;margin-bottom:6px">${kp(received,"받은 사건","전체",false)}${kp(inG,"취합 중","서류수집",true)}${kp(doneG,"취합 완료","검토",false)}${kp(filed,"접수 완료","법원접수",false,true)}</div>`;
+  let bh="";
+  const offDefs=[["이준","법무법인 이준 서초","var(--brand)"],["블루","법률사무소 블루","#2563EB"]];
+  const offs=offDefs.map(d=>({name:d[1],col:d[2],n:active.filter(c=>firmShort(c.firm)===d[0]).length})).filter(o=>o.n>0);
+  if(offs.length){
+    const mo=Math.max(1,...offs.map(o=>o.n));
+    bh+=`<div style="font-size:14px;font-weight:900;margin:14px 2px 9px;display:flex;align-items:center;gap:7px"><span style="width:4px;height:15px;background:var(--brand);border-radius:2px"></span>사무실별 사건수</div>`;
+    bh+=offs.map(o=>`<div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--line)"><span style="width:10px;height:10px;border-radius:50%;background:${o.col};flex:none"></span><span style="font-weight:800;min-width:140px;font-size:15px">${esc(o.name)}</span><span style="flex:1;height:11px;background:#efeae1;border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:${Math.round(o.n/mo*100)}%;background:${o.col};border-radius:999px"></i></span><span style="font-weight:900;min-width:48px;text-align:right">${o.n}건</span></div>`).join("");
   }
-  if(board) board.innerHTML=boardHtml;
+  const mk=["2026-06","2026-07","2026-08","2026-09","2026-10"], ml=["6월","7월","8월","9월","10월"];
+  const md=mk.map(m=>{let j=0,b=0;active.forEach(c=>{if(String(c.createdAt||"").slice(0,7)===m){ if(firmShort(c.firm)==="블루")b++; else j++; }});return{j,b};});
+  const mm=Math.max(1,...md.map(d=>d.j+d.b));
+  bh+=`<div style="font-size:14px;font-weight:900;margin:18px 2px 9px;display:flex;align-items:center;gap:7px"><span style="width:4px;height:15px;background:var(--brand);border-radius:2px"></span>월별 접수</div>`;
+  bh+=`<div style="display:flex;gap:14px;font-size:13px;font-weight:800;color:#4a463f;margin:0 2px 10px"><span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:var(--brand);vertical-align:-1px"></i> 이준</span><span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#2563EB;vertical-align:-1px"></i> 블루</span></div>`;
+  bh+=`<div style="display:flex;align-items:flex-end;gap:12px;height:130px;padding:0 2px">`+md.map((d,i)=>`<div onclick="dbMonth(this)" title="${ml[i]} · 이준 ${d.j}건, 블루 ${d.b}건 (합계 ${d.j+d.b}건)" data-l="${ml[i]}" data-j="${d.j}" data-b="${d.b}" style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:4px;height:100%;cursor:pointer;border-radius:6px"><b style="width:15px;border-radius:5px 5px 0 0;background:var(--brand);height:${Math.round(d.j/mm*100)}%;min-height:3px"></b><b style="width:15px;border-radius:5px 5px 0 0;background:#2563EB;height:${Math.round(d.b/mm*100)}%;min-height:3px"></b></div>`).join("")+`</div>`;
+  bh+=`<div style="display:flex;gap:12px;margin-top:6px;padding:0 2px">`+ml.map(l=>`<div style="flex:1;text-align:center;font-size:13px;font-weight:800;color:#4a463f">${l}</div>`).join("")+`</div>`;
+  bh+=`<div id="dbMonthRO" style="font-size:13px;font-weight:800;background:var(--gray-soft);border-radius:8px;padding:7px 11px;margin-top:9px;min-height:16px;color:var(--muted)">월 막대를 클릭하면 정확한 건수가 표시됩니다</div>`;
+  if(board) board.innerHTML=bh;
 }
+function dbMonth(el){ const ro=document.getElementById("dbMonthRO"); if(!ro)return; ro.style.color="var(--ink)"; ro.textContent=el.dataset.l+" 접수: 이준 "+el.dataset.j+"건 · 블루 "+el.dataset.b+"건 · 합계 "+((+el.dataset.j)+(+el.dataset.b))+"건"; }
 function renderFirmChips(){
   const el=document.getElementById("firmChips"); if(!el) return;
   const act=state.clients.filter(c=>!c.archived);
@@ -3125,7 +3116,7 @@ function sbBuildClient(row, rows, docs, memos, secret){
     stage: SB_STAGE_BACK[row.stage]||"서류수집", deadline: row.court_deadline||null,
     deadlineLabel: row.deadline_kind||"보정기한", amending:!!(row.amending||row.correcting),
     memo:"", items:{}, extra:{}, cert:{files:[],pw:""}, timeline:Array.isArray(aj.timeline)?aj.timeline:[], msgLog:Array.isArray(aj.msgLog)?aj.msgLog:[],
-    firm: aj.firm || sbFirmFromOffice(row.office_id) || cfg.firmName, isPublic:!!row.is_public, updatedAt: row.updated_at, _sbId: row.id, office_id: row.office_id };
+    firm: aj.firm || sbFirmFromOffice(row.office_id) || cfg.firmName, isPublic:!!row.is_public, createdAt: row.created_at, updatedAt: row.updated_at, _sbId: row.id, office_id: row.office_id };
   ensureItems(c);   // 화면 기본 서류목록(템플릿) 깔기
   applyTags(c);     // 소득유형·주거·재산에 따른 기본 표시여부(해당없음 자동 숨김 등) — 원래 앱과 동일
   (rows||[]).forEach(r=>{
@@ -3163,7 +3154,7 @@ async function pullFromSupabase(silent){
   if(!sbInit()) return false;
   setSync("saving");
   try{
-    const BASE="id,name,office_id,case_type,assignee,stage,phone,income_type,asset_type,court_deadline,deadline_kind,urgent,pinned,archived,amending,correcting,case_no,updated_at";
+    const BASE="id,name,office_id,case_type,assignee,stage,phone,income_type,asset_type,court_deadline,deadline_kind,urgent,pinned,archived,amending,correcting,case_no,updated_at,created_at";
     let cRes=await sb.from("clients").select(BASE+",is_public,app_json").order("name");
     if(cRes.error) cRes=await sb.from("clients").select(BASE+",app_json").order("name"); // is_public 칸 없을 때
     if(cRes.error) cRes=await sb.from("clients").select(BASE).order("name");            // app_json 칸도 없을 때
