@@ -2795,6 +2795,31 @@ function _ibFiledCount(f){ return f.filedSlots? Object.values(f.filedSlots).redu
 function _ibIsFiled(f){ return _ibFiledCount(f)>0; }
 function _ibUnassigned(){ return _ib.filter(f=>!_ibIsFiled(f)); }
 function _ibAddFiled(f,label,n){ if(!f.filedSlots) f.filedSlots={}; f.filedSlots[label]=(f.filedSlots[label]||0)+n; }
+function _ibTrackRef(f,slot,driveId){ if(!f._refs) f._refs=[]; f._refs.push({slot,driveId}); }
+function _ibUnmarkReceived(s){ if(s.files&&s.files.length) return; s.done=false; s.recvDate=null; s.rejected=false; if(s.reqTag==="received") s.reqTag=(s.mode==="request"?"requested":null); }
+async function _ibUnassign(fileId){
+  if(_ibBusy){ toast("처리 중입니다 — 잠시만요"); return; }
+  const f=_ib.find(x=>x.id===fileId); if(!f) return;
+  const c=ensureItems(findClient(_ibCid)); if(!c){ toast("의뢰인을 찾을 수 없습니다"); return; }
+  const refs=(f._refs||[]).slice();
+  _ibBusy=true; toast("배정 취소 중…");
+  try{
+    for(const ref of refs){
+      const s=c.items[ref.slot]; if(!s||!s.files) continue;
+      const idx=s.files.findIndex(x=>x.driveId===ref.driveId);
+      if(idx>=0){ const fe=s.files[idx];
+        try{ await gwDelete(fe.driveId); }catch(_){}
+        if(BACKEND==="supabase" && fe.docId){ try{ await sb.from("documents").delete().eq("id",fe.docId); }catch(_){} }
+        s.files.splice(idx,1);
+      }
+      _ibUnmarkReceived(s);
+    }
+    f.filedSlots={}; f.origSaved=false; f.splitPages={}; f._refs=[];
+    touch(`[${c.name}] 받은 파일함 배정 취소: ${f.name}`);
+    _ibRender(); toast("배정을 취소했습니다 — 다시 배정할 수 있어요");
+  }catch(e){ console.error(e); toast("취소 실패: "+(e.message||e)); setSync("error"); }
+  finally{ _ibBusy=false; }
+}
 function _ibTallyTotal(){ let t=0,orig=0; _ib.forEach(f=>{ t+=_ibFiledCount(f); if(f.origSaved) orig++; }); return {t,orig}; }
 /* "정리 완료" — 무엇이 어디로 갔는지 요약 후 닫기 */
 function _ibComplete(){
@@ -2862,7 +2887,8 @@ function _ibRender(){
     }
     row.appendChild(mid);
     if(_ibIsPdf(f)){ const sb=document.createElement("button"); sb.className="ib-split"; sb.textContent=filed?"📑 더 나누기":"📑 페이지 나눠 배정"; sb.onclick=()=>_ibOpenSplit(f.id); row.appendChild(sb); }
-    if(filed){ const tag=document.createElement("span"); tag.style.cssText="font-size:12px;font-weight:800;color:#0a7d3c;white-space:nowrap;padding:7px 4px"; tag.textContent="✓ 정리됨"; row.appendChild(tag); }
+    if(filed){ const tag=document.createElement("span"); tag.style.cssText="font-size:12px;font-weight:800;color:#0a7d3c;white-space:nowrap;padding:7px 4px"; tag.textContent="✓ 정리됨"; row.appendChild(tag);
+      const ub=document.createElement("button"); ub.className="ib-btn sm"; ub.style.cssText="white-space:nowrap;color:#b3261e;border-color:#e6b3b0"; ub.textContent="✕ 배정 취소"; ub.onclick=()=>_ibUnassign(f.id); row.appendChild(ub); }
     else { const b=document.createElement("button"); b.className="ib-asgn need"; b.textContent="서류 선택"; b.onclick=()=>_ibOpenPick("one",f.id); row.appendChild(b); }
     list.appendChild(row);
   });
@@ -2908,6 +2934,7 @@ async function _ibUploadFile(c, fobj, slot){
   const j=await gwUpload(clientFolder(c), file.name, file.type||"application/octet-stream", b64);
   const s=c.items[slot]; if(!s.files) s.files=[];
   s.files.push({name:file.name,size:file.size,driveId:j.id,by:deviceName||"미설정",ts:now()});
+  _ibTrackRef(fobj,slot,j.id);
   _ibMarkReceived(s);
 }
 async function _ibDoAssign(slot){
@@ -2998,7 +3025,7 @@ function _ibOpenSplit(fid){ _ibSplitFid=fid; _ibSplitSel=new Set(); const f=_ib.
   d.innerHTML=`<div class="ib-big">
     <div class="ib-bhead"><b style="word-break:break-all">📑 페이지 나눠 배정 · ${esc(f.name)}</b><button class="ib-btn sm" onclick="_ibCloseSplit()">닫기</button></div>
     <div style="padding:8px 14px;font-size:12.5px;color:#555;line-height:1.5">페이지 선택: <b>마우스로 박스를 끌면</b> 박스에 닿는 페이지가 모두 선택(또는 톡톡 클릭·모바일은 탭). 🔍로 크게 보고 → “선택 페이지 배정”하면 그 페이지만 뽑은 PDF가 서류 칸에 정리됩니다.
-      <label style="display:flex;align-items:center;gap:7px;margin-top:7px;font-weight:700;color:#1d4ed8;cursor:pointer"><input type="checkbox" id="ibKeepOrig" checked style="width:16px;height:16px;flex:none"> 원본 통PDF도 ‘그 외 서류’에 보관 <span style="font-weight:400;color:#777">— 끄면 원본은 저장 안 함</span></label></div>
+      <label style="display:flex;align-items:center;gap:7px;margin-top:7px;font-weight:700;color:#1d4ed8;cursor:pointer"><input type="checkbox" id="ibKeepOrig" style="width:16px;height:16px;flex:none"> 원본 통PDF도 ‘그 외 서류’에 보관 <span style="font-weight:400;color:#777">— 기본은 저장 안 함, 켜면 원본도 함께 저장</span></label></div>
     <div class="ib-pgwrap" id="ibPgGrid" style="touch-action:pan-y"><div style="padding:20px;color:#777">페이지 그리는 중…</div></div>
     <div class="ib-foot" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <b><span id="ibSelPg">0</span>p 선택</b>
@@ -3056,11 +3083,12 @@ async function _ibBuildSplit(slot){
     const j=await gwUpload(clientFolder(c), pieceName, "application/pdf", b64);
     const s=c.items[slot]; if(!s.files) s.files=[];
     s.files.push({name:pieceName,size:buf.byteLength,driveId:j.id,by:deviceName||"미설정",ts:now()});
+    _ibTrackRef(f,slot,j.id);
     _ibMarkReceived(s);
     _ibAddFiled(f, itemName(slot,c), pages.length);
     pages.forEach(p=>f.splitPages[p]=slot);
     _ibSplitSel=new Set();
-    const _keepOrig=(()=>{ const cb=$("#ibKeepOrig"); return cb?cb.checked:true; })();
+    const _keepOrig=(()=>{ const cb=$("#ibKeepOrig"); return cb?cb.checked:false; })();
     if(_keepOrig && !f.origSaved){ _ibSaveOriginal(c,f); }   // 원본은 백그라운드 보관(완료를 막지 않음 — 조각은 이미 저장됨)
     touch(`[${c.name}] 받은 파일함 PDF 분할 → '${itemName(slot,c)}' ${pages.length}p`);
     _ibRender(); toast(`'${_ibSlotName(slot)}'로 ${pages.length}p 분할 완료 ✓`);
@@ -3076,6 +3104,7 @@ async function _ibSaveOriginal(c,f){
     const j=await gwUpload(clientFolder(c), oname, "application/pdf", b64);
     if(!s.files) s.files=[];
     s.files.push({name:oname,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()});
+    _ibTrackRef(f,oid,j.id);
     s.mode="self"; s.manual=true; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; }
     f.origSaved=true;
     _ibRender(); touch(`[${c.name}] 받은 파일함 PDF 원본 보관`);
