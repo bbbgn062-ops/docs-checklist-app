@@ -333,10 +333,10 @@
  function renderList(){
    const active=CLIENTS.filter(c=>!c.archived);
    const stN={}; STAGES.forEach(s=>stN[s]=active.filter(c=>c.stage===s).length);
-   const received=active.length, inProg=stN["서류취합중"]||0, done=received-inProg;
+   const received=active.length, inProg=stN["서류취합중"]||0, filed=(stN["접수완료"]||0)+(stN["개시결정"]||0)+(stN["인가결정"]||0);
    const maxS=STAGES.reduce((a,b)=>(stN[b]>stN[a]?b:a),STAGES[0]);
    $("#board").innerHTML=
-     `<div class="db-kpis"><div class="db-kpi"><div class="v">${received}</div><div class="l">받은 사건</div></div><div class="db-kpi"><div class="v">${inProg}</div><div class="l">취합 중</div></div><div class="db-kpi"><div class="v">${done}</div><div class="l">취합 완료</div></div></div>`+
+     `<div class="db-kpis"><div class="db-kpi"><div class="v">${received}</div><div class="l">받은 사건</div></div><div class="db-kpi"><div class="v">${inProg}</div><div class="l">취합 중</div></div><div class="db-kpi"><div class="v">${filed}</div><div class="l">접수 완료</div></div></div>`+
      `<div class="db-h">단계별 사건</div><div class="db-pipe">`+STAGES.map(s=>`<div class="db-st ${(s===maxS&&stN[s]>0)?'hot':''}" onclick="dbFilter('${s}')"><div class="n">${stN[s]}</div><div class="x">${esc(s)}</div></div>`).join("")+`</div>`;
    renderDash(active);
    const offIds=[...new Set(CLIENTS.map(c=>c.office_id))];
