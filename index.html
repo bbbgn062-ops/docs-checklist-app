@@ -337,6 +337,8 @@
   <button class="sync-pill" id="syncPill" onclick="openSettings()"><span class="dot"></span><span id="syncText">로컬 저장</span></button>
   <button class="btn btn-sm" onclick="openLog()">📜 로그</button>
   <button class="btn btn-sm" onclick="openSettings()">⚙️ 설정</button>
+  <span id="sbWho" style="font-size:12px;color:var(--muted);align-self:center;margin-left:2px"></span>
+  <button class="btn btn-sm" id="logoutBtn" onclick="sbLogout()" style="display:none">🚪 로그아웃</button>
 </header>
 
 <div class="wrap">
@@ -2603,41 +2605,26 @@ function restoreSnapshot(i){
 /* ---------- 8. 설정 (깃헙) ---------- */
 function openSettings(){
   modal(`
-    <div style="position:sticky;top:0;background:#fff;margin:-22px -22px 12px;padding:18px 22px 12px;border-bottom:1px solid var(--line);z-index:1"><h3 style="margin:0">⚙️ 설정 · 동기화 (깃헙 · 드라이브)</h3></div>
-    <p class="hint">새 기기·새 직원은 아래 <b>두 가지만</b> 입력하고 [연결 / 저장]을 누르면 끝입니다.</p>
-    <div class="field"><label>① 이 기기/사용자 이름 (로그에 표시)</label>
+    <div style="position:sticky;top:0;background:#fff;margin:-22px -22px 12px;padding:18px 22px 12px;border-bottom:1px solid var(--line);z-index:1"><h3 style="margin:0">⚙️ 설정</h3></div>
+    <div class="field"><label>이 기기/사용자 이름 (로그·업로더에 표시)</label>
       <input id="s_device" value="${esc(deviceName)}" placeholder="예: 혜림-사무실PC"/></div>
-    <div class="field"><label>② 액세스 토큰 (관리자에게 받은 ghp_… 글자)</label>
-      <input id="s_token" type="password" value="${esc(cfg.token)}" placeholder="github_pat_... 또는 ghp_..."/></div>
-    <div class="note-warn">토큰은 이 기기 브라우저에만 저장되며 외부로 전송되지 않습니다(깃헙 외). 기기마다 한 번만 입력하면 됩니다.</div>
-    <div class="field" style="margin-top:12px"><label>③ 구글 드라이브 문지기 주소 (첨부파일 저장 · 관리자에게 받음)</label>
-      <input id="s_gwurl" value="${esc(cfg.gwUrl||"")}" placeholder="https://script.google.com/macros/s/..../exec"/></div>
-    <div class="field"><label>④ 드라이브 비밀암호 (관리자에게 받음)</label>
-      <input id="s_gwsecret" type="password" value="${esc(cfg.gwSecret||"")}" placeholder="드라이브 연결용 암호"/></div>
-    <div class="note-warn">첨부파일은 구글 드라이브에 저장됩니다. 위 두 칸도 이 기기에만 저장되며, 기기마다 한 번만 입력하면 됩니다.</div>
-    <div class="field" style="margin-top:12px"><label>데이터 안전 (3단계 저장)</label>
+    <div class="note-warn">${sbUser?`현재 로그인: <b>${esc(sbUser.email||"")}</b>`:"로그인되어 있지 않습니다."}</div>
+    <div class="field" style="margin-top:12px"><label>데이터 안전</label>
       <div style="font-size:12.5px;color:var(--muted);background:var(--gray-soft);border-radius:9px;padding:8px 11px;line-height:1.7">
         ① 로컬 즉시저장 <b>켜짐</b> · ② 자동 스냅샷 <b>${getSnapshots().length}개</b> 보관<br>
-        ③ 깃헙 클라우드(현황): <b>${githubReady()?"연결됨 ✓":"미연결"}</b>${state.updatedAt?` · 최근 ${fmt(state.updatedAt)}`:""}<br>
-        ④ 구글 드라이브(첨부파일): <b>${driveReady()?"연결됨 ✓":"미연결"}</b>
+        ③ 클라우드 저장(케이스허브): <b>${(BACKEND==="supabase"&&sbUser)?"연결됨 ✓":"미연결"}</b>${state.updatedAt?` · 최근 ${fmt(state.updatedAt)}`:""}
       </div>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
         <button class="btn btn-sm" onclick="exportData()">📥 백업 내려받기</button>
         <button class="btn btn-sm" onclick="importData()">📤 백업 불러오기</button>
         <button class="btn btn-sm" onclick="openSnapshots()">🕘 스냅샷 되돌리기</button>
       </div></div>
-    <div style="margin-top:10px"><button class="btn btn-sm btn-ghost" id="ghAdvBtn" onclick="toggleAdvGh()">고급 설정 (보통 그대로 두세요) ▾</button></div>
-    <div id="ghAdv" class="hidden">
-      <div class="field"><label>깃헙 사용자명 (owner) · 자동 입력됨</label><input id="s_owner" value="${esc(cfg.owner||DEFAULT_OWNER)}"/></div>
-      <div class="field"><label>저장소 이름 (repo) · 자동 입력됨</label><input id="s_repo" value="${esc(cfg.repo||DEFAULT_REPO)}"/></div>
-      <div class="field"><label>브랜치 · 자동 입력됨</label><input id="s_branch" value="${esc(cfg.branch||DEFAULT_BRANCH)}"/></div>
-    </div>
     <div class="modal-actions" style="position:sticky;bottom:0;background:#fff;margin:18px -22px -22px;padding:13px 22px;border-top:1px solid var(--line)">
       <button class="btn" onclick="closeModal()">닫기</button>
-      <button class="btn" onclick="disconnectGithub()">연결 해제</button>
-      <button class="btn btn-primary" onclick="connectGithub()">연결 / 저장</button>
+      <button class="btn btn-primary" onclick="saveSettingsLite()">저장</button>
     </div>`);
 }
+function saveSettingsLite(){ const dv=document.getElementById("s_device"); if(dv){ deviceName=(dv.value||"").trim(); try{ localStorage.setItem(LS_DEVICE, deviceName); }catch(_){} } try{ updateSyncPill(); }catch(_){} toast("저장했습니다"); closeModal(); }
 function toggleAdvGh(){ const el=document.getElementById("ghAdv"); const b=document.getElementById("ghAdvBtn"); if(!el)return; const open=el.classList.toggle("hidden")===false; if(b) b.textContent= open?"고급 설정 (보통 그대로 두세요) ▴":"고급 설정 (보통 그대로 두세요) ▾"; }
 function showGuide(){
   modal(`
@@ -3239,10 +3226,13 @@ async function sbLogin(){
   try{
     const {data,error}=await sb.auth.signInWithPassword({email,password:pw});
     if(error){ showLoginGate("로그인 실패: 이메일/비밀번호를 확인하세요"); return; }
-    sbUser=data.user; hideLoginGate(); await pullFromSupabase(false);
+    sbUser=data.user; hideLoginGate(); sbWho(); await pullFromSupabase(false);
   }catch(e){ showLoginGate("로그인 오류: "+(e.message||e)); }
 }
-async function sbLogout(){ try{ if(sbInit()) await sb.auth.signOut(); }catch(_){} sbUser=null; showLoginGate("로그아웃됨"); }
+function sbWho(){ const w=document.getElementById("sbWho"), b=document.getElementById("logoutBtn");
+  if(sbUser){ if(w) w.textContent=sbUser.email||""; if(b) b.style.display=""; }
+  else { if(w) w.textContent=""; if(b) b.style.display="none"; } }
+async function sbLogout(){ if(!confirm("로그아웃할까요? 다시 들어오려면 이메일·비밀번호가 필요합니다.")) return; try{ if(sbInit()) await sb.auth.signOut(); }catch(_){} sbUser=null; sbWho(); showLoginGate("로그아웃됨"); }
 
 /* ============================================================
    ★ ②쓰기: 변경된 의뢰인만 골라 케이스허브(Supabase)에 저장
@@ -3359,7 +3349,7 @@ function boot(){
   if(BACKEND==="supabase"){
     if(sbInit()){
       sb.auth.getSession().then(({data})=>{
-        if(data && data.session){ sbUser=data.session.user; pullFromSupabase(true); }
+        if(data && data.session){ sbUser=data.session.user; sbWho(); pullFromSupabase(true); }
         else { showLoginGate(""); }
       }).catch(()=>showLoginGate(""));
     } else { showLoginGate("로그인 모듈 로딩 실패 — 새로고침 해주세요"); }
