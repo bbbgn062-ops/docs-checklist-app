@@ -737,11 +737,13 @@ function activeGroups(c){ const set=new Set();
   (TAG_GROUPS.housing[c.housing]||[]).forEach(g=>set.add(g));
   (c.assets||[]).forEach(a=>(TAG_GROUPS.assets[a]||[]).forEach(g=>set.add(g)));
   return set; }
+function _groupActive(c,g){ return g.items.some(it=>{ const s=c.items[it.id]; return s && (s.done || (s.files&&s.files.length)); }); } // 그룹 안에 받은/파일 있는 서류가 하나라도 있으면 '해당 그룹'으로 간주
 function applyTags(c){
-  const anyTag = !!TAG_GROUPS.income[c.incomeType] || !!TAG_GROUPS.housing[c.housing] || ((c.assets||[]).length>0) || (c.housing==="무상거주");
+  const anyRecv = TEMPLATE.some(b=>b.groups.some(g=>TAG_CONTROLLED.includes(g.id)&&_groupActive(c,g)));
+  const anyTag = anyRecv || !!TAG_GROUPS.income[c.incomeType] || !!TAG_GROUPS.housing[c.housing] || ((c.assets||[]).length>0) || (c.housing==="무상거주");
   if(anyTag){ const active=activeGroups(c);
-    TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!TAG_CONTROLLED.includes(g.id)) return; const on=ASSET_GROUPS.includes(g.id)?true:active.has(g.id); // 재산 서류는 안 정했어도 숨기지 않고 '미요청'으로 보이게
-      g.items.forEach(it=>{ const s=c.items[it.id]; if(!s||s.manual) return; if(on){ if(s.mode==="na") s.mode=it.mode; } else s.mode="na"; }); }));
+    TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!TAG_CONTROLLED.includes(g.id)) return; const on=ASSET_GROUPS.includes(g.id)||active.has(g.id)||_groupActive(c,g); // 재산 서류·파일 들어온 그룹은 숨기지 않고 형제 서류도 '미확보'로 보이게
+      g.items.forEach(it=>{ const s=c.items[it.id]; if(!s||s.manual) return; if(on){ if(s.mode==="na") s.mode=(it.mode==="na"?"self":it.mode); } else s.mode="na"; }); })); // 그룹이 켜지면 그 그룹의 모든 서류를 세트로 미확보 표시
   }
   // 무상거주 사실확인서(b7-2): 무상거주일 때만 표시 (단, 수동 변경했으면 유지)
   const s2=c.items["b7-2"]; if(s2 && !s2.manual){ if(c.housing==="무상거주"){ if(s2.mode==="na") s2.mode="request"; } else if(c.housing && c.housing!=="미정") s2.mode="na"; }
@@ -1576,7 +1578,7 @@ function attachFiles(cid,id){
     await Promise.all(valid.slice(1).map((f,k)=>up(f,k+1)));    // 나머지는 동시에(빠름) · 순서 유지
     results.forEach(r=>{ if(r){ s.files.push(r); okN++; } });
     if(okN){ s.manual=true; if(s.mode==="na") s.mode="self"; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; }
-      touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부·받음`); toast(`${okN}개 첨부 완료 · '받음' 처리 ✓`); }
+      applyTags(c); touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부·받음`); toast(`${okN}개 첨부 완료 · '받음' 처리 ✓`); }
     renderDetail(cid);
   };
   inp.click();
@@ -2956,7 +2958,7 @@ async function _ibUploadFile(c, fobj, slot){
   const s=c.items[slot]; if(!s.files) s.files=[];
   s.files.push({name:file.name,size:file.size,driveId:j.id,by:deviceName||"미설정",ts:now()});
   _ibTrackRef(fobj,slot,j.id);
-  _ibMarkReceived(s);
+  _ibMarkReceived(s); applyTags(c);
 }
 async function _ibDoAssign(slot){
   if(_ibBusy) return; const c=ensureItems(_ibCli()); if(!c){ _ibClosePick(); return; } _ibLast=slot;
@@ -3148,7 +3150,7 @@ async function _ibBuildSplit(slot){
     const s=c.items[slot]; if(!s.files) s.files=[];
     s.files.push({name:pieceName,size:buf.byteLength,driveId:j.id,by:deviceName||"미설정",ts:now()});
     _ibTrackRef(f,slot,j.id,pages);
-    _ibMarkReceived(s);
+    _ibMarkReceived(s); applyTags(c);
     _ibAddFiled(f, itemName(slot,c), pages.length);
     pages.forEach(p=>f.splitPages[p]=j.id);
     _ibSplitSel=new Set();
