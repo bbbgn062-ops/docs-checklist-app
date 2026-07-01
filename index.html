@@ -2280,11 +2280,18 @@ function toggleReject(cid,id){ const c=findClient(cid); const s=c.items[id];
   if(s.rejected){ s.rejected=false; s.rejectReason=""; touch(`[${c.name}] '${itemName(id,c)}' 보완필요 해제`); }
   else { const r=prompt("보완(반려) 사유를 입력하세요 (예: 최근 3개월분 누락)",""); s.rejected=true; s.rejectReason=(r||"").trim(); s.done=false; if(s.mode==="request"&&s.reqTag==="received") s.reqTag="requesting"; touch(`[${c.name}] '${itemName(id,c)}' 보완필요 표시`); }
   renderDetail(cid); }
+function _missingByMode(c){
+  const self=[], req=[];
+  const push=(id,name)=>{ const s=c.items[id]; if(!s||s.mode==="na"||s.done) return; if(s.mode==="self") self.push(name); else if(s.mode==="request") req.push(name); };
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>push(it.id,it.name))));
+  Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>push(ex.id,ex.name)));
+  return {self, req};
+}
 function exportExcel(){
   const list=state.clients.map(ensureItems);
   if(list.length===0){ toast("내보낼 의뢰인이 없습니다"); return; }
-  const rows=list.map(c=>{ const p=progress(c); const d=dDay(c);
-    return {이름:c.name||"",단계:clientStage(c),사건종류:c.caseType||"개인회생",소득유형:c.incomeType||"미정",담당자:c.assignee||"",완료율:p.pct+"%",확보:p.done,전체:p.total,요청중:p.requesting,미요청:p.notReq,보완필요:p.rejected,마감구분:c.deadlineLabel||"",마감일:c.deadline?fmtD(c.deadline):"",DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),보관:c.archived?"보관":"",사건번호:c.caseNo||"",연락처:c.phone||"",메모:(c.memo||"").replace(/[\r\n]+/g," ")}; });
+  const rows=list.map(c=>{ const p=progress(c); const d=dDay(c); const mm=_missingByMode(c);
+    return {이름:c.name||"",단계:clientStage(c),사건종류:c.caseType||"개인회생",소득유형:c.incomeType||"미정",담당자:c.assignee||"",완료율:p.pct+"%",확보:p.done,전체:p.total,요청중:p.requesting,미요청:p.notReq,보완필요:p.rejected,"미확보(회사 직접발급)":mm.self.join(", "),"미확보(의뢰인 발급)":mm.req.join(", "),마감구분:c.deadlineLabel||"",마감일:c.deadline?fmtD(c.deadline):"",DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),보관:c.archived?"보관":"",사건번호:c.caseNo||"",연락처:c.phone||"",메모:(c.memo||"").replace(/[\r\n]+/g," ")}; });
   const cols=Object.keys(rows[0]);
   let table=`<table border="1"><tr>${cols.map(h=>`<th>${h}</th>`).join("")}</tr>`;
   rows.forEach(r=>{ table+=`<tr>${cols.map(h=>`<td>${esc(String(r[h]))}</td>`).join("")}</tr>`; });
