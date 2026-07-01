@@ -751,8 +751,8 @@ function applyTags(c){
       g.items.forEach(it=>{ const s=c.items[it.id]; if(!s||s.manual) return; if(on){ if(s.mode==="na") s.mode=it.mode; } else s.mode="na"; }); })); // 그룹이 켜지면 형제 서류도 원래 기본값(미요청 등)으로 살림
   }
   NA_DEFAULT.forEach(id=>{ const s=c.items[id]; if(s && !s.manual && !s.done && !(s.files&&s.files.length)) s.mode="na"; }); // 이 서류들은 세트 부활 예외 — 항상 기본 '해당없음' (파일·받음·수동변경 시엔 그대로 살림)
-  // 파일이 하나라도 있는 그룹은 그 그룹 전체를 숨김없이 '해당함(미확보)'으로 — 예외 목록보다 우선
-  TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!_groupActive(c,g)) return; g.items.forEach(it=>{ const s=c.items[it.id]; if(!s||s.manual) return; if(s.mode==="na") s.mode="self"; }); }));
+  // 파일이 하나라도 있는 그룹은 그 그룹의 형제 서류를 '해당함(미확보)'으로 살림 — 단, 예외 목록 서류는 제외(예외가 우선). 예외 서류는 그 서류 자체에 파일이 들어와야만 살아남.
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!_groupActive(c,g)) return; g.items.forEach(it=>{ if(NA_DEFAULT.includes(it.id)) return; const s=c.items[it.id]; if(!s||s.manual) return; if(s.mode==="na") s.mode="self"; }); }));
   // 무상거주 사실확인서(b7-2): 무상거주일 때만 표시 (단, 수동 변경했으면 유지)
   const s2=c.items["b7-2"]; if(s2 && !s2.manual){ if(c.housing==="무상거주"){ if(s2.mode==="na") s2.mode="request"; } else if(c.housing && c.housing!=="미정") s2.mode="na"; }
 }
