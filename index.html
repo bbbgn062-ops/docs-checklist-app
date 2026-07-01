@@ -726,6 +726,7 @@ const TAG_GROUPS={
   assets:{ "자가":["b3g4"], "임차보증금":["b3g2"], "차량":["b3g1"], "토지":["b3g4"], "사업용재산":["b3g6"] }
 };
 const TAG_CONTROLLED=["b4g1","b4g2","b3g5","b3g6","b3g1","b3g2","b3g4"];
+const ASSET_GROUPS=["b3g5","b3g6","b3g1","b3g2","b3g4"]; // 재산(자산) 묶음 — 자동 '해당없음' 숨김 금지(놓침 방지)
 const ASSET_OPTS=["자가","임차보증금","차량","토지","사업용재산","기타재산"];
 const FIRMS=["법무법인 이준 서초 분사무소","법률사무소 블루"]; // 소속 사무소 구분 (요청 메시지·태그에 반영)
 function firmShort(f){ if(!f) return "사무소"; if(f.includes("블루")) return "블루"; if(f.includes("이준")) return "이준"; return f.length>6?f.slice(0,6):f; }
@@ -739,7 +740,7 @@ function activeGroups(c){ const set=new Set();
 function applyTags(c){
   const anyTag = !!TAG_GROUPS.income[c.incomeType] || !!TAG_GROUPS.housing[c.housing] || ((c.assets||[]).length>0) || (c.housing==="무상거주");
   if(anyTag){ const active=activeGroups(c);
-    TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!TAG_CONTROLLED.includes(g.id)) return; const on=active.has(g.id);
+    TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!TAG_CONTROLLED.includes(g.id)) return; const on=ASSET_GROUPS.includes(g.id)?true:active.has(g.id); // 재산 서류는 안 정했어도 숨기지 않고 '미요청'으로 보이게
       g.items.forEach(it=>{ const s=c.items[it.id]; if(!s||s.manual) return; if(on){ if(s.mode==="na") s.mode=it.mode; } else s.mode="na"; }); }));
   }
   // 무상거주 사실확인서(b7-2): 무상거주일 때만 표시 (단, 수동 변경했으면 유지)
@@ -1514,7 +1515,8 @@ function itemHtml(c,it,isExtra,bid){
 function toggleDone(cid,id){ const c=findClient(cid); const s=c.items[id]; s.done=!s.done;
   if(s.done){ s.recvDate=now(); if(s.mode==="request") s.reqTag="received"; } else { s.recvDate=null; if(s.reqTag==="received") s.reqTag="requesting"; }
   touch(`[${c.name}] '${itemName(id,c)}' ${s.done?"확보 완료":"미확보로 변경"}`); renderDetail(cid); }
-function setMode(cid,id,mode){ const c=findClient(cid); c.items[id].mode=mode; c.items[id].manual=true; // 수동 변경 → 재산유형 저장 시에도 유지(자동으로 안 덮어씀)
+function setMode(cid,id,mode){ const c=findClient(cid); const s=c.items[id]; s.mode=mode; s.manual=true; // 수동 변경 → 재산유형 저장 시에도 유지(자동으로 안 덮어씀)
+  if(mode!=="na" && s.files && s.files.length && !s.done){ s.done=true; s.recvDate=now(); if(mode==="request") s.reqTag="received"; } // 이미 파일이 있으면 '받음' 자동 처리(놓침 방지)
   touch(`[${c.name}] '${itemName(id,c)}' 구분→${mode==='self'?'직접발급':mode==='request'?'의뢰인요청':'해당없음'}`); renderDetail(cid); }
 function setTag(cid,id,tag){ const c=findClient(cid); const s=c.items[id]; s.reqTag=tag;
   if(tag==="received"){ s.done=true; s.recvDate=now(); }
@@ -1573,7 +1575,7 @@ function attachFiles(cid,id){
     await up(valid[0],0);                                       // 첫 파일이 폴더 생성
     await Promise.all(valid.slice(1).map((f,k)=>up(f,k+1)));    // 나머지는 동시에(빠름) · 순서 유지
     results.forEach(r=>{ if(r){ s.files.push(r); okN++; } });
-    if(okN){ s.manual=true; if(s.mode!=="na" && !s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; }
+    if(okN){ s.manual=true; if(s.mode==="na") s.mode="self"; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; }
       touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부·받음`); toast(`${okN}개 첨부 완료 · '받음' 처리 ✓`); }
     renderDetail(cid);
   };
@@ -2764,7 +2766,7 @@ function _ibEnsureCss(){
 function _ibIsImg(f){ return (f.type||"").startsWith("image/") || /\.(jpe?g|png|gif|webp|bmp)$/i.test(f.name); }
 function _ibIsPdf(f){ return f.type==="application/pdf" || /\.pdf$/i.test(f.name); }
 function _ibSlotName(id){ const c=_ibCli(); return c?itemName(id,c):id; }
-function _ibMarkReceived(s){ s.manual=true; if(s.mode!=="na" && !s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; } }
+function _ibMarkReceived(s){ s.manual=true; if(s.mode==="na") s.mode="self"; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; } }
 function _ibRemove(id){ const i=_ib.findIndex(f=>f.id===id); if(i>=0){ try{URL.revokeObjectURL(_ib[i].url);}catch(_){ } _ib.splice(i,1); } _ibSel.delete(id); }
 
 function openInbox(cid){
