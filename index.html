@@ -356,6 +356,7 @@
         <input id="searchBox" placeholder="의뢰인 이름·사건번호 검색" oninput="renderDashboard()" />
       </div>
       <select id="sortSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
+        <option value="reg">신규 등록순</option>
         <option value="recent">최근 수정순</option>
         <option value="name">이름순</option>
         <option value="progress_desc">완료율 높은순</option>
@@ -1188,6 +1189,7 @@ function renderDashboard(){
     if(sort==="progress_desc") return progress(b).pct - progress(a).pct;
     if(sort==="progress") return progress(a).pct - progress(b).pct;
     if(sort==="deadline"){ const da=dDay(a), db=dDay(b); return (da===null?99999:da)-(db===null?99999:db); }
+    if(sort==="reg") return String(b.createdAt||"").localeCompare(String(a.createdAt||"")) || String(a.id||"").localeCompare(String(b.id||"")); // 신규 등록순(등록일 최신 위) — 등록일은 안 바뀌어 위치 고정
     return (b.updatedAt||"").localeCompare(a.updatedAt||"");
   });
   renderDashHeaderStatsBoard();
