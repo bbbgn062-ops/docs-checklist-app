@@ -3255,6 +3255,7 @@ function sbBuildClient(row, rows, docs, memos, secret){
     let id = (r.doc_key && ITEM_BY_ID[r.doc_key]) ? r.doc_key : SB_NAME2ID[sbNorm(r.doc_name)];
     if(id && c.items[id]){
       sbApplyStatus(c.items[id], r.status, r.reject_reason);
+      if(r.status==="해당없음" && ITEM_BY_ID[id] && ITEM_BY_ID[id].mode!=="na") c.items[id].manual=true; // 원래 보이는 서류를 손으로 '해당없음' 처리한 것 → 수동으로 표시해 새로고침해도 유지
       if(r.memo) c.items[id].memo=r.memo;
       c.items[id]._sbRow=r.id;
     } else {                       // 템플릿에 없는 서류 → 추가서류(extra)로
