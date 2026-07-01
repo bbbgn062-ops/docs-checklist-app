@@ -3273,7 +3273,9 @@ function sbBuildClient(row, rows, docs, memos, secret){
     const s=c.items[id]; if(!s.files) s.files=[];
     s.files.push({ name:d.file_name, size:0, driveId:d.storage_path, by:d.uploaded_by||"", ts:d.created_at, docId:d.id, is_public:!!d.is_public });
   });
-  ensureItems(c); applyTags(c);   // 파일 붙인 뒤 다시 정리 — 파일 있으면 받음, 파일 있는 그룹은 세트로 숨김없이
+  ensureItems(c);
+  (aj.manualNa||[]).forEach(id=>{ const s=c.items[id]; if(s && !(s.files&&s.files.length)){ s.mode="na"; s.manual=true; } }); // 손으로 감춘 서류 복원 — 새로고침해도 해당없음 유지(파일 있으면 받음이 우선)
+  applyTags(c);   // 파일 붙인 뒤 다시 정리 — 파일 있으면 받음, 파일 있는 그룹은 세트로 숨김없이
   /* 의뢰인 메모 / 인증서 붙이기 */
   const _memo=(memos||[]).find(x=>x.kind!=="접수")||null; if(_memo){ c.memo=_memo.body||""; c._sbMemoId=_memo.id; }
   if(secret){ c.cert={ files:Array.isArray(secret.cert_files)?secret.cert_files:[], pw:secret.password||"" }; c._sbSecretId=secret.id; }
@@ -3383,7 +3385,7 @@ let SB_OFFICES=[];
 function sbFirmFromOffice(oid){ const o=SB_OFFICES.find(x=>x.id===oid); if(!o) return null; const n=o.name||""; if(n.includes("블루")) return "법률사무소 블루"; if(n.includes("이준")) return "법무법인 이준 서초 분사무소"; return n; }
 function sbOfficeFromFirm(firm){ const blue=(firm||"").includes("블루"); const o=SB_OFFICES.find(x=> blue ? (x.name||"").includes("블루") : (x.name||"").includes("이준")); return o? o.id : OURS_OFFICE_ID; }
 /* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
-function sbAppJson(c){ return { firm:c.firm||null, housing:c.housing||"미정", msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[] }; }
+function sbAppJson(c){ return { firm:c.firm||null, housing:c.housing||"미정", msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }) }; }
 function sbClientPayload(c){ return { name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
   stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
