@@ -711,6 +711,8 @@ function ensureItems(client){
   if(!client.cert) client.cert={ files:[], pw:"" };         // 공동인증서
   if(!Array.isArray(client.cert.files)) client.cert.files=[];
   if(!client.firm) client.firm=(typeof cfg!=="undefined"&&cfg.firmName)?cfg.firmName:FIRMS[0]; // 소속 사무소
+  // 파일이 있으면 무조건 '받음'으로 정리 — 예전 버그로 파일은 있는데 미확보로 남은 것 자동 복구
+  Object.keys(client.items).forEach(id=>{ const s=client.items[id]; if(s && s.files && s.files.length && !s.done){ if(s.mode==="na") s.mode="self"; s.done=true; s.rejected=false; if(s.mode==="request") s.reqTag="received"; if(!s.recvDate) s.recvDate=now(); } });
   return client;
 }
 function formatPhone(v){ const d=(v||"").replace(/\D/g,"").slice(0,11);
@@ -745,7 +747,7 @@ function applyTags(c){
   const anyRecv = TEMPLATE.some(b=>b.groups.some(g=>TAG_CONTROLLED.includes(g.id)&&_groupActive(c,g)));
   const anyTag = anyRecv || !!TAG_GROUPS.income[c.incomeType] || !!TAG_GROUPS.housing[c.housing] || ((c.assets||[]).length>0) || (c.housing==="무상거주");
   if(anyTag){ const active=activeGroups(c);
-    TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!TAG_CONTROLLED.includes(g.id)) return; const on=ASSET_GROUPS.includes(g.id)||active.has(g.id)||_groupActive(c,g); // 재산 서류·파일 들어온 그룹은 숨기지 않고 형제 서류도 '미확보'로 보이게
+    TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!TAG_CONTROLLED.includes(g.id)) return; const on=active.has(g.id)||_groupActive(c,g); // 태그가 지정됐거나 그 그룹에 파일/받은 서류가 하나라도 있으면 그 그룹의 형제 서류도 '미확보'로 세트로 보이게(놓침 방지)
       g.items.forEach(it=>{ const s=c.items[it.id]; if(!s||s.manual) return; if(on){ if(s.mode==="na") s.mode=it.mode; } else s.mode="na"; }); })); // 그룹이 켜지면 형제 서류도 원래 기본값(미요청 등)으로 살림
   }
   NA_DEFAULT.forEach(id=>{ const s=c.items[id]; if(s && !s.manual && !s.done && !(s.files&&s.files.length)) s.mode="na"; }); // 이 서류들은 세트 부활 예외 — 항상 기본 '해당없음' (파일·받음·수동변경 시엔 그대로 살림)
