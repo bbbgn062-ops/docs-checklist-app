@@ -331,7 +331,7 @@
  }
  function dbFilter(v){ viewF=v; document.querySelectorAll(".fchip").forEach(c=>c.classList.toggle("on",c.dataset.v===v)); renderList(); }
  function renderList(){
-   const active=CLIENTS.filter(c=>!c.archived);
+   const base=VIEWAS?CLIENTS.filter(c=>c.office_id===VIEWAS):CLIENTS; const active=base.filter(c=>!c.archived);
    const stN={}; STAGES.forEach(s=>stN[s]=active.filter(c=>c.stage===s).length);
    const received=active.length, inProg=stN["서류취합중"]||0, filed=(stN["접수완료"]||0)+(stN["개시결정"]||0)+(stN["인가결정"]||0);
    const maxS=STAGES.reduce((a,b)=>(stN[b]>stN[a]?b:a),STAGES[0]);
