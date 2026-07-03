@@ -372,7 +372,7 @@
      const amBadge=c.amending?`<span class="amend">보정중</span>`:"";
      const card=document.createElement("div");
      card.className="card";card.style.background=col.bg;card.style.border="1px solid "+col.dash;
-     card.innerHTML=`<div class="ch"><div><div class="nm">${esc(c.name)} <span class="ctype">${esc(c.case_type||"개인회생")}</span></div>`+
+     card.innerHTML=`<div class="ch"><div><div class="nm">${esc(c.name)} <span class="ctype">${esc(c.case_type||"개인회생")}</span>${c.case_no?`<span style="display:inline-block;margin-left:6px;padding:2px 9px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:11.5px;font-weight:800;border:1px solid #cfd8ef;vertical-align:middle">사건 ${esc(c.case_no)}</span>`:""}</div>`+
        `<div class="of"><span class="ofchip" style="background:#fff;border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span>${c.assignee?" · "+esc(c.assignee):""}${canEdit()?`<label class="sw" style="margin-left:8px;vertical-align:-5px" title="원사무실 공개 여부"><input type="checkbox" ${c.is_public?"checked":""} onclick="event.stopPropagation()" onchange="setFlag('${c.id}','is_public',this.checked)"><span></span></label><span style="font-size:12px;font-weight:700;color:${c.is_public?"#0A7D3C":"#9a948c"};margin-left:5px;vertical-align:middle">${c.is_public?"공개":"비공개"}</span>`:""}</div></div>`+
        `<div class="chr"><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${amBadge}${ddBadge}${marks?`<div>${marks}</div>`:""}</div></div>`+
        `<div class="bodyc"><div class="ring" style="background:conic-gradient(${ringc} calc(${p}*3.6deg), #eceae7 0)"><div class="hole"><b>${p}%</b><small>완료율</small></div></div>`+
