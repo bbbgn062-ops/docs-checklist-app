@@ -418,7 +418,7 @@
 
    let html=`<button class="back" onclick="load()">목록으로</button>`;
    html+=`<div class="dhead"><div><div class="dn">${esc(c.name)} <span class="ctype">${esc(c.case_type||"개인회생")}</span></div>`+
-     `<div class="dmeta"><span class="ofchip" style="background:${col.bg};border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>`+
+     `<div class="dmeta"><span class="ofchip" style="background:${col.bg};border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${c.case_no?`<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:12px;font-weight:800;border:1px solid #cfd8ef;margin-left:4px">사건 ${esc(c.case_no)}</span>`:""}`+
      (c.amending?`<span class="amend">보정중</span>`:"")+
      ((dd&&canEdit())?`<span class="dday ${dd.cls}">${esc(c.deadline_kind||"기한")} ${dd.txt}</span>`:"")+(c.urgent?`<span class="mk urgent">급건</span>`:"")+(c.pinned?`<span class="mk pin">중요</span>`:"")+`</div>`+
      (canEdit()?`<div class="dflags"><span class="chk"><label class="sw"><input type="checkbox" ${c.urgent?"checked":""} onchange="setFlag('${cid}','urgent',this.checked)"><span></span></label> 급건</span><span class="chk"><label class="sw"><input type="checkbox" ${c.pinned?"checked":""} onchange="setFlag('${cid}','pinned',this.checked)"><span></span></label> 중요 고정</span><span class="chk"><label class="sw"><input type="checkbox" ${c.archived?"checked":""} onchange="setFlag('${cid}','archived',this.checked)"><span></span></label> 보관</span>${canEdit()?pubSwitch(c):""}</div>`:"")+`</div>`+
@@ -428,7 +428,11 @@
        `<div class="ring" style="background:conic-gradient(${ringc} calc(${pct}*3.6deg), #eceae7 0)"><div class="hole"><b>${pct}%</b><small>완료율</small></div></div></div></div>`;
 
    // 사건번호 (모든 역할 — 원사무실도 입력 가능; 저장은 set_case_no 안전함수)
-   html+=`<div class="section"><h3>사건번호</h3><div class="grid2"><label class="fl">법원 사건번호<input class="in" id="f_caseno" value="${esc(c.case_no||"")}" placeholder="예: 2026개회12345"></label></div><div class="frow2"><button class="savebtn" onclick="saveCaseNo('${cid}')">사건번호 저장</button></div></div>`;
+   html+=`<div class="section"><h3>사건번호</h3>`
+     +`<div id="cnView" style="${c.case_no?'':'display:none'}"><span style="display:inline-block;padding:6px 14px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:14px;font-weight:800;border:1px solid #cfd8ef">${esc(c.case_no||'')}</span> <button class="get" onclick="cnEdit(true)">수정</button></div>`
+     +`<div id="cnEdit" style="${c.case_no?'display:none':''}"><div class="grid2"><label class="fl">법원 사건번호<input class="in" id="f_caseno" value="${esc(c.case_no||'')}" placeholder="예: 2026개회12345"></label></div><div class="frow2"><button class="savebtn" onclick="saveCaseNo('${cid}')">저장</button>`
+     +(c.case_no?`<button class="get" onclick="cnEdit(false)">취소</button>`:``)
+     +`</div></div></div>`;
    // 의뢰인 정보
    if(canEdit()){
      html+=`<div class="section"><h3>의뢰인 정보</h3><div class="grid2">`+
@@ -556,12 +560,14 @@
  function toggleAllDocs(ch){const vis=curDocs();if(ch)vis.forEach(d=>DSEL.add(d.id));else vis.forEach(d=>DSEL.delete(d.id));renderDocs();}
 
  // ===== 저장/변경 =====
+ function cnEdit(on){ const v=document.getElementById("cnView"), e=document.getElementById("cnEdit"); if(v)v.style.display=on?"none":""; if(e)e.style.display=on?"":"none"; }
  async function saveCaseNo(cid){
    const el=$("#f_caseno"); const v=(el?el.value:"").trim();
    const { error } = await db.rpc("set_case_no", { p_client: cid, p_case_no: v });
    if(error){ toast("사건번호 저장 실패: "+(error.message||"권한을 확인하세요")); return; }
    const c=CLIENTS.find(x=>x.id===cid); if(c) c.case_no=v;
    toast("사건번호를 저장했습니다.");
+   openDetail(cid);
  }
  async function saveInfo(cid){
    const assets=[...document.querySelectorAll(".f_asset:checked")].map(x=>x.value).join(", ");
