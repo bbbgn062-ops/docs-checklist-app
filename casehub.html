@@ -294,7 +294,7 @@
    const _ab=$("#adminBtn");if(_ab)_ab.style.display=(MYROLE==="master")?"":"none";
    const [offRes,cliRes,progRes,itemRes]=await Promise.all([
      db.from("offices").select("id,name").order("name"),
-     db.from("clients").select("id,name,office_id,case_type,stage,amending,assignee,phone,income_type,asset_type,income_note,asset_note,court_deadline,deadline_kind,urgent,pinned,archived,is_public,collect_pct").order("name"),
+     db.from("clients").select("id,name,office_id,case_type,stage,amending,assignee,phone,income_type,asset_type,income_note,asset_note,court_deadline,deadline_kind,urgent,pinned,archived,is_public,collect_pct,case_no").order("name"),
      db.rpc("my_progress"),
      db.from("checklist_items").select("client_id,doc_name,status")
    ]);
@@ -427,6 +427,8 @@
        ((canEdit()&&AMEND_STAGES.includes(c.stage))?`<div class="dctl"><span class="ctllbl">보정중</span><label class="sw amend"><input type="checkbox" ${c.amending?"checked":""} onchange="setAmending('${cid}',this.checked)"><span></span></label></div>`:"")+
        `<div class="ring" style="background:conic-gradient(${ringc} calc(${pct}*3.6deg), #eceae7 0)"><div class="hole"><b>${pct}%</b><small>완료율</small></div></div></div></div>`;
 
+   // 사건번호 (모든 역할 — 원사무실도 입력 가능; 저장은 set_case_no 안전함수)
+   html+=`<div class="section"><h3>사건번호</h3><div class="grid2"><label class="fl">법원 사건번호<input class="in" id="f_caseno" value="${esc(c.case_no||"")}" placeholder="예: 2026개회12345"></label></div><div class="frow2"><button class="savebtn" onclick="saveCaseNo('${cid}')">사건번호 저장</button></div></div>`;
    // 의뢰인 정보
    if(canEdit()){
      html+=`<div class="section"><h3>의뢰인 정보</h3><div class="grid2">`+
@@ -554,6 +556,13 @@
  function toggleAllDocs(ch){const vis=curDocs();if(ch)vis.forEach(d=>DSEL.add(d.id));else vis.forEach(d=>DSEL.delete(d.id));renderDocs();}
 
  // ===== 저장/변경 =====
+ async function saveCaseNo(cid){
+   const el=$("#f_caseno"); const v=(el?el.value:"").trim();
+   const { error } = await db.rpc("set_case_no", { p_client: cid, p_case_no: v });
+   if(error){ toast("사건번호 저장 실패: "+(error.message||"권한을 확인하세요")); return; }
+   const c=CLIENTS.find(x=>x.id===cid); if(c) c.case_no=v;
+   toast("사건번호를 저장했습니다.");
+ }
  async function saveInfo(cid){
    const assets=[...document.querySelectorAll(".f_asset:checked")].map(x=>x.value).join(", ");
    const incV=$("#f_in").value||null;
