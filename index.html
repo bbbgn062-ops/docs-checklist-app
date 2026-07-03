@@ -3219,6 +3219,7 @@ let sb=null, sbUser=null;
 function sbInit(){ try{ if(!sb && window.supabase) sb=window.supabase.createClient(SB_URL,SB_ANON); }catch(_){} return sb; }
 /* ── 첨부파일 순서(sort_order) 저장 지원 ── */
 let SB_HAS_SORT=false;   // documents.sort_order 칸 존재 여부(로드 때 자동 감지). 없으면 순서저장만 자동으로 꺼지고 앱은 정상 동작
+let SB_HAS_PCT=false;    // clients.collect_pct 칸 존재 여부. 없으면 취합률 기록만 자동으로 꺼지고 앱은 정상 동작
 async function sbSelectDocuments(){
   let r=await sb.from("documents").select("id,client_id,doc_key,file_name,storage_path,uploaded_by,is_public,created_at,kind,sort_order");
   if(r.error){ SB_HAS_SORT=false; r=await sb.from("documents").select("id,client_id,doc_key,file_name,storage_path,uploaded_by,is_public,created_at,kind"); }
@@ -3306,7 +3307,8 @@ async function pullFromSupabase(silent){
   setSync("saving");
   try{
     const BASE="id,name,office_id,case_type,assignee,stage,phone,income_type,asset_type,court_deadline,deadline_kind,urgent,pinned,archived,amending,correcting,case_no,updated_at,created_at";
-    let cRes=await sb.from("clients").select(BASE+",is_public,app_json").order("name");
+    let cRes=await sb.from("clients").select(BASE+",is_public,app_json,collect_pct").order("name"); SB_HAS_PCT=!cRes.error;
+    if(cRes.error) cRes=await sb.from("clients").select(BASE+",is_public,app_json").order("name"); // collect_pct 칸 없을 때
     if(cRes.error) cRes=await sb.from("clients").select(BASE+",app_json").order("name"); // is_public 칸 없을 때
     if(cRes.error) cRes=await sb.from("clients").select(BASE).order("name");            // app_json 칸도 없을 때
     const [ciRes, dRes, mRes, sRes, oRes, pRes] = await Promise.all([
@@ -3401,11 +3403,13 @@ function sbFirmFromOffice(oid){ const o=SB_OFFICES.find(x=>x.id===oid); if(!o) r
 function sbOfficeFromFirm(firm){ const blue=(firm||"").includes("블루"); const o=SB_OFFICES.find(x=> blue ? (x.name||"").includes("블루") : (x.name||"").includes("이준")); return o? o.id : OURS_OFFICE_ID; }
 /* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
 function sbAppJson(c){ return { firm:c.firm||null, housing:c.housing||"미정", msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }) }; }
-function sbClientPayload(c){ return { name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
+function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
   stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
   urgent:!!c.urgent, pinned:!!c.pinned, archived:!!c.archived, amending:!!c.amending, case_no:c.caseNo||null,
-  is_public:!!c.isPublic, app_json: sbAppJson(c) }; }
+  is_public:!!c.isPublic, app_json: sbAppJson(c) };
+  if(SB_HAS_PCT){ try{ __p.collect_pct = progress(c).pct; }catch(_){} }
+  return __p; }
 /* office_id는 의뢰인 저장 페이로드에서 제외 — 수정 시 관리자가 정한 사무소를 덮어쓰지 않도록. 신규 생성 때만 아래에서 지정. */
 function sbClientSig(c){ return JSON.stringify(sbClientPayload(c)); }
 
