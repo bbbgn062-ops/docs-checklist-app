@@ -362,9 +362,11 @@
      if(effRole()==="office"){
        infoHtml=`<div class="lab">진행 상태</div><div class="val ${p>=100?'ok':''}">${p>=100?'취합 완료':'취합 진행 중'} (${p}%)</div>`;actBtn="";
      } else {
-       infoHtml = mlist.length>0
-         ? `<div class="lab">미수령 ${mlist.length}건</div><div class="val" style="font-size:13.5px;font-weight:600">${mlist.slice(0,3).map(esc).join("<br>")}${mlist.length>3?`<div class="sd" style="margin-top:3px">외 ${mlist.length-3}건</div>`:""}</div>`
-         : `<div class="lab">취합 상태</div><div class="val ok">취합 완료</div>`;
+       infoHtml = (p>=100)
+         ? `<div class="lab">취합 상태</div><div class="val ok">취합 완료</div>`
+         : (mlist.length>0
+           ? `<div class="lab">미수령 ${mlist.length}건</div><div class="val" style="font-size:13.5px;font-weight:600">${mlist.slice(0,3).map(esc).join("<br>")}${mlist.length>3?`<div class="sd" style="margin-top:3px">외 ${mlist.length-3}건</div>`:""}</div>`
+           : `<div class="lab">취합 상태</div><div class="val">취합 진행 중 (${p}%)</div>`);
        actBtn = (c.stage!=="인가결정")?`<button class="btn go" onclick="nextStage('${c.id}','${c.stage}')">다음 단계로</button>`:"";
      }
      const marks=(c.pinned?`<span class="mk pin">중요</span>`:"")+(c.urgent?`<span class="mk urgent">급건</span>`:"");
