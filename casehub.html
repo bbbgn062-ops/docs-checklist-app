@@ -294,13 +294,13 @@
    const _ab=$("#adminBtn");if(_ab)_ab.style.display=(MYROLE==="master")?"":"none";
    const [offRes,cliRes,progRes,itemRes]=await Promise.all([
      db.from("offices").select("id,name").order("name"),
-     db.from("clients").select("id,name,office_id,case_type,stage,amending,assignee,phone,income_type,asset_type,income_note,asset_note,court_deadline,deadline_kind,urgent,pinned,archived,is_public").order("name"),
+     db.from("clients").select("id,name,office_id,case_type,stage,amending,assignee,phone,income_type,asset_type,income_note,asset_note,court_deadline,deadline_kind,urgent,pinned,archived,is_public,collect_pct").order("name"),
      db.rpc("my_progress"),
      db.from("checklist_items").select("client_id,doc_name,status")
    ]);
    officeColor={};OFFNAME={};
    (offRes.data||[]).forEach((o,i)=>{ const ours=(o.type==="ours")||((o.name||"").includes("이준")); officeColor[o.id]= ours ? {bg:"#FDECEF",dash:"#f0c9d2",dot:"#9B1B33"} : PALETTE[i%PALETTE.length]; OFFNAME[o.id]=o.name;});
-   PCT={};(progRes.data||[]).forEach(r=>PCT[r.client_id]=r.pct);
+   PCT={};(progRes.data||[]).forEach(r=>PCT[r.client_id]=r.pct); (cliRes.data||[]).forEach(c=>{ if(c.collect_pct!=null) PCT[c.id]=c.collect_pct; });
    MISS={};
    (itemRes.data||[]).forEach(it=>{if(it.status==="미요청"||it.status==="요청중"){(MISS[it.client_id]=MISS[it.client_id]||[]).push(it.doc_name);}});
    CLIENTS=cliRes.data||[];
