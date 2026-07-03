@@ -3414,7 +3414,7 @@ async function sbSyncClient(c){
     const status=sbStatusFwd(s); const isig=sbItemSig(c,id,s); const dkey=ITEM_BY_ID[id]?id:(s.doc_key||null);
     if(s._sbRow){
       if(s._sbSig!==isig){ jobs.push(sb.from("checklist_items").update({status,reject_reason:s.rejectReason||null,memo:s.memo||null,doc_key:dkey,bundle:meta.bundle,doc_name:meta.name}).eq("id",s._sbRow).then(r=>{ if(r.error) throw r.error; s._sbSig=isig; })); }
-    } else {
+    } else if(s._sbSig!==isig){   // ★ 서버에 줄이 없는 항목은 '직원이 실제로 건드린 것만' 새로 만든다(새 의뢰인은 전체 생성). 기존 의뢰인의 안 건드린 항목을 무더기로 만들어 케이스허브 진행률을 흔들지 않기 위함.
       jobs.push(sb.from("checklist_items").insert({client_id:c.id,doc_key:dkey,doc_name:meta.name,bundle:meta.bundle,status,reject_reason:s.rejectReason||null,memo:s.memo||null}).select("id").single().then(r=>{ if(r.error) throw r.error; s._sbRow=r.data.id; s._sbSig=isig; }));
     }
   });
