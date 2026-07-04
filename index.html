@@ -2027,6 +2027,11 @@ async function openBundlePageEditor(cid,bid){
     .bpe-grip:active{cursor:grabbing}
     .bpe-th.over::before{content:"";position:absolute;left:-3px;right:-3px;top:-7px;height:6px;background:var(--brand,#9B1B33);border-radius:4px;box-shadow:0 0 8px 1px rgba(155,27,51,.85);z-index:6}
     .bpe-th.over{outline:2px dashed var(--brand,#9B1B33);outline-offset:1px}
+    .bpe-moveflag{position:absolute;bottom:8px;left:8px;background:rgba(21,101,192,.94);color:#fff;font-size:11px;padding:4px 9px;border-radius:7px;z-index:3;display:flex;align-items:center;gap:7px;max-width:80%}
+    .bpe-moveflag .mx{cursor:pointer;font-weight:700;background:rgba(255,255,255,.25);border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:10px}
+    .bpe-pgwrap.moving .bpe-pgc canvas,.bpe-pgwrap.moving .bpe-pgc img{outline:3px solid #1565C0;outline-offset:2px}
+    .bpe-th.moving{border-color:#1565C0;box-shadow:0 0 0 2px #1565C0}
+    .bpe-th .mv{position:absolute;top:2px;right:2px;background:#1565C0;color:#fff;font-size:11px;font-weight:700;width:17px;height:17px;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:3}
   </style>
   <div class="bpe-card">
     <div class="bpe-head"><span class="t">📄 ${esc(g.btitle)} · 페이지 편집</span><span class="x" onclick="bpeTryClose()">✕</span></div>
@@ -2035,6 +2040,7 @@ async function openBundlePageEditor(cid,bid){
       <button class="bpe-tbtn" onclick="bpeRot(90)">↻ 오른쪽</button>
       <span class="bpe-sep"></span>
       <button class="bpe-tbtn del" id="bpeDelBtn" onclick="bpeDel()">🗑 이 페이지 삭제</button>
+      <button class="bpe-tbtn" id="bpeMoveBtn" onclick="bpeMovePages()">↪ 선택 페이지 다른 서류로</button>
       <button class="bpe-tbtn" onclick="bpeReset()">↩ 전체 되돌리기</button>
       <button class="bpe-tbtn" onclick="bpeClearSel()">선택 해제</button>
       <span id="bpeSelInfo" style="font-size:11.5px;color:var(--brand,#9B1B33);font-weight:700"></span>
@@ -2068,6 +2074,37 @@ function bpeDel(){ if(!_bpe) return; bpeSelKeys().forEach(k=>bpeDelAt(k)); }
 function bpeClearSel(){ if(!_bpe) return; _bpe.selected=new Set(); bpeApplySel(); }
 function bpeApplySel(){ if(!_bpe) return; for(let k=0;k<_bpe.flat.length;k++){ const w=document.getElementById("bpe-pg-"+k); if(w) w.classList.toggle("sel",_bpe.selected.has(k)); const th=document.querySelectorAll('.bpe-th')[k]; if(th) th.classList.toggle("sel",_bpe.selected.has(k)); } bpeUpdateSelInfo(); }
 function bpeUpdateSelInfo(){ const el=document.getElementById("bpeSelInfo"); if(el) el.textContent=(_bpe&&_bpe.selected&&_bpe.selected.size)?`${_bpe.selected.size}개 선택됨`:""; }
+/* --- 선택 페이지를 다른 서류로 이동(저장 눌러야 반영) --- */
+function bpeMoveTgtName(id){ try{ if(typeof ITEM_BY_ID!=="undefined" && ITEM_BY_ID[id]) return ITEM_BY_ID[id].name; const c=findClient(_bpe.cid); const s=c&&c.items&&c.items[id]; return (s&&s.name)||id; }catch(_){ return id; } }
+function bpeMovePages(){
+  if(!_bpe) return;
+  const keys=(_bpe.selected&&_bpe.selected.size)?[..._bpe.selected].filter(k=>{ const m=bpePageMeta(k); return m&&m.p&&!m.p.del; }):[];
+  if(!keys.length){ toast("먼저 옮길 페이지를 선택하세요 (☑ 선택 모드에서 드래그)"); return; }
+  _pvbOpenMove({cid:_bpe.cid, srcId:null, fn:`선택한 ${keys.length}개 페이지`, q:"어느 서류로 옮길까요?", foot:"저장을 눌러야 실제로 반영됩니다 · 표시를 다시 눌러 취소할 수 있어요", onPick:(tgtId)=>bpeAssignMove(tgtId)});
+}
+function bpeAssignMove(tgtId){
+  if(!_bpe||tgtId==null) return;
+  const keys=(_bpe.selected&&_bpe.selected.size)?[..._bpe.selected]:[];
+  const nm=bpeMoveTgtName(tgtId); let n=0;
+  keys.forEach(k=>{ const m=bpePageMeta(k); if(m&&m.p&&!m.p.del){ m.p.moveTo=tgtId; m.p.moveToName=nm; n++; } });
+  if(!n){ toast("이동할 페이지가 없습니다"); return; }
+  _bpe.dirty=true; _bpe.selected=new Set();
+  try{ pvbPushRecent(tgtId); }catch(_){ }
+  bpeApplySel(); bpeRefreshMoveMarks(); bpeUpdateInfo();
+  toast(`${n}개 페이지를 '${nm}'(으)로 이동 예약 · 💾 저장을 눌러야 반영됩니다`);
+}
+function bpeCancelMove(k){ if(!_bpe) return; const m=bpePageMeta(k); if(m&&m.p){ m.p.moveTo=null; m.p.moveToName=null; } bpeRefreshMoveMarks(); bpeUpdateInfo(); toast("이동 예약을 취소했습니다"); }
+function bpeRefreshMoveMarks(){
+  if(!_bpe) return;
+  for(let k=0;k<_bpe.flat.length;k++){ const m=bpePageMeta(k); const nm=(m&&m.p&&m.p.moveTo)?(m.p.moveToName||bpeMoveTgtName(m.p.moveTo)):null;
+    const w=document.getElementById("bpe-pg-"+k);
+    if(w){ let fl=w.querySelector(".bpe-moveflag");
+      if(nm){ if(!fl){ fl=document.createElement("div"); fl.className="bpe-moveflag"; w.appendChild(fl); } fl.innerHTML=`↪ '${esc(nm)}'(으)로 이동 예약 <span class="mx" onclick="bpeCancelMove(${k})" title="이동 취소">✕</span>`; w.classList.add("moving"); }
+      else { if(fl) fl.remove(); w.classList.remove("moving"); } }
+    const th=document.querySelectorAll('.bpe-th')[k];
+    if(th){ th.classList.toggle("moving",!!nm); let tm=th.querySelector(".mv"); if(nm){ if(!tm){ tm=document.createElement("div"); tm.className="mv"; tm.textContent="↪"; tm.title="이동 예약"; th.appendChild(tm); } } else if(tm){ tm.remove(); } }
+  }
+}
 /* 드래그 박스(마퀴) 선택 + 끌면 자동 스크롤 — #bpeView 위에서 드래그하면 겹치는 페이지들이 선택된다 */
 let _bpeMarq=null;
 let _bpeDrag=null;
@@ -2093,24 +2130,33 @@ function bpeReindex(){
     const vn=vmap[uid]; if(vn){ vbox.appendChild(vn); vn.id="bpe-pg-"+k; vn.classList.remove('sel');
       const ov=vn.querySelector('.bpe-pgov'); if(ov) ov.innerHTML=`<span class="bpe-pgtag">📄 ${esc(f.name)} · ${k+1}p</span><button onclick="bpeRotAt(${k},-90)" title="왼쪽 회전">↺</button><button onclick="bpeRotAt(${k},90)" title="오른쪽 회전">↻</button><button class="del" onclick="bpeDelAt(${k})" title="삭제/취소">🗑</button>`; }
   }
-  vbox.scrollTop=st; bpeUpdateSelInfo(); bpeUpdateInfo(); }
+  vbox.scrollTop=st; bpeUpdateSelInfo(); bpeUpdateInfo(); bpeRefreshMoveMarks(); }
 function bpeViewMouseDown(e){ if(!_bpe) return; if(e.target.closest('.bpe-pgov')) return;
-  if(e.currentTarget&&e.currentTarget.id==="bpeThumbs"&&_bpe.thumbMode!=="select") return;
   const scrollEl=e.currentTarget||document.getElementById("bpeView");
-  _bpeMarq={x0:e.clientX,y0:e.clientY,moved:false,base:new Set(_bpe.selected),dir:0,raf:null,scrollEl,fromThumb:!!(scrollEl&&scrollEl.id==="bpeThumbs")};
-  const box=document.createElement("div"); box.className="bpe-marq"; box.style.cssText="position:fixed;border:1.5px solid var(--brand,#9B1B33);background:rgba(155,27,51,.12);z-index:2600;pointer-events:none;left:"+e.clientX+"px;top:"+e.clientY+"px;width:0;height:0"; document.body.appendChild(box); _bpeMarq.box=box;
+  const fromThumb=!!(scrollEl&&scrollEl.id==="bpeThumbs");
+  if(fromThumb && _bpe.thumbMode!=="select") return;
+  const rect=scrollEl.getBoundingClientRect();
+  const startY=(e.clientY-rect.top)+scrollEl.scrollTop; // 내용(스크롤 포함) 좌표에 앵커
+  _bpeMarq={x0:e.clientX,y0:e.clientY,cx:e.clientX,cy:e.clientY,startY,moved:false,base:new Set(_bpe.selected),dir:0,raf:null,scrollEl,fromThumb};
+  const box=document.createElement("div"); box.className="bpe-marq"; box.style.cssText="position:fixed;border:1.5px solid var(--brand,#9B1B33);background:rgba(155,27,51,.12);z-index:2650;pointer-events:none;left:"+e.clientX+"px;top:"+e.clientY+"px;width:0;height:0"; document.body.appendChild(box); _bpeMarq.box=box;
   window.addEventListener("mousemove",bpeViewMouseMove); window.addEventListener("mouseup",bpeViewMouseUp); e.preventDefault(); }
-function bpeViewMouseMove(e){ if(!_bpeMarq) return; _bpeMarq.moved=true;
-  const x=e.clientX,y=e.clientY; const L=Math.min(x,_bpeMarq.x0),T=Math.min(y,_bpeMarq.y0),R=Math.max(x,_bpeMarq.x0),B=Math.max(y,_bpeMarq.y0);
-  const b=_bpeMarq.box; b.style.left=L+"px"; b.style.top=T+"px"; b.style.width=(R-L)+"px"; b.style.height=(B-T)+"px";
-  const hitrect=el=>{ if(!el) return false; const r=el.getBoundingClientRect(); return !(r.right<L||r.left>R||r.bottom<T||r.top>B); };
+/* 세로 리스트라 '세로 겹침'만으로 선택(가로 무시) → 폭이 다른 페이지도 안 빠짐. 내용 좌표 기준이라 스크롤해도 안 끊김 */
+function bpeMarqSelect(){ if(!_bpeMarq||!_bpe) return; const se=_bpeMarq.scrollEl; const rect=se.getBoundingClientRect();
+  const cy=Math.max(rect.top,Math.min(rect.bottom,_bpeMarq.cy)); const curY=(cy-rect.top)+se.scrollTop;
+  const top=Math.min(_bpeMarq.startY,curY), bot=Math.max(_bpeMarq.startY,curY);
   _bpe.selected=new Set(_bpeMarq.base);
   const ths=document.querySelectorAll('.bpe-th');
-  for(let k=0;k<_bpe.flat.length;k++){ if(hitrect(document.getElementById("bpe-pg-"+k)) || hitrect(ths[k])) _bpe.selected.add(k); }
-  bpeApplySel();
-  const se=_bpeMarq.scrollEl; const vr=se.getBoundingClientRect(); _bpeMarq.dir=(y<vr.top+40)?-1:(y>vr.bottom-40)?1:0;
+  for(let k=0;k<_bpe.flat.length;k++){ const el=_bpeMarq.fromThumb?ths[k]:document.getElementById("bpe-pg-"+k); if(!el) continue;
+    const r=el.getBoundingClientRect(); const elTop=(r.top-rect.top)+se.scrollTop, elBot=elTop+r.height;
+    if(!(elBot<top||elTop>bot)) _bpe.selected.add(k); }
+  bpeApplySel(); }
+function _bpeMarqBox(){ const m=_bpeMarq; if(!m||!m.box) return; const x=m.cx,y=m.cy; const L=Math.min(x,m.x0),T=Math.min(y,m.y0),R=Math.max(x,m.x0),B=Math.max(y,m.y0); m.box.style.left=L+"px"; m.box.style.top=T+"px"; m.box.style.width=(R-L)+"px"; m.box.style.height=(B-T)+"px"; }
+function bpeViewMouseMove(e){ if(!_bpeMarq) return; _bpeMarq.moved=true; _bpeMarq.cx=e.clientX; _bpeMarq.cy=e.clientY;
+  _bpeMarqBox(); bpeMarqSelect();
+  const se=_bpeMarq.scrollEl; const vr=se.getBoundingClientRect(); const y=e.clientY; _bpeMarq.dir=(y<vr.top+40)?-1:(y>vr.bottom-40)?1:0;
   if(_bpeMarq.dir && !_bpeMarq.raf) bpeAutoScroll(); }
-function bpeAutoScroll(){ if(!_bpeMarq) return; const se=_bpeMarq.scrollEl; if(se && _bpeMarq.dir) se.scrollTop += _bpeMarq.dir*14; _bpeMarq.raf=_bpeMarq.dir?requestAnimationFrame(bpeAutoScroll):null; }
+function bpeAutoScroll(){ if(!_bpeMarq) return; const se=_bpeMarq.scrollEl; if(se && _bpeMarq.dir){ se.scrollTop += _bpeMarq.dir*14; bpeMarqSelect(); _bpeMarqBox(); }
+  _bpeMarq.raf=_bpeMarq.dir?requestAnimationFrame(bpeAutoScroll):null; }
 function bpeViewMouseUp(){ window.removeEventListener("mousemove",bpeViewMouseMove); window.removeEventListener("mouseup",bpeViewMouseUp);
   if(_bpeMarq){ if(_bpeMarq.box) _bpeMarq.box.remove(); if(_bpeMarq.raf) cancelAnimationFrame(_bpeMarq.raf); if(!_bpeMarq.moved && !_bpeMarq.fromThumb){ _bpe.selected=new Set(); bpeApplySel(); } }
   _bpeMarq=null; bpeUpdateSelInfo(); }
@@ -2171,7 +2217,7 @@ async function bpeRenderView(){
   }
   bpeUpdateInfo();
   v.onscroll=()=>{ if(!_bpe) return; const br=v.getBoundingClientRect(); let cur=0; for(let k=0;k<_bpe.flat.length;k++){ const w=document.getElementById("bpe-pg-"+k); if(!w) continue; if(w.getBoundingClientRect().top - br.top <= 90) cur=k; else break; } _bpe.cur=cur; bpeMarkThumb(cur); const th=document.querySelectorAll('.bpe-th')[cur]; if(th) th.scrollIntoView({block:"nearest"}); };
-  v.onmousedown=bpeViewMouseDown; bpeApplySel();
+  v.onmousedown=bpeViewMouseDown; bpeApplySel(); bpeRefreshMoveMarks();
 }
 async function bpeRefreshPage(k){
   if(!_bpe) return; const {f,p,fp}=bpePageMeta(k);
@@ -2188,8 +2234,8 @@ async function bpeRefreshPage(k){
 /* 저장: 파일별로 변경분을 반영. PDF=페이지 유지/회전 재구성, 이미지=회전. 업로드 성공 후 원본 교체(안전). 전부 삭제된 파일은 파일 자체 삭제. */
 async function bpeSaveFile(f){
   const c=findClient(_bpe.cid);
-  const keep=f.pages.filter(p=>!p.del);
-  const changed = keep.length!==f.pages.length || f.pages.some(p=>p.rot);
+  const keep=f.pages.filter(p=>!p.del && !p.moveTo);
+  const changed = keep.length!==f.pages.length || keep.some(p=>p.rot);
   if(!changed) return null;
   const fileObj=f.fileRef; const arr=c.items[f.itemId].files||[];
   if(keep.length===0){ // 전부 삭제 → 파일 삭제
@@ -2222,21 +2268,101 @@ async function bpeSaveFile(f){
   try{ if(oldDrive && oldDrive!==j.id) await gwDelete(oldDrive); }catch(_){ }
   return f.itemId;
 }
-async function bpeSave(){
+function bpeSave(){ // 진입점: 서류 간 이동이 있으면 저장 전에 '이동 요약' 확인
   if(!_bpe) return;
-  const anyChange=_bpe.files.some(f=>f.pages.some(p=>p.del)||f.pages.some(p=>p.rot));
+  try{
+    const anyChange=_bpe.files.some(f=>f.pages.some(p=>p.del||p.rot||p.moveTo));
+    if(!anyChange){ toast("변경된 내용이 없습니다"); return; }
+    const hasMove=_bpe.files.some(f=>f.pages.some(p=>p.moveTo&&!p.del));
+    if(hasMove){ bpeMoveSummary(); return; }
+    bpeSaveApply();
+  }catch(e){ console.error(e); toast("저장 준비 중 오류: "+((e&&e.message)||e)); }
+}
+function bpeMoveSummary(){
+  if(!_bpe) return;
+  try{
+  const c=findClient(_bpe.cid);
+  const moves={};
+  _bpe.files.forEach(f=>{ f.pages.forEach(p=>{ if(p.moveTo&&!p.del){ const key=f.itemId+"|"+p.moveTo; if(!moves[key]) moves[key]={src:f.itemId,tgt:p.moveTo,n:0}; moves[key].n++; } }); });
+  const rows=Object.values(moves).map(m=>`<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#2b2b2b;padding:6px 0;border-bottom:1px solid #f2f2f2"><span style="color:#1565C0">↪</span><div style="flex:1;min-width:0"><span style="color:#888">${esc(itemName(m.src,c))}</span> <span style="color:#c3c3c3">→</span> <b>${esc(bpeMoveTgtName(m.tgt))}</b></div><span style="color:#1565C0;font-weight:800;white-space:nowrap">${m.n}쪽</span></div>`).join("");
+  let delN=0,rotN=0; _bpe.files.forEach(f=>f.pages.forEach(p=>{ if(p.del)delN++; else if(p.rot)rotN++; }));
+  const extra=[]; if(delN)extra.push(`🗑 삭제 ${delN}쪽`); if(rotN)extra.push(`↻ 회전 ${rotN}쪽`);
+  const extraHtml=extra.length?`<div style="margin-top:10px;background:#f7f7f8;border-radius:9px;padding:8px 11px;font-size:12px;color:#666">함께 저장될 편집 · ${extra.join(" · ")}</div>`:"";
+  const totalMove=Object.values(moves).reduce((a,m)=>a+m.n,0);
+  const d=document.createElement("div"); d.className="ib-ov"; d.id="bpeMoveSumOv";
+  d.style.cssText="position:fixed;inset:0;background:rgba(20,18,16,.5);display:flex;align-items:center;justify-content:center;padding:14px;z-index:100000";
+  d.innerHTML=`<div class="ib-modal" style="max-width:400px;background:#fff;border-radius:14px;display:flex;flex-direction:column;max-height:80vh;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+    <div style="padding:20px 18px 8px;text-align:center;flex:none">
+      <div style="width:46px;height:46px;border-radius:50%;background:#e7f0fb;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:24px;color:#1565C0">↪</div>
+      <div style="font-size:17px;font-weight:800;color:#2b2b2b">이동 요약 · 저장 전 확인</div>
+      <div style="font-size:12.5px;color:#7a756f;margin-top:3px">아래대로 페이지가 다른 서류로 옮겨집니다</div>
+    </div>
+    <div style="padding:2px 18px 10px;flex:1;overflow:auto;min-height:0">${rows}${extraHtml}</div>
+    <div style="padding:8px 16px 16px;display:flex;gap:8px;flex:none;border-top:1px solid #eee">
+      <button class="ib-btn pri" style="flex:1;justify-content:center;background:var(--brand,#9B1B33);color:#fff;border:none;border-radius:10px;padding:11px;font-weight:800;cursor:pointer" onclick="bpeMoveSumConfirm()">✓ 확인 · 저장 (${totalMove}쪽 이동)</button>
+      <button class="ib-btn" style="border:1px solid #ddd;border-radius:10px;padding:11px 14px;background:#fff;cursor:pointer" onclick="bpeMoveSumClose()">취소</button>
+    </div></div>`;
+  document.body.appendChild(d);
+  d.addEventListener("click",e=>{ if(e.target===d) bpeMoveSumClose(); });
+  }catch(e){ console.error(e); if(confirm("선택한 페이지를 다른 서류로 이동하고 저장할까요?")) bpeSaveApply(); }
+}
+function bpeMoveSumClose(){ const d=$("#bpeMoveSumOv"); if(d) d.remove(); }
+function bpeMoveSumConfirm(){ bpeMoveSumClose(); bpeSaveApply(); }
+async function bpeSaveApply(){
+  if(!_bpe) return;
+  const anyChange=_bpe.files.some(f=>f.pages.some(p=>p.del||p.rot||p.moveTo));
   if(!anyChange){ toast("변경된 내용이 없습니다"); return; }
   toast("저장 중…"); setSync("saving");
   const c=findClient(_bpe.cid);
   try{
     const touched=new Set();
-    for(const f of _bpe.files){ const it=await bpeSaveFile(f); if(it) touched.add(it); }
+    await bpeProcessMoves(c, touched);   // 1) 이동 예약 페이지 → 대상 서류에 새 파일로 생성(먼저)
+    for(const f of _bpe.files){ const it=await bpeSaveFile(f); if(it) touched.add(it); }  // 2) 원본 파일은 이동/삭제 페이지 빼고 재구성
     try{ applyTags(c); }catch(_){ }
     touch(`[${c.name}] '${dlBlockLabel(_bpe.bid,_bpe.btitle)}' 페이지 편집 저장`);
     if(typeof BACKEND!=="undefined" && BACKEND==="supabase"){ for(const id of touched){ try{ await sbSaveFileOrder(_bpe.cid,id); }catch(_){ } } }
     _bpe.dirty=false; const cid=_bpe.cid; bpeClose(); renderDetail(cid);
     toast("페이지 편집을 저장했습니다 ✓");
   }catch(e){ console.error(e); toast("저장 실패: "+((e&&e.message)||e)+" — 원상태 유지"); setSync("error"); }
+}
+async function bpeProcessMoves(c, touched){
+  // 이동 예약된 페이지를 (원본파일 × 대상서류)별로 묶어 대상 서류에 새 파일로 만든다
+  const groups=new Map();
+  _bpe.files.forEach((f,fi)=>{ f.pages.forEach(p=>{ if(p.moveTo && !p.del){ const tgt=String(p.moveTo); if(String(tgt)===String(f.itemId)) return; const key=fi+"|"+tgt; if(!groups.has(key)) groups.set(key,{f,tgt,pages:[]}); groups.get(key).pages.push(p); } }); });
+  if(!groups.size) return;
+  const supa=(typeof BACKEND!=="undefined" && BACKEND==="supabase");
+  for(const g of groups.values()){
+    const f=g.f, tgt=g.tgt, pages=g.pages; const tItem=c.items[tgt]; if(!tItem) continue;
+    let newBytes, newMime, newName;
+    if(f.isPdf){
+      const PDFLib=await loadPdfLib();
+      const src=await PDFLib.PDFDocument.load(f.srcBytes,{ignoreEncryption:true});
+      const out=await PDFLib.PDFDocument.create();
+      const copied=await out.copyPages(src, pages.map(p=>p.i));
+      copied.forEach((pg,k)=>{ let base=0; try{ base=pg.getRotation().angle||0; }catch(_){ } const rot=((base+(pages[k].rot||0))%360+360)%360; try{ pg.setRotation(PDFLib.degrees(rot)); }catch(_){ } out.addPage(pg); });
+      newBytes=await out.save(); newMime="application/pdf";
+      newName=(f.name||"문서").replace(/\.[^.]+$/,"").replace(/_(편집|이동\d*쪽?)$/,"")+`_이동${pages.length}쪽.pdf`;
+    } else {
+      const rot=((pages[0].rot||0)%360+360)%360;
+      const cv=await bpeCanvas(f,0,rot,4000);
+      newBytes=await new Promise(r=>cv.toBlob(b=>b.arrayBuffer().then(r),"image/jpeg",0.92));
+      newMime="image/jpeg";
+      newName=(f.name||"image").replace(/\.[^.]+$/,"").replace(/_(편집|이동)$/,"")+"_이동.jpg";
+    }
+    const b64=arrayBufferToBase64(newBytes);
+    const j=await gwUpload(clientFolder(c), newName, newMime, b64);
+    const nf={name:newName, size:(newBytes.byteLength||0), driveId:j.id, by:deviceName||"미설정", ts:now(), is_public:!!(f.fileRef&&f.fileRef.is_public)};
+    if(supa){
+      const tgtDkey=(typeof ITEM_BY_ID!=="undefined" && ITEM_BY_ID[tgt])?tgt:((tItem.doc_key)||tgt);
+      const _doc={client_id:_bpe.cid, doc_key:tgtDkey, file_name:newName, storage_path:j.id, uploaded_by:nf.by, is_public:nf.is_public, kind:"취합"};
+      if(typeof SB_HAS_SORT!=="undefined" && SB_HAS_SORT) _doc.sort_order=(tItem.files?tItem.files.length:0);
+      const r=await sb.from("documents").insert(_doc).select("id").single();
+      if(r.error) throw r.error; nf.docId=r.data.id;
+    }
+    if(!tItem.files) tItem.files=[];
+    tItem.files.push(nf);
+    touched.add(tgt);
+  }
 }
 /* ---------- 6c. 첨부 파일 다운로드 (선택/일괄, 묶음 ZIP / 파일별) ---------- */
 let _dlCtx=null;
@@ -2529,9 +2655,12 @@ function pvbPushRecent(id){ try{ let a=pvbRecentTargets().filter(x=>String(x)!==
 /* 이동창: 2단(묶음/서류) + 큰 검색 + 최근칩 + 클릭 즉시 이동 (기능=시안3, 디자인=시안2) */
 function pvbMoveFile(cid,srcId,idx){
   const c=findClient(cid); const f=((c.items[srcId]||{}).files||[])[idx]; if(!f){ return; }
-  _pvbMoveCtx={cid,srcId,idx,q:"",bundleIdx:0};
+  _pvbOpenMove({cid,srcId,idx,fn:esc(f.name),q:"어느 서류로 옮길까요?",foot:"서류를 누르면 바로 이동합니다 · 잘못 옮겼으면 그 서류에서 다시 옮기면 됩니다"});
+}
+function _pvbOpenMove(o){
+  _pvbMoveCtx={cid:o.cid, srcId:(o.srcId!=null?o.srcId:null), idx:(o.idx!=null?o.idx:null), q:"", bundleIdx:0, onPick:o.onPick||null};
   const d=document.createElement("div"); d.id="pvbMoveOv";
-  d.style.cssText="position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);padding:16px";
+  d.style.cssText="position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);padding:16px";
   d.innerHTML=`<style>
     .pm-card{background:#fff;border-radius:14px;overflow:hidden;width:560px;max-width:94vw;box-shadow:0 12px 40px rgba(0,0,0,.3)}
     .pm-top{background:var(--brand,#9B1B33);color:#fff;padding:14px 16px;display:flex;align-items:flex-start;gap:10px}
@@ -2561,11 +2690,11 @@ function pvbMoveFile(cid,srcId,idx){
     .pm-foot{padding:9px 12px;font-size:11.5px;color:#8a8a8a;text-align:center;border-top:1px solid #eee}
   </style>
   <div class="pm-card">
-    <div class="pm-top"><div><div class="fn">📄 ${esc(f.name)}</div><div class="q">어느 서류로 옮길까요?</div></div><span class="pm-x" onclick="pvbCloseMove()">✕</span></div>
+    <div class="pm-top"><div><div class="fn">📄 ${o.fn||""}</div><div class="q">${esc(o.q||"어느 서류로 옮길까요?")}</div></div><span class="pm-x" onclick="pvbCloseMove()">✕</span></div>
     <div class="pm-srch">🔎 <input id="pvbMq" placeholder="서류 이름으로 빠르게 찾기" autocomplete="off" oninput="pvbMoveSearch(this.value)"></div>
     <div id="pvbMchips"></div>
     <div id="pvbMlist"></div>
-    <div class="pm-foot">서류를 누르면 바로 이동합니다 · 잘못 옮겼으면 그 서류에서 다시 옮기면 됩니다</div>
+    <div class="pm-foot">${esc(o.foot||"서류를 누르면 바로 이동합니다")}</div>
   </div>`;
   $("#modalRoot").appendChild(d);
   d.addEventListener("click",e=>{ if(e.target===d) pvbCloseMove(); });
@@ -2605,6 +2734,7 @@ function pvbMoveRender(){
 function pvbCloseMove(){ const d=$("#pvbMoveOv"); if(d) d.remove(); }
 async function pvbDoMove(tgtId){
   const ctx=_pvbMoveCtx; if(!ctx) return;
+  if(ctx.onPick){ const cb=ctx.onPick; pvbCloseMove(); cb(tgtId); return; }
   const c=ensureItems(findClient(ctx.cid)); if(!c){ pvbCloseMove(); return; }
   if(String(tgtId)===String(ctx.srcId)){ toast("같은 서류입니다"); return; }
   const arr=(c.items[ctx.srcId]||{}).files||[]; const f=arr[ctx.idx]; if(!f){ pvbCloseMove(); return; }
