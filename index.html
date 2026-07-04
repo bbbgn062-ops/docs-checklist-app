@@ -2011,7 +2011,8 @@ async function openBundlePageEditor(cid,bid){
     .bpe-delflag{position:absolute;top:8px;left:8px;background:rgba(179,38,30,.92);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;z-index:2}
     .bpe-pgwrap.sel .bpe-pgc canvas,.bpe-pgwrap.sel .bpe-pgc img{outline:3px solid var(--brand,#9B1B33);outline-offset:2px}
     .bpe-th.sel{border-color:var(--brand,#9B1B33);box-shadow:0 0 0 2px var(--brand,#9B1B33)}
-    .bpe-view{user-select:none}
+    .bpe-th.sel::after{content:"✓";position:absolute;top:2px;left:2px;background:var(--brand,#9B1B33);color:#fff;font-size:10px;font-weight:700;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:3}
+    .bpe-view,.bpe-thumbs{user-select:none}
   </style>
   <div class="bpe-card">
     <div class="bpe-head"><span class="t">📄 ${esc(g.btitle)} · 페이지 편집</span><span class="x" onclick="bpeTryClose()">✕</span></div>
@@ -2050,20 +2051,23 @@ function bpeUpdateSelInfo(){ const el=document.getElementById("bpeSelInfo"); if(
 /* 드래그 박스(마퀴) 선택 + 끌면 자동 스크롤 — #bpeView 위에서 드래그하면 겹치는 페이지들이 선택된다 */
 let _bpeMarq=null;
 function bpeViewMouseDown(e){ if(!_bpe) return; if(e.target.closest('.bpe-pgov')) return;
-  _bpeMarq={x0:e.clientX,y0:e.clientY,moved:false,base:new Set(_bpe.selected),dir:0,raf:null};
+  const scrollEl=e.currentTarget||document.getElementById("bpeView");
+  _bpeMarq={x0:e.clientX,y0:e.clientY,moved:false,base:new Set(_bpe.selected),dir:0,raf:null,scrollEl,fromThumb:!!(scrollEl&&scrollEl.id==="bpeThumbs")};
   const box=document.createElement("div"); box.className="bpe-marq"; box.style.cssText="position:fixed;border:1.5px solid var(--brand,#9B1B33);background:rgba(155,27,51,.12);z-index:2600;pointer-events:none;left:"+e.clientX+"px;top:"+e.clientY+"px;width:0;height:0"; document.body.appendChild(box); _bpeMarq.box=box;
   window.addEventListener("mousemove",bpeViewMouseMove); window.addEventListener("mouseup",bpeViewMouseUp); e.preventDefault(); }
 function bpeViewMouseMove(e){ if(!_bpeMarq) return; _bpeMarq.moved=true;
   const x=e.clientX,y=e.clientY; const L=Math.min(x,_bpeMarq.x0),T=Math.min(y,_bpeMarq.y0),R=Math.max(x,_bpeMarq.x0),B=Math.max(y,_bpeMarq.y0);
   const b=_bpeMarq.box; b.style.left=L+"px"; b.style.top=T+"px"; b.style.width=(R-L)+"px"; b.style.height=(B-T)+"px";
+  const hitrect=el=>{ if(!el) return false; const r=el.getBoundingClientRect(); return !(r.right<L||r.left>R||r.bottom<T||r.top>B); };
   _bpe.selected=new Set(_bpeMarq.base);
-  for(let k=0;k<_bpe.flat.length;k++){ const w=document.getElementById("bpe-pg-"+k); if(!w) continue; const r=w.getBoundingClientRect(); if(!(r.right<L||r.left>R||r.bottom<T||r.top>B)) _bpe.selected.add(k); }
+  const ths=document.querySelectorAll('.bpe-th');
+  for(let k=0;k<_bpe.flat.length;k++){ if(hitrect(document.getElementById("bpe-pg-"+k)) || hitrect(ths[k])) _bpe.selected.add(k); }
   bpeApplySel();
-  const v=document.getElementById("bpeView"); const vr=v.getBoundingClientRect(); _bpeMarq.dir=(y<vr.top+40)?-1:(y>vr.bottom-40)?1:0;
+  const se=_bpeMarq.scrollEl; const vr=se.getBoundingClientRect(); _bpeMarq.dir=(y<vr.top+40)?-1:(y>vr.bottom-40)?1:0;
   if(_bpeMarq.dir && !_bpeMarq.raf) bpeAutoScroll(); }
-function bpeAutoScroll(){ if(!_bpeMarq) return; const v=document.getElementById("bpeView"); if(v && _bpeMarq.dir) v.scrollTop += _bpeMarq.dir*14; _bpeMarq.raf=_bpeMarq.dir?requestAnimationFrame(bpeAutoScroll):null; }
+function bpeAutoScroll(){ if(!_bpeMarq) return; const se=_bpeMarq.scrollEl; if(se && _bpeMarq.dir) se.scrollTop += _bpeMarq.dir*14; _bpeMarq.raf=_bpeMarq.dir?requestAnimationFrame(bpeAutoScroll):null; }
 function bpeViewMouseUp(){ window.removeEventListener("mousemove",bpeViewMouseMove); window.removeEventListener("mouseup",bpeViewMouseUp);
-  if(_bpeMarq){ if(_bpeMarq.box) _bpeMarq.box.remove(); if(_bpeMarq.raf) cancelAnimationFrame(_bpeMarq.raf); if(!_bpeMarq.moved){ _bpe.selected=new Set(); bpeApplySel(); } }
+  if(_bpeMarq){ if(_bpeMarq.box) _bpeMarq.box.remove(); if(_bpeMarq.raf) cancelAnimationFrame(_bpeMarq.raf); if(!_bpeMarq.moved && !_bpeMarq.fromThumb){ _bpe.selected=new Set(); bpeApplySel(); } }
   _bpeMarq=null; bpeUpdateSelInfo(); }
 async function bpeRotAt(k,deg){ if(!_bpe) return; const {p}=bpePageMeta(k); p.rot=((p.rot+deg)%360+360)%360; _bpe.dirty=true; await bpeRefreshPage(k); }
 async function bpeDelAt(k){ if(!_bpe) return; const {p}=bpePageMeta(k); p.del=!p.del; _bpe.dirty=true; await bpeRefreshPage(k); }
@@ -2079,7 +2083,7 @@ async function bpeCanvas(f,pi,rot,maxw){
   const cv=document.createElement("canvas"); cv.width=vp.width; cv.height=vp.height; await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise; return cv;
 }
 async function bpeRenderThumbs(){
-  const box=document.getElementById("bpeThumbs"); if(!box||!_bpe) return; box.innerHTML="";
+  const box=document.getElementById("bpeThumbs"); if(!box||!_bpe) return; box.innerHTML=""; box.onmousedown=bpeViewMouseDown;
   const info=document.getElementById("bpeInfo"); const kept=_bpe.flat.filter(fp=>!_bpe.files[fp.fi].pages[fp.pi].del).length;
   if(info) info.textContent=`총 ${_bpe.flat.length}p · 남길 ${kept}p`;
   for(let k=0;k<_bpe.flat.length;k++){ const fp=_bpe.flat[k]; const f=_bpe.files[fp.fi]; const p=f.pages[fp.pi];
