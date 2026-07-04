@@ -2034,7 +2034,9 @@ async function bpeCanvas(f,pi,rot,maxw){
   if(f.isImg){ const img=f.imgEl; const w=img.naturalWidth||1, h=img.naturalHeight||1; const swap=(rot%180!==0); const bw=swap?h:w, bh=swap?w:h; const scale=Math.min(maxw/bw,2);
     const cv=document.createElement("canvas"); cv.width=Math.max(1,bw*scale); cv.height=Math.max(1,bh*scale); const cx=cv.getContext("2d");
     cx.save(); cx.translate(cv.width/2,cv.height/2); cx.rotate(rot*Math.PI/180); cx.scale(scale,scale); cx.drawImage(img,-w/2,-h/2); cx.restore(); return cv; }
-  const page=await f.pdfDoc.getPage(pi+1); const base=page.getViewport({scale:1}); const s=Math.min(maxw/base.width,2); const vp=page.getViewport({scale:s,rotation:rot});
+  const page=await f.pdfDoc.getPage(pi+1);
+  const total=(((page.rotate||0)+rot)%360+360)%360; // ★ 페이지 원래 회전값 + 사용자가 준 회전을 더함(원래 회전을 덮어쓰지 않도록)
+  const base=page.getViewport({scale:1,rotation:total}); const s=Math.min(maxw/base.width,2); const vp=page.getViewport({scale:s,rotation:total});
   const cv=document.createElement("canvas"); cv.width=vp.width; cv.height=vp.height; await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise; return cv;
 }
 async function bpeRenderThumbs(){
