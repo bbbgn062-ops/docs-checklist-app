@@ -2229,7 +2229,8 @@ function pvbPushRecent(id){ try{ let a=pvbRecentTargets().filter(x=>String(x)!==
 function pvbMoveFile(cid,srcId,idx){
   const c=findClient(cid); const f=((c.items[srcId]||{}).files||[])[idx]; if(!f){ return; }
   _pvbMoveCtx={cid,srcId,idx,q:"",bundleIdx:0};
-  const d=document.createElement("div"); d.className="ib-ov"; d.id="pvbMoveOv"; d.style.zIndex="90";
+  const d=document.createElement("div"); d.id="pvbMoveOv";
+  d.style.cssText="position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);padding:16px";
   d.innerHTML=`<style>
     .pm-card{background:#fff;border-radius:14px;overflow:hidden;width:560px;max-width:94vw;box-shadow:0 12px 40px rgba(0,0,0,.3)}
     .pm-top{background:var(--brand,#9B1B33);color:#fff;padding:14px 16px;display:flex;align-items:flex-start;gap:10px}
