@@ -2258,9 +2258,11 @@ async function bpeSaveFile(f){
   if(!changed) return null;
   const fileObj=f.fileRef; const arr=c.items[f.itemId].files||[];
   const supa=(typeof BACKEND!=="undefined" && BACKEND==="supabase");
-  if(keep.length===0){ // 전부 삭제/이동 → 목록·DB행에서 제거 (★저장소 실물은 복구용으로 보관, 삭제 안 함)
+  if(keep.length===0){ // 전부 삭제/이동 → 목록·DB행 제거 후, DB행이 확실히 지워졌을 때만 실물 삭제(고아 방지)
     const i=arr.indexOf(fileObj); if(i>=0) arr.splice(i,1);
-    if(supa && fileObj.docId){ try{ await sb.from("documents").delete().eq("id",fileObj.docId); }catch(_){ } }
+    let rowGone=true;
+    if(supa){ if(fileObj.docId){ try{ const r=await sb.from("documents").delete().eq("id",fileObj.docId); rowGone=!r.error; }catch(_){ rowGone=false; } } else { rowGone=false; } }
+    if(rowGone){ try{ if(fileObj.driveId) await gwDelete(fileObj.driveId); }catch(_){ } }
     return f.itemId;
   }
   let newBytes, newMime, newName;
@@ -2283,11 +2285,13 @@ async function bpeSaveFile(f){
   const j=await gwUpload(clientFolder(c), newName, newMime, b64);
   // ★안전장치1: 새 파일이 저장소에 실제로 올라갔는지 확인. 실패 시 원본을 전혀 건드리지 않고 중단
   if(!await gwVerify(j.id, newBytes.byteLength)) throw new Error("편집본 저장 검증 실패("+newName+") — 원본 그대로 유지");
-  const oldDoc=fileObj.docId;
+  const oldDrive=fileObj.driveId, oldDoc=fileObj.docId;
   fileObj.name=newName; fileObj.size=(newBytes.byteLength||0); fileObj.driveId=j.id; fileObj.by=deviceName||"미설정"; fileObj.ts=now();
-  // DB행을 새 저장경로로 갱신(검증된 새 파일만 가리킴)
-  if(supa && oldDoc){ try{ await sb.from("documents").update({storage_path:j.id, file_name:newName}).eq("id",oldDoc); }catch(_){ } }
-  // ★안전장치2: 옛 원본 실물은 지우지 않고 보관(재구성이 잘못돼도 복구 가능). 저장소 정리는 별도 점검도구로만.
+  // DB행을 새(검증된) 저장경로로 갱신
+  let rowOK=true;
+  if(supa){ if(oldDoc){ try{ const r=await sb.from("documents").update({storage_path:j.id, file_name:newName}).eq("id",oldDoc); rowOK=!r.error; }catch(_){ rowOK=false; } } else { rowOK=false; } }
+  // ★새 파일 검증됨 + DB행이 새 파일을 가리킴 확인된 경우에만 옛 실물 삭제(공간 절약 + 고아·유실 없음). 확인 안 되면 옛 실물 보관.
+  if(rowOK){ try{ if(oldDrive && oldDrive!==j.id) await gwDelete(oldDrive); }catch(_){ } }
   return f.itemId;
 }
 function bpeSave(){ // 진입점: 서류 간 이동이 있으면 저장 전에 '이동 요약' 확인
