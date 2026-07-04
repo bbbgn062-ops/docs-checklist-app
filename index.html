@@ -2214,6 +2214,10 @@ async function pvbRenderPdf(bytes, bigEl, thumbEl, token){
     await page.render({canvasContext:tc.getContext("2d"),viewport:tvp}).promise;
   }
   if(!ctx || ctx.token!==token) return;
+  // 큰 미리보기를 스크롤하면 현재 보는 페이지의 썸네일이 자동으로 강조되고 썸네일 목록도 따라 스크롤됨
+  bigEl.onscroll=()=>{ const br=bigEl.getBoundingClientRect(); let cur=1;
+    for(let k=1;k<=pdf.numPages;k++){ const cc=document.getElementById("pvbpg-"+k); if(!cc) continue; if(cc.getBoundingClientRect().top - br.top <= 60) cur=k; else break; }
+    pvbMarkThumb(cur); const tw=thumbEl.querySelector('.pvb-thumb[data-n="'+cur+'"]'); if(tw) tw.scrollIntoView({block:"nearest",inline:"nearest"}); };
   pvbMarkThumb(1);
 }
 async function pvbRender(){
