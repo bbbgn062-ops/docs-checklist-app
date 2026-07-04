@@ -1945,6 +1945,173 @@ async function applyPdfEdit(){
   }catch(e){ console.error(e); toast("저장 실패: "+(e.message||e)); setSync("error"); }
 }
 
+/* ---------- 6e. 묶음 페이지 편집기 (PDF앱 스타일 · 회전/삭제 · 모아서 저장 · 나가기 경고) ----------
+   1단계: 시안1 레이아웃(상단 툴바+왼쪽 썸네일+큰 미리보기), 페이지 회전·삭제를 메모리에 모아두고 '저장' 시 파일별로 반영.
+   저장은 검증된 applyPdfEdit와 동일 방식(새 PDF/이미지 업로드 성공 후 원본 교체). 자체 오버레이라 나가기 경고를 완전히 제어. */
+let _bpe=null;
+function _bpeLoadImg(url){ return new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=url; }); }
+async function openBundlePageEditor(cid,bid){
+  if(!filesReady()){ toast("드라이브 연결 후 편집 가능합니다"); return; }
+  const c=ensureItems(findClient(cid));
+  const g=fileGroups(c).find(x=>x.bid===bid);
+  if(!g){ toast("이 묶음에 편집할 파일이 없습니다"); return; }
+  toast("페이지 편집기 여는 중…");
+  let pdfjsLib; try{ pdfjsLib=await loadPdfJs(); }catch(e){ toast("뷰어 로드 실패(인터넷 필요)"); return; }
+  const files=[];
+  for(const it of g.items){ for(const fo of it.files){
+    const ext=extOf(fo.f.name).toLowerCase();
+    const isImg=[".jpg",".jpeg",".png",".gif",".webp"].includes(ext);
+    const isPdf=(ext===".pdf");
+    if(!isImg&&!isPdf) continue;
+    try{
+      const bytes=await fetchFileBytes(fo.f);
+      const ent={itemId:it.id, fileRef:fo.f, name:fo.f.name, isPdf, isImg, srcBytes:bytes, npages:1, pages:null, pdfDoc:null, imgUrl:null, imgEl:null};
+      if(isPdf){ ent.pdfDoc=await pdfjsLib.getDocument({data:(bytes instanceof Uint8Array)?bytes.slice(0):new Uint8Array(bytes)}).promise; ent.npages=ent.pdfDoc.numPages; }
+      else { ent.imgUrl=URL.createObjectURL(new Blob([bytes])); ent.imgEl=await _bpeLoadImg(ent.imgUrl); }
+      ent.pages=Array.from({length:ent.npages},(_,k)=>({i:k,rot:0,del:false}));
+      files.push(ent);
+    }catch(e){ console.warn("편집기 파일 로드 실패",fo.f.name,e); }
+  } }
+  if(!files.length){ toast("편집할 수 있는 파일(PDF·이미지)이 없습니다"); return; }
+  const flat=[]; files.forEach((f,fi)=>f.pages.forEach((p,pi)=>flat.push({fi,pi})));
+  _bpe={cid,bid,btitle:g.btitle,files,flat,cur:0,dirty:false};
+  const d=document.createElement("div"); d.id="bpeOv";
+  d.style.cssText="position:fixed;inset:0;z-index:2500;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:14px";
+  d.innerHTML=`<style>
+    .bpe-card{background:#fff;border-radius:12px;overflow:hidden;width:940px;max-width:96vw;height:82vh;display:flex;flex-direction:column;box-shadow:0 14px 44px rgba(0,0,0,.4)}
+    .bpe-head{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line,#e3e3e3)}
+    .bpe-head .t{font-size:14px;font-weight:700}
+    .bpe-head .x{margin-left:auto;font-size:19px;color:#8a8a8a;cursor:pointer}
+    .bpe-tb{display:flex;align-items:center;gap:6px;padding:8px 12px;flex-wrap:wrap;border-bottom:1px solid var(--line,#e3e3e3);background:#f7f7f8}
+    .bpe-tbtn{display:flex;align-items:center;gap:4px;font-size:12.5px;padding:7px 11px;border:1px solid var(--line,#e3e3e3);background:#fff;border-radius:8px;cursor:pointer}
+    .bpe-tbtn.save{background:var(--brand,#9B1B33);color:#fff;border-color:var(--brand,#9B1B33);font-weight:700}
+    .bpe-tbtn.del{color:#b3261e}
+    .bpe-sep{width:1px;height:18px;background:var(--line,#e3e3e3);margin:0 3px}
+    .bpe-info{margin-left:auto;font-size:11.5px;color:#8a8a8a}
+    .bpe-body{display:flex;flex:1;min-height:0}
+    .bpe-thumbs{width:100px;flex:0 0 100px;background:#2b2e33;overflow:auto;padding:8px 6px}
+    .bpe-th{background:#fff;border-radius:4px;margin-bottom:8px;border:2px solid transparent;cursor:pointer;padding:3px;position:relative}
+    .bpe-th.on{border-color:var(--brand,#9B1B33)}
+    .bpe-th.del{opacity:.4}
+    .bpe-th canvas,.bpe-th img{display:block;width:100%;height:auto;border-radius:2px}
+    .bpe-th .n{font-size:9px;color:#bbb;text-align:center;margin-top:1px}
+    .bpe-th .dx{position:absolute;top:3px;right:3px;background:#b3261e;color:#fff;font-size:9px;border-radius:4px;padding:0 4px}
+    .bpe-view{flex:1;background:#33373d;overflow:auto;padding:16px;text-align:center;position:relative}
+    .bpe-page{display:inline-block;background:#fff;border-radius:6px;box-shadow:0 3px 14px rgba(0,0,0,.4);max-width:96%}
+    .bpe-page canvas,.bpe-page img{display:block;max-width:100%;height:auto;border-radius:6px}
+    .bpe-tag{position:absolute;top:22px;left:22px;background:rgba(155,27,51,.92);color:#fff;font-size:11px;padding:3px 9px;border-radius:6px;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .bpe-delnote{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(179,38,30,.92);color:#fff;padding:8px 14px;border-radius:9px;font-size:13px}
+  </style>
+  <div class="bpe-card">
+    <div class="bpe-head"><span class="t">📄 ${esc(g.btitle)} · 페이지 편집</span><span class="x" onclick="bpeTryClose()">✕</span></div>
+    <div class="bpe-tb">
+      <button class="bpe-tbtn" onclick="bpeRot(-90)">↺ 왼쪽</button>
+      <button class="bpe-tbtn" onclick="bpeRot(90)">↻ 오른쪽</button>
+      <span class="bpe-sep"></span>
+      <button class="bpe-tbtn del" id="bpeDelBtn" onclick="bpeDel()">🗑 이 페이지 삭제</button>
+      <button class="bpe-tbtn" onclick="bpeReset()">↩ 전체 되돌리기</button>
+      <span class="bpe-sep"></span>
+      <button class="bpe-tbtn save" onclick="bpeSave()">💾 저장</button>
+      <span class="bpe-info" id="bpeInfo"></span>
+    </div>
+    <div class="bpe-body">
+      <div class="bpe-thumbs" id="bpeThumbs"></div>
+      <div class="bpe-view" id="bpeView"></div>
+    </div>
+  </div>`;
+  d.addEventListener("click",e=>{ if(e.target===d) bpeTryClose(); });
+  $("#modalRoot").appendChild(d);
+  bpeRenderThumbs(); bpeRenderView();
+}
+function bpeTryClose(){ if(_bpe && _bpe.dirty && !confirm("저장하지 않고 나가면 편집한 내용이 사라집니다. 나갈까요?")) return; bpeClose(); }
+function bpeClose(){ if(_bpe){ _bpe.files.forEach(f=>{ if(f.imgUrl){ try{URL.revokeObjectURL(f.imgUrl);}catch(_){ } } }); } _bpe=null; const d=$("#bpeOv"); if(d) d.remove(); }
+function bpeCur(){ const fp=_bpe.flat[_bpe.cur]; return {f:_bpe.files[fp.fi], p:_bpe.files[fp.fi].pages[fp.pi], fp}; }
+function bpeRot(deg){ if(!_bpe) return; const {p}=bpeCur(); p.rot=((p.rot+deg)%360+360)%360; _bpe.dirty=true; bpeRenderThumbs(); bpeRenderView(); }
+function bpeDel(){ if(!_bpe) return; const {p}=bpeCur(); p.del=!p.del; _bpe.dirty=true; bpeRenderThumbs(); bpeRenderView(); }
+function bpeReset(){ if(!_bpe) return; _bpe.files.forEach(f=>f.pages.forEach(p=>{p.rot=0;p.del=false;})); _bpe.dirty=false; bpeRenderThumbs(); bpeRenderView(); }
+function bpeGo(k){ if(!_bpe) return; _bpe.cur=k; bpeRenderThumbs(); bpeRenderView(); }
+async function bpeCanvas(f,pi,rot,maxw){
+  if(f.isImg){ const img=f.imgEl; const w=img.naturalWidth||1, h=img.naturalHeight||1; const swap=(rot%180!==0); const bw=swap?h:w, bh=swap?w:h; const scale=Math.min(maxw/bw,2);
+    const cv=document.createElement("canvas"); cv.width=Math.max(1,bw*scale); cv.height=Math.max(1,bh*scale); const cx=cv.getContext("2d");
+    cx.save(); cx.translate(cv.width/2,cv.height/2); cx.rotate(rot*Math.PI/180); cx.scale(scale,scale); cx.drawImage(img,-w/2,-h/2); cx.restore(); return cv; }
+  const page=await f.pdfDoc.getPage(pi+1); const base=page.getViewport({scale:1}); const s=Math.min(maxw/base.width,2); const vp=page.getViewport({scale:s,rotation:rot});
+  const cv=document.createElement("canvas"); cv.width=vp.width; cv.height=vp.height; await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise; return cv;
+}
+async function bpeRenderThumbs(){
+  const box=document.getElementById("bpeThumbs"); if(!box||!_bpe) return; box.innerHTML="";
+  const info=document.getElementById("bpeInfo"); const kept=_bpe.flat.filter(fp=>!_bpe.files[fp.fi].pages[fp.pi].del).length;
+  if(info) info.textContent=`총 ${_bpe.flat.length}p · 남길 ${kept}p`;
+  for(let k=0;k<_bpe.flat.length;k++){ const fp=_bpe.flat[k]; const f=_bpe.files[fp.fi]; const p=f.pages[fp.pi];
+    const d=document.createElement("div"); d.className="bpe-th"+(k===_bpe.cur?" on":"")+(p.del?" del":""); d.onclick=()=>bpeGo(k);
+    try{ d.appendChild(await bpeCanvas(f,fp.pi,p.rot,84)); }catch(_){ }
+    const n=document.createElement("div"); n.className="n"; n.textContent=(k+1); d.appendChild(n);
+    if(p.del){ const dx=document.createElement("div"); dx.className="dx"; dx.textContent="삭제"; d.appendChild(dx); }
+    box.appendChild(d);
+  }
+}
+async function bpeRenderView(){
+  const v=document.getElementById("bpeView"); if(!v||!_bpe) return; v.innerHTML="";
+  const fp=_bpe.flat[_bpe.cur]; const f=_bpe.files[fp.fi]; const p=f.pages[fp.pi];
+  const tag=document.createElement("div"); tag.className="bpe-tag"; tag.textContent="📄 "+f.name; v.appendChild(tag);
+  const wrap=document.createElement("div"); wrap.className="bpe-page";
+  try{ wrap.appendChild(await bpeCanvas(f,fp.pi,p.rot, Math.min(560,(v.clientWidth||600)-40))); }catch(_){ }
+  v.appendChild(wrap);
+  if(p.del){ const dn=document.createElement("div"); dn.className="bpe-delnote"; dn.textContent="이 페이지는 삭제 예정 — 다시 🗑을 누르면 취소"; v.appendChild(dn); }
+  const db=document.getElementById("bpeDelBtn"); if(db) db.textContent=p.del?"↩ 삭제 취소":"🗑 이 페이지 삭제";
+}
+/* 저장: 파일별로 변경분을 반영. PDF=페이지 유지/회전 재구성, 이미지=회전. 업로드 성공 후 원본 교체(안전). 전부 삭제된 파일은 파일 자체 삭제. */
+async function bpeSaveFile(f){
+  const c=findClient(_bpe.cid);
+  const keep=f.pages.filter(p=>!p.del);
+  const changed = keep.length!==f.pages.length || f.pages.some(p=>p.rot);
+  if(!changed) return null;
+  const fileObj=f.fileRef; const arr=c.items[f.itemId].files||[];
+  if(keep.length===0){ // 전부 삭제 → 파일 삭제
+    const i=arr.indexOf(fileObj); if(i>=0) arr.splice(i,1);
+    try{ if(fileObj.driveId) await gwDelete(fileObj.driveId); }catch(_){ }
+    try{ if(typeof BACKEND!=="undefined" && BACKEND==="supabase" && fileObj.docId) await sb.from("documents").delete().eq("id",fileObj.docId); }catch(_){ }
+    return f.itemId;
+  }
+  let newBytes, newMime, newName;
+  if(f.isPdf){
+    const PDFLib=await loadPdfLib();
+    const src=await PDFLib.PDFDocument.load(f.srcBytes,{ignoreEncryption:true});
+    const out=await PDFLib.PDFDocument.create();
+    const copied=await out.copyPages(src, keep.map(p=>p.i));
+    copied.forEach((pg,k)=>{ let base=0; try{ base=pg.getRotation().angle||0; }catch(_){ } const rot=((base+keep[k].rot)%360+360)%360; try{ pg.setRotation(PDFLib.degrees(rot)); }catch(_){ } out.addPage(pg); });
+    newBytes=await out.save(); newMime="application/pdf";
+    newName=(fileObj.name||"문서").replace(/\.[^.]+$/,"").replace(/_편집$/,"")+"_편집.pdf";
+  } else {
+    const rot=((f.pages[0].rot||0)%360+360)%360;
+    const cv=await bpeCanvas(f,0,rot,4000);
+    newBytes=await new Promise(r=>cv.toBlob(b=>b.arrayBuffer().then(r),"image/jpeg",0.92));
+    newMime="image/jpeg";
+    newName=(fileObj.name||"image").replace(/\.[^.]+$/,"").replace(/_편집$/,"")+"_편집.jpg";
+  }
+  const b64=arrayBufferToBase64(newBytes);
+  const j=await gwUpload(clientFolder(c), newName, newMime, b64);
+  const oldDrive=fileObj.driveId, oldDoc=fileObj.docId;
+  fileObj.name=newName; fileObj.size=(newBytes.byteLength||0); fileObj.driveId=j.id; fileObj.by=deviceName||"미설정"; fileObj.ts=now();
+  if(typeof BACKEND!=="undefined" && BACKEND==="supabase" && oldDoc){ try{ await sb.from("documents").update({storage_path:j.id, file_name:newName}).eq("id",oldDoc); }catch(_){ } }
+  try{ if(oldDrive && oldDrive!==j.id) await gwDelete(oldDrive); }catch(_){ }
+  return f.itemId;
+}
+async function bpeSave(){
+  if(!_bpe) return;
+  const anyChange=_bpe.files.some(f=>f.pages.some(p=>p.del)||f.pages.some(p=>p.rot));
+  if(!anyChange){ toast("변경된 내용이 없습니다"); return; }
+  toast("저장 중…"); setSync("saving");
+  const c=findClient(_bpe.cid);
+  try{
+    const touched=new Set();
+    for(const f of _bpe.files){ const it=await bpeSaveFile(f); if(it) touched.add(it); }
+    try{ applyTags(c); }catch(_){ }
+    touch(`[${c.name}] '${dlBlockLabel(_bpe.bid,_bpe.btitle)}' 페이지 편집 저장`);
+    if(typeof BACKEND!=="undefined" && BACKEND==="supabase"){ for(const id of touched){ try{ await sbSaveFileOrder(_bpe.cid,id); }catch(_){ } } }
+    _bpe.dirty=false; const cid=_bpe.cid; bpeClose(); renderDetail(cid);
+    toast("페이지 편집을 저장했습니다 ✓");
+  }catch(e){ console.error(e); toast("저장 실패: "+((e&&e.message)||e)+" — 원상태 유지"); setSync("error"); }
+}
 /* ---------- 6c. 첨부 파일 다운로드 (선택/일괄, 묶음 ZIP / 파일별) ---------- */
 let _dlCtx=null;
 function loadPdfLib(){ return new Promise((res,rej)=>{ if(window.PDFLib) return res(window.PDFLib);
@@ -2182,7 +2349,7 @@ async function previewBundle(cid,bid){
         <div class="pvb-modebar">
           <button class="pvb-hbtn" onclick="pvbToggleSide()" title="묶음 목록 접기/펴기">☰ 묶음</button>
           <span class="pvb-title" id="pvbTitle">불러오는 중…</span>
-          <label class="pvb-toggle" onclick="pvbToggleEdit()">편집모드 <span class="pvb-sw"></span></label>
+          <button class="pvb-hbtn" style="margin-left:auto;color:#fff;background:var(--brand,#9B1B33);border-color:var(--brand,#9B1B33);font-weight:700" onclick="openBundlePageEditor(_pvbCtx.cid, _pvbCtx.groups[_pvbCtx.idx].bid)" title="이 묶음 페이지 편집(PDF앱처럼)">✏ 페이지 편집</button>
         </div>
         <div id="pvbActionBar" class="pvb-abar" style="display:none"></div>
         <div id="pvBundleBody" class="pvb-pv"><div class="pvb-msg">묶음 PDF 만드는 중…</div></div>
