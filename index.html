@@ -1973,8 +1973,9 @@ async function openBundlePageEditor(cid,bid){
     }catch(e){ console.warn("편집기 파일 로드 실패",fo.f.name,e); }
   } }
   if(!files.length){ toast("편집할 수 있는 파일(PDF·이미지)이 없습니다"); return; }
+  files.forEach((f,fi)=>f.pages.forEach(p=>{ p.uid=fi+"_"+p.i; })); // 페이지 고유 식별자(순서 바뀌어도 DOM 추적용)
   const flat=[]; files.forEach((f,fi)=>f.pages.forEach((p,pi)=>flat.push({fi,pi})));
-  _bpe={cid,bid,btitle:g.btitle,files,flat,cur:0,dirty:false,selected:new Set()};
+  _bpe={cid,bid,btitle:g.btitle,files,flat,cur:0,dirty:false,selected:new Set(),thumbMode:"reorder"};
   const d=document.createElement("div"); d.id="bpeOv";
   d.style.cssText="position:fixed;inset:0;z-index:2500;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:14px";
   d.innerHTML=`<style>
@@ -2013,6 +2014,19 @@ async function openBundlePageEditor(cid,bid){
     .bpe-th.sel{border-color:var(--brand,#9B1B33);box-shadow:0 0 0 2px var(--brand,#9B1B33)}
     .bpe-th.sel::after{content:"✓";position:absolute;top:2px;left:2px;background:var(--brand,#9B1B33);color:#fff;font-size:10px;font-weight:700;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:3}
     .bpe-view,.bpe-thumbs{user-select:none}
+    .bpe-thumbcol{flex:0 0 116px;display:flex;flex-direction:column;min-height:0;background:#2b2e33}
+    .bpe-thumbcol .bpe-thumbs{width:auto;flex:1 1 auto}
+    .bpe-modebar{display:flex;gap:4px;padding:7px 6px;background:#23262b;border-bottom:1px solid #3a3e44}
+    .bpe-modebtn{flex:1;font-size:11px;font-weight:700;padding:6px 0;border:1px solid #4a4e55;background:#33373d;color:#cfd2d6;border-radius:7px;cursor:pointer}
+    .bpe-modebtn.act{background:var(--brand,#9B1B33);color:#fff;border-color:var(--brand,#9B1B33)}
+    .bpe-thumbs.mode-reorder .bpe-th{cursor:grab}
+    .bpe-thumbs.mode-reorder .bpe-th:active{cursor:grabbing}
+    .bpe-thumbs.mode-select .bpe-th{cursor:crosshair}
+    .bpe-th.drag{opacity:.4}
+    .bpe-grip{font-size:8.5px;color:#fff;background:var(--brand,#9B1B33);text-align:center;border-radius:3px;padding:2px 0;margin-bottom:2px;cursor:grab;user-select:none;font-weight:700}
+    .bpe-grip:active{cursor:grabbing}
+    .bpe-th.over::before{content:"";position:absolute;left:-3px;right:-3px;top:-7px;height:6px;background:var(--brand,#9B1B33);border-radius:4px;box-shadow:0 0 8px 1px rgba(155,27,51,.85);z-index:6}
+    .bpe-th.over{outline:2px dashed var(--brand,#9B1B33);outline-offset:1px}
   </style>
   <div class="bpe-card">
     <div class="bpe-head"><span class="t">📄 ${esc(g.btitle)} · 페이지 편집</span><span class="x" onclick="bpeTryClose()">✕</span></div>
@@ -2029,7 +2043,13 @@ async function openBundlePageEditor(cid,bid){
       <span class="bpe-info" id="bpeInfo"></span>
     </div>
     <div class="bpe-body">
-      <div class="bpe-thumbs" id="bpeThumbs"></div>
+      <div class="bpe-thumbcol">
+        <div class="bpe-modebar">
+          <button class="bpe-modebtn act" id="bpeModeReorder" onclick="bpeSetThumbMode('reorder')" title="썸네일을 끌어서 순서를 바꿉니다">⇅ 순서</button>
+          <button class="bpe-modebtn" id="bpeModeSelect" onclick="bpeSetThumbMode('select')" title="드래그로 여러 페이지를 선택합니다">☑ 선택</button>
+        </div>
+        <div class="bpe-thumbs" id="bpeThumbs"></div>
+      </div>
       <div class="bpe-view" id="bpeView"></div>
     </div>
   </div>`;
@@ -2050,7 +2070,32 @@ function bpeApplySel(){ if(!_bpe) return; for(let k=0;k<_bpe.flat.length;k++){ c
 function bpeUpdateSelInfo(){ const el=document.getElementById("bpeSelInfo"); if(el) el.textContent=(_bpe&&_bpe.selected&&_bpe.selected.size)?`${_bpe.selected.size}개 선택됨`:""; }
 /* 드래그 박스(마퀴) 선택 + 끌면 자동 스크롤 — #bpeView 위에서 드래그하면 겹치는 페이지들이 선택된다 */
 let _bpeMarq=null;
+let _bpeDrag=null;
+function bpeRebuildFlat(){ _bpe.flat=[]; _bpe.files.forEach((f,fi)=>f.pages.forEach((p,pi)=>_bpe.flat.push({fi,pi}))); }
+function bpeDrop(to){ const from=_bpeDrag; _bpeDrag=null; if(from==null||to==null||from===to||!_bpe) return;
+  const a=_bpe.flat[from], b=_bpe.flat[to]; if(!a||!b) return;
+  if(a.fi!==b.fi){ toast("순서 변경은 같은 파일(서류) 안에서만 돼요 · 다른 서류로는 ↪ 이동을 쓰세요"); return; }
+  const arr=_bpe.files[a.fi].pages; const m=arr.splice(a.pi,1)[0]; const insertAt=(a.pi<b.pi)?b.pi-1:b.pi; arr.splice(insertAt,0,m);
+  _bpe.dirty=true; _bpe.selected=new Set(); bpeRebuildFlat(); bpeReindex(); }
+/* 순서 변경 후: 캔버스를 다시 그리지 않고 이미 만든 DOM 노드만 새 순서로 재배치 + 번호/핸들러만 갱신(화면 안 튀고 스크롤 유지) */
+function bpeReindex(){
+  const tbox=document.getElementById("bpeThumbs"), vbox=document.getElementById("bpeView"); if(!tbox||!vbox||!_bpe) return;
+  const st=vbox.scrollTop;
+  const tmap={}, vmap={};
+  tbox.querySelectorAll('.bpe-th').forEach(n=>{ tmap[n.dataset.uid]=n; });
+  vbox.querySelectorAll('.bpe-pgwrap').forEach(n=>{ vmap[n.dataset.uid]=n; });
+  for(let k=0;k<_bpe.flat.length;k++){ const {f,p}=bpePageMeta(k); const uid=p.uid;
+    const tn=tmap[uid]; if(tn){ tbox.appendChild(tn);
+      tn.onclick=()=>bpeGo(k);
+      tn.ondrop=e=>{ e.preventDefault(); tn.classList.remove("over"); bpeDrop(k); };
+      tn.ondragstart=e=>{ _bpeDrag=k; tn.classList.add("drag"); try{e.dataTransfer.effectAllowed="move";}catch(_){ } };
+      const nn=tn.querySelector('.n'); if(nn) nn.textContent=(k+1); tn.classList.remove('sel'); tn.classList.toggle('on',k===_bpe.cur); }
+    const vn=vmap[uid]; if(vn){ vbox.appendChild(vn); vn.id="bpe-pg-"+k; vn.classList.remove('sel');
+      const ov=vn.querySelector('.bpe-pgov'); if(ov) ov.innerHTML=`<span class="bpe-pgtag">📄 ${esc(f.name)} · ${k+1}p</span><button onclick="bpeRotAt(${k},-90)" title="왼쪽 회전">↺</button><button onclick="bpeRotAt(${k},90)" title="오른쪽 회전">↻</button><button class="del" onclick="bpeDelAt(${k})" title="삭제/취소">🗑</button>`; }
+  }
+  vbox.scrollTop=st; bpeUpdateSelInfo(); bpeUpdateInfo(); }
 function bpeViewMouseDown(e){ if(!_bpe) return; if(e.target.closest('.bpe-pgov')) return;
+  if(e.currentTarget&&e.currentTarget.id==="bpeThumbs"&&_bpe.thumbMode!=="select") return;
   const scrollEl=e.currentTarget||document.getElementById("bpeView");
   _bpeMarq={x0:e.clientX,y0:e.clientY,moved:false,base:new Set(_bpe.selected),dir:0,raf:null,scrollEl,fromThumb:!!(scrollEl&&scrollEl.id==="bpeThumbs")};
   const box=document.createElement("div"); box.className="bpe-marq"; box.style.cssText="position:fixed;border:1.5px solid var(--brand,#9B1B33);background:rgba(155,27,51,.12);z-index:2600;pointer-events:none;left:"+e.clientX+"px;top:"+e.clientY+"px;width:0;height:0"; document.body.appendChild(box); _bpeMarq.box=box;
@@ -2083,23 +2128,38 @@ async function bpeCanvas(f,pi,rot,maxw){
   const cv=document.createElement("canvas"); cv.width=vp.width; cv.height=vp.height; await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise; return cv;
 }
 async function bpeRenderThumbs(){
-  const box=document.getElementById("bpeThumbs"); if(!box||!_bpe) return; box.innerHTML=""; box.onmousedown=bpeViewMouseDown;
+  const box=document.getElementById("bpeThumbs"); if(!box||!_bpe) return; box.innerHTML="";
+  const reorder=(_bpe.thumbMode!=="select");
+  box.onmousedown = reorder ? null : bpeViewMouseDown;
+  box.classList.toggle("mode-reorder",reorder); box.classList.toggle("mode-select",!reorder);
   const info=document.getElementById("bpeInfo"); const kept=_bpe.flat.filter(fp=>!_bpe.files[fp.fi].pages[fp.pi].del).length;
   if(info) info.textContent=`총 ${_bpe.flat.length}p · 남길 ${kept}p`;
   for(let k=0;k<_bpe.flat.length;k++){ const fp=_bpe.flat[k]; const f=_bpe.files[fp.fi]; const p=f.pages[fp.pi];
-    const d=document.createElement("div"); d.className="bpe-th"+(k===_bpe.cur?" on":"")+(p.del?" del":""); d.onclick=()=>bpeGo(k);
+    const d=document.createElement("div"); d.className="bpe-th"+(k===_bpe.cur?" on":"")+(p.del?" del":"")+(_bpe.selected.has(k)?" sel":""); d.dataset.uid=p.uid; d.onclick=()=>bpeGo(k);
+    if(reorder){
+      d.draggable=true;
+      d.ondragstart=e=>{ _bpeDrag=k; d.classList.add("drag"); try{e.dataTransfer.effectAllowed="move";}catch(_){ } };
+      d.ondragend=()=>{ d.classList.remove("drag"); document.querySelectorAll('.bpe-th.over').forEach(x=>x.classList.remove('over')); };
+      d.ondragover=e=>{ e.preventDefault(); d.classList.add("over"); };
+      d.ondragleave=()=>{ d.classList.remove("over"); };
+      d.ondrop=e=>{ e.preventDefault(); d.classList.remove("over"); bpeDrop(k); };
+    }
     try{ d.appendChild(await bpeCanvas(f,fp.pi,p.rot,84)); }catch(_){ }
     const n=document.createElement("div"); n.className="n"; n.textContent=(k+1); d.appendChild(n);
     if(p.del){ const dx=document.createElement("div"); dx.className="dx"; dx.textContent="삭제"; d.appendChild(dx); }
     box.appendChild(d);
   }
 }
+function bpeSetThumbMode(m){ if(!_bpe) return; _bpe.thumbMode=m;
+  const r=document.getElementById("bpeModeReorder"), s=document.getElementById("bpeModeSelect");
+  if(r) r.classList.toggle("act",m==="reorder"); if(s) s.classList.toggle("act",m==="select");
+  _bpe.selected=new Set(); bpeRenderThumbs(); bpeApplySel(); }
 async function bpeRenderView(){
   const v=document.getElementById("bpeView"); if(!v||!_bpe) return; v.innerHTML="";
   const maxw=Math.min(560,(v.clientWidth||600)-40);
   for(let k=0;k<_bpe.flat.length;k++){
     const {f,p,fp}=bpePageMeta(k);
-    const wrap=document.createElement("div"); wrap.className="bpe-pgwrap"+(p.del?" del":""); wrap.id="bpe-pg-"+k;
+    const wrap=document.createElement("div"); wrap.className="bpe-pgwrap"+(p.del?" del":""); wrap.id="bpe-pg-"+k; wrap.dataset.uid=p.uid;
     const ov=document.createElement("div"); ov.className="bpe-pgov";
     ov.innerHTML=`<span class="bpe-pgtag">📄 ${esc(f.name)} · ${k+1}p</span><button onclick="bpeRotAt(${k},-90)" title="왼쪽 회전">↺</button><button onclick="bpeRotAt(${k},90)" title="오른쪽 회전">↻</button><button class="del" onclick="bpeDelAt(${k})" title="삭제/취소">🗑</button>`;
     wrap.appendChild(ov);
