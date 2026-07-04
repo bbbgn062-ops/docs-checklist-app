@@ -2112,7 +2112,7 @@ async function previewBundle(cid,bid){
   const groups=fileGroups(c); // 파일이 든 묶음만
   if(!groups.length){ toast("첨부된 파일이 없습니다"); return; }
   let idx=groups.findIndex(g=>g.bid===bid); if(idx<0) idx=0;
-  _pvbCtx={cid, groups, idx, token:0};
+  _pvbCtx={cid, groups, idx, token:0, editMode:false};
   const side=groups.map((g,i)=>{ const fc=g.items.reduce((a,it)=>a+it.files.length,0);
     return `<div class="pvb-item ${i===idx?'on':''}" onclick="pvbGo(${i})"><span>${g.bi+1}. ${esc(dlBlockLabel(g.bid,g.btitle))}</span><span class="pvb-c">${fc}</span></div>`; }).join("");
   modal(`
@@ -2132,8 +2132,19 @@ async function previewBundle(cid,bid){
       .pvb-title{font-size:12.5px;color:#555;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .pvb-toggle{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:#999;cursor:pointer;white-space:nowrap}
       .pvb-sw{width:40px;height:22px;border-radius:12px;background:#ccc;position:relative}
-      .pvb-sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff}
+      .pvb-sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .12s}
+      .pvb-sw.on{background:var(--brand,#9B1B33)}
+      .pvb-sw.on::after{left:20px}
+      .pvb-toggle.on{color:var(--brand,#9B1B33);font-weight:700}
       .pvb-soon{font-size:10px;color:#a77;border:1px solid #ddb;border-radius:5px;padding:1px 5px}
+      .pvb-editwrap{flex:1;overflow-y:auto;padding:8px 6px}
+      .pvb-edithint{font-size:12px;color:#fff;background:#4a4e55;border-radius:8px;padding:9px 11px;margin-bottom:10px;line-height:1.55}
+      .pvb-erow{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;margin-bottom:7px;background:#fff}
+      .pvb-ekind{flex:0 0 auto;font-size:10.5px;font-weight:700;color:#fff;background:#8a8a8a;border-radius:5px;padding:2px 7px}
+      .pvb-erow.pdf .pvb-ekind{background:#c0392b}
+      .pvb-erow.img .pvb-ekind{background:#2d7d46}
+      .pvb-ename{flex:1;min-width:0;font-size:13px;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .pvb-enoedit{flex:0 0 auto;font-size:11.5px;color:#999}
       .pvb-pv{flex:1;display:flex;flex-direction:column;background:#33373d;padding:10px;overflow:hidden;max-height:74vh}
       .pvb-exnote{color:#ffe9b0;font-size:12px;padding:0 4px 8px;text-align:center;line-height:1.6}
       .pvb-viewer{display:flex;gap:8px;flex:1;min-height:0}
@@ -2162,7 +2173,7 @@ async function previewBundle(cid,bid){
         <div class="pvb-modebar">
           <button class="pvb-hbtn" onclick="pvbToggleSide()" title="묶음 목록 접기/펴기">☰ 묶음</button>
           <span class="pvb-title" id="pvbTitle">불러오는 중…</span>
-          <label class="pvb-toggle" onclick="toast('편집 기능은 곧 추가됩니다 (준비 중)')">편집모드 <span class="pvb-sw"></span> <span class="pvb-soon">준비중</span></label>
+          <label class="pvb-toggle" onclick="pvbToggleEdit()">편집모드 <span class="pvb-sw"></span></label>
         </div>
         <div id="pvBundleBody" class="pvb-pv"><div class="pvb-msg">묶음 PDF 만드는 중…</div></div>
       </div>
@@ -2176,7 +2187,34 @@ async function previewBundle(cid,bid){
 function pvbToggleSide(){ const w=document.querySelector('.pvb-wrap'); if(w) w.classList.toggle('side-off'); }
 function pvbGo(i){ if(!_pvbCtx) return; _pvbCtx.idx=i;
   document.querySelectorAll('.pvb-item').forEach((el,k)=>el.classList.toggle('on',k===i));
-  pvbRender(); }
+  _pvbCtx.editMode ? pvbRenderEditList() : pvbRender(); }
+/* 편집모드 토글 — 켜면 그 묶음의 '서류 목록 + ✏편집' 화면으로 바뀜(기존 편집기 재사용). 끄면 합본 미리보기로 복귀 */
+function pvbToggleEdit(){ if(!_pvbCtx) return; _pvbCtx.editMode=!_pvbCtx.editMode;
+  const sw=document.querySelector('.pvb-toggle .pvb-sw'); if(sw) sw.classList.toggle('on',_pvbCtx.editMode);
+  const lb=document.querySelector('.pvb-toggle'); if(lb) lb.classList.toggle('on',_pvbCtx.editMode);
+  _pvbCtx.editMode ? pvbRenderEditList() : pvbRender(); }
+/* 편집모드 화면: 그 묶음의 파일들을 목록으로 보여주고, 각 파일에 맞는 기존 편집기(이미지/PDF)를 연다.
+   저장은 기존 편집기 로직이 원본을 편집본으로 교체 → 미리보기·다운로드·출력에도 자동 반영(새 저장 코드 없음) */
+function pvbRenderEditList(){
+  const ctx=_pvbCtx; if(!ctx) return;
+  const g=ctx.groups[ctx.idx];
+  const titleEl=document.getElementById("pvbTitle");
+  if(titleEl) titleEl.textContent=`✏ ${dlBlockLabel(g.bid,g.btitle)} · 편집할 서류 선택`;
+  const body=document.getElementById("pvBundleBody"); if(!body) return;
+  let rows="";
+  g.items.forEach(it=>{ it.files.forEach(fo=>{
+    const ext=extOf(fo.f.name).toLowerCase();
+    const isImg=[".jpg",".jpeg",".png",".gif",".webp"].includes(ext);
+    const isPdf=(ext===".pdf");
+    const kind=isPdf?"PDF":isImg?"이미지":(ext.replace(".","").toUpperCase()||"파일");
+    const cls=isPdf?"pdf":isImg?"img":"";
+    const btn=isPdf?`<button class="btn btn-sm" onclick="openPdfEditor('${ctx.cid}','${it.id}',${fo.idx})">✏ 편집</button>`
+             :isImg?`<button class="btn btn-sm" onclick="openImgEditor('${ctx.cid}','${it.id}',${fo.idx})">✏ 편집</button>`
+             :`<span class="pvb-enoedit">편집 불가 · 다운로드로 수정</span>`;
+    rows+=`<div class="pvb-erow ${cls}"><span class="pvb-ekind">${kind}</span><span class="pvb-ename">${esc(fo.f.name)}</span>${btn}</div>`;
+  }); });
+  body.innerHTML=`<div class="pvb-editwrap"><div class="pvb-edithint">✏ 편집할 서류를 눌러 회전·삭제·자르기 하세요. 저장하면 그 서류가 편집본으로 바뀌고, 이후 미리보기·다운로드·출력에도 그대로 반영됩니다.</div>${rows||'<div class="pvb-edithint">이 묶음에 편집할 파일이 없습니다.</div>'}</div>`;
+}
 function pvbMarkThumb(n){ document.querySelectorAll('.pvb-thumb').forEach(el=>el.classList.toggle('on', String(el.dataset.n)===String(n))); }
 /* 합본 PDF를 한 번의 pdf.js 로딩으로 [큰 미리보기]와 [작은 페이지 썸네일]에 동시에 그린다. 썸네일 클릭 → 그 페이지로 스크롤 이동 */
 async function pvbRenderPdf(bytes, bigEl, thumbEl, token){
