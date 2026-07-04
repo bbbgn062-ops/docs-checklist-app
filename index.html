@@ -2222,21 +2222,83 @@ function pvbRenderEditList(){
 /* 안전 원칙: 서버(documents.doc_key) 저장을 먼저 시도해 성공했을 때만 화면 데이터를 바꾼다.
    실패하면 아무것도 바뀌지 않아(원상태 유지) 파일이 엉뚱한 서류로 새지 않는다. 파일은 이미 업로드돼 있으므로 재업로드·삭제 없음(참조 이동). */
 let _pvbMoveCtx=null;
+/* 최근 옮긴 서류(빠른 이동 칩용) — 브라우저에 기억 */
+function pvbRecentTargets(){ try{ return JSON.parse(localStorage.getItem('pvbRecentTargets')||'[]'); }catch(_){ return []; } }
+function pvbPushRecent(id){ try{ let a=pvbRecentTargets().filter(x=>String(x)!==String(id)); a.unshift(id); a=a.slice(0,4); localStorage.setItem('pvbRecentTargets',JSON.stringify(a)); }catch(_){ } }
+/* 이동창: 2단(묶음/서류) + 큰 검색 + 최근칩 + 클릭 즉시 이동 (기능=시안3, 디자인=시안2) */
 function pvbMoveFile(cid,srcId,idx){
   const c=findClient(cid); const f=((c.items[srcId]||{}).files||[])[idx]; if(!f){ return; }
-  _pvbMoveCtx={cid,srcId,idx};
+  _pvbMoveCtx={cid,srcId,idx,q:"",bundleIdx:0};
   const d=document.createElement("div"); d.className="ib-ov"; d.id="pvbMoveOv"; d.style.zIndex="90";
-  d.innerHTML=`<div class="ib-modal">
-    <h3 style="word-break:break-all">'${esc(f.name)}'를 어느 서류로 옮길까요?</h3>
-    <div class="ib-srch">🔎<input id="pvbMq" placeholder="서류 이름 검색 (예: 주민, 통장)" autocomplete="off"></div>
-    <div class="ib-slist" id="pvbMlist">${_ibSlotsHtml("")}</div>
-    <div class="ib-mfoot"><button class="ib-btn sm" onclick="pvbCloseMove()">닫기</button></div>
+  d.innerHTML=`<style>
+    .pm-card{background:#fff;border-radius:14px;overflow:hidden;width:560px;max-width:94vw;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+    .pm-top{background:var(--brand,#9B1B33);color:#fff;padding:14px 16px;display:flex;align-items:flex-start;gap:10px}
+    .pm-top .fn{font-size:12px;opacity:.92;word-break:break-all}
+    .pm-top .q{font-size:15px;font-weight:700;margin-top:2px}
+    .pm-x{margin-left:auto;color:#fff;font-size:19px;cursor:pointer;opacity:.85}
+    .pm-srch{display:flex;align-items:center;gap:9px;margin:13px 16px 4px;border:2px solid var(--brand,#9B1B33);border-radius:11px;padding:11px 13px}
+    .pm-srch input{border:none;outline:none;font-size:15px;flex:1;background:none;color:#222}
+    .pm-lbl{font-size:11px;font-weight:800;color:#8a8a8a;padding:8px 18px 3px}
+    .pm-chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 6px}
+    .pm-chip{font-size:12.5px;border:1px solid var(--brand,#9B1B33);color:var(--brand,#9B1B33);border-radius:18px;padding:6px 12px;background:#fff;cursor:pointer;font-weight:700}
+    .pm-body{display:flex;min-height:230px;max-height:44vh}
+    .pm-left{width:150px;flex:0 0 150px;background:#faf7f8;border-right:1px solid #eee;overflow:auto;padding:6px 5px}
+    .pm-bnd{display:flex;align-items:center;gap:5px;padding:10px 9px;border-radius:8px;font-size:12.5px;color:#444;cursor:pointer;margin-bottom:2px}
+    .pm-bnd .c{margin-left:auto;font-size:11px;color:#8a8a8a}
+    .pm-bnd.on{background:var(--brand,#9B1B33);color:#fff;font-weight:700}
+    .pm-bnd.on .c{color:#f3c9d1}
+    .pm-right{flex:1;overflow:auto;padding:6px 8px}
+    .pm-flat{max-height:44vh;overflow:auto;padding:2px 10px 8px}
+    .pm-row{display:flex;align-items:center;gap:10px;padding:12px 11px;border-radius:10px;cursor:pointer}
+    .pm-row:hover{background:var(--brand-soft,#F4E4E8)}
+    .pm-row .t{font-size:14px;font-weight:600}
+    .pm-row .d{font-size:11px;color:#8a8a8a;font-weight:400;margin-top:1px}
+    .pm-row.here{background:#f6f6f6;cursor:default}
+    .pm-cnt{font-size:11px;color:#8a8a8a;background:#f1f1f1;border-radius:12px;padding:2px 9px}
+    .pm-here{font-size:10px;font-weight:700;color:#fff;background:#999;border-radius:6px;padding:2px 7px}
+    .pm-foot{padding:9px 12px;font-size:11.5px;color:#8a8a8a;text-align:center;border-top:1px solid #eee}
+  </style>
+  <div class="pm-card">
+    <div class="pm-top"><div><div class="fn">📄 ${esc(f.name)}</div><div class="q">어느 서류로 옮길까요?</div></div><span class="pm-x" onclick="pvbCloseMove()">✕</span></div>
+    <div class="pm-srch">🔎 <input id="pvbMq" placeholder="서류 이름으로 빠르게 찾기" autocomplete="off" oninput="pvbMoveSearch(this.value)"></div>
+    <div id="pvbMchips"></div>
+    <div id="pvbMlist"></div>
+    <div class="pm-foot">서류를 누르면 바로 이동합니다 · 잘못 옮겼으면 그 서류에서 다시 옮기면 됩니다</div>
   </div>`;
   $("#modalRoot").appendChild(d);
   d.addEventListener("click",e=>{ if(e.target===d) pvbCloseMove(); });
-  const pq=d.querySelector("#pvbMq"); if(pq) pq.addEventListener("input",()=>{ const l=d.querySelector("#pvbMlist"); if(l) l.innerHTML=_ibSlotsHtml(pq.value); });
-  const list=d.querySelector("#pvbMlist"); if(list) list.addEventListener("click",e=>{ const it=e.target.closest(".ib-sitem"); if(it&&it.dataset.s) pvbDoMove(it.dataset.s); });
-  setTimeout(()=>{ if(pq) pq.focus(); },30);
+  pvbMoveRenderChips(); pvbMoveRender();
+  setTimeout(()=>{ const q=d.querySelector("#pvbMq"); if(q) q.focus(); },30);
+}
+function pvbMoveSearch(v){ if(!_pvbMoveCtx) return; _pvbMoveCtx.q=(v||"").trim(); pvbMoveRender(); }
+function pvbMoveBundle(i){ if(!_pvbMoveCtx) return; _pvbMoveCtx.bundleIdx=i; pvbMoveRender(); }
+function _pvbSlotRow(it,c,srcId,noteFallback){
+  const s=(c.items[it.id])||{}; const cnt=(s.files&&s.files.length)||0; const here=String(it.id)===String(srcId);
+  const nt=esc(it.note||noteFallback||"");
+  if(here) return `<div class="pm-row here"><div style="flex:1;min-width:0"><div class="t">${esc(it.name)}</div>${nt?`<div class="d">${nt}</div>`:""}</div><span class="pm-here">지금 여기</span></div>`;
+  return `<div class="pm-row" onclick="pvbDoMove('${esc(it.id)}')"><div style="flex:1;min-width:0"><div class="t">${esc(it.name)}</div>${nt?`<div class="d">${nt}</div>`:""}</div><span class="pm-cnt">${cnt}개</span></div>`;
+}
+function pvbMoveRenderChips(){
+  const ctx=_pvbMoveCtx; if(!ctx) return; const box=document.getElementById("pvbMchips"); if(!box) return;
+  const rec=pvbRecentTargets().filter(id=>ITEM_BY_ID[id]&&String(id)!==String(ctx.srcId)).slice(0,4);
+  if(!rec.length){ box.innerHTML=""; return; }
+  box.innerHTML=`<div class="pm-lbl">⏱ 최근 옮긴 서류</div><div class="pm-chips">`+rec.map(id=>`<span class="pm-chip" onclick="pvbDoMove('${esc(id)}')">${esc(ITEM_BY_ID[id].name)}</span>`).join("")+`</div>`;
+}
+function pvbMoveRender(){
+  const ctx=_pvbMoveCtx; if(!ctx) return; const c=findClient(ctx.cid); const list=document.getElementById("pvbMlist"); if(!list) return;
+  const q=(ctx.q||"").toLowerCase();
+  if(q){
+    let rows="";
+    TEMPLATE.forEach(b=>{ b.groups.forEach(g=>g.items.forEach(it=>{ if(it.name.toLowerCase().includes(q)) rows+=_pvbSlotRow(it,c,ctx.srcId,b.title); })); });
+    try{ Object.values(c.extra||{}).forEach(arr=>arr.forEach(ex=>{ if((ex.name||"").toLowerCase().includes(q)) rows+=_pvbSlotRow(ex,c,ctx.srcId,"추가서류"); })); }catch(_){ }
+    list.innerHTML=`<div class="pm-flat">${rows||'<div class="pm-foot" style="border:none">검색 결과가 없어요</div>'}</div>`;
+    return;
+  }
+  const bi=Math.min(ctx.bundleIdx||0, TEMPLATE.length-1);
+  const left=TEMPLATE.map((b,i)=>{ const cnt=b.groups.reduce((a,g)=>a+g.items.length,0); return `<div class="pm-bnd ${i===bi?'on':''}" onclick="pvbMoveBundle(${i})"><span>${esc(b.title.replace(/^채무자\s*/,''))}</span><span class="c">${cnt}</span></div>`; }).join("");
+  const b=TEMPLATE[bi]; let right="";
+  b.groups.forEach(g=>g.items.forEach(it=>{ right+=_pvbSlotRow(it,c,ctx.srcId,null); }));
+  list.innerHTML=`<div class="pm-body"><div class="pm-left">${left}</div><div class="pm-right">${right}</div></div>`;
 }
 function pvbCloseMove(){ const d=$("#pvbMoveOv"); if(d) d.remove(); }
 async function pvbDoMove(tgtId){
@@ -2261,6 +2323,7 @@ async function pvbDoMove(tgtId){
     try{ applyTags(c); }catch(_){}
     touch(`[${c.name}] '${itemName(ctx.srcId,c)}' → '${itemName(tgtId,c)}' 파일 이동: ${f.name}`);
     if(typeof BACKEND!=="undefined" && BACKEND==="supabase"){ try{ await sbSaveFileOrder(ctx.cid,tgtId); await sbSaveFileOrder(ctx.cid,ctx.srcId); }catch(_){} }
+    try{ pvbPushRecent(tgtId); }catch(_){ }
     closeModal(); renderDetail(ctx.cid);
     toast(`'${itemName(tgtId,c)}'로 옮겼습니다 ✓ (미리보기를 다시 열면 반영돼요)`);
   }catch(e){ console.error(e); toast("이동 실패: "+((e&&e.message)||e)+" — 원상태 유지"); setSync("error"); }
