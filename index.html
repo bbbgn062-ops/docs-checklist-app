@@ -1974,7 +1974,7 @@ async function openBundlePageEditor(cid,bid){
   } }
   if(!files.length){ toast("편집할 수 있는 파일(PDF·이미지)이 없습니다"); return; }
   const flat=[]; files.forEach((f,fi)=>f.pages.forEach((p,pi)=>flat.push({fi,pi})));
-  _bpe={cid,bid,btitle:g.btitle,files,flat,cur:0,dirty:false};
+  _bpe={cid,bid,btitle:g.btitle,files,flat,cur:0,dirty:false,selected:new Set()};
   const d=document.createElement("div"); d.id="bpeOv";
   d.style.cssText="position:fixed;inset:0;z-index:2500;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:14px";
   d.innerHTML=`<style>
@@ -2009,6 +2009,9 @@ async function openBundlePageEditor(cid,bid){
     .bpe-pgov button{width:26px;height:26px;border:none;border-radius:6px;background:#fff;font-size:12px;cursor:pointer}
     .bpe-pgov button.del{background:#ffd9d9}
     .bpe-delflag{position:absolute;top:8px;left:8px;background:rgba(179,38,30,.92);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;z-index:2}
+    .bpe-pgwrap.sel .bpe-pgc canvas,.bpe-pgwrap.sel .bpe-pgc img{outline:3px solid var(--brand,#9B1B33);outline-offset:2px}
+    .bpe-th.sel{border-color:var(--brand,#9B1B33);box-shadow:0 0 0 2px var(--brand,#9B1B33)}
+    .bpe-view{user-select:none}
   </style>
   <div class="bpe-card">
     <div class="bpe-head"><span class="t">📄 ${esc(g.btitle)} · 페이지 편집</span><span class="x" onclick="bpeTryClose()">✕</span></div>
@@ -2018,6 +2021,8 @@ async function openBundlePageEditor(cid,bid){
       <span class="bpe-sep"></span>
       <button class="bpe-tbtn del" id="bpeDelBtn" onclick="bpeDel()">🗑 이 페이지 삭제</button>
       <button class="bpe-tbtn" onclick="bpeReset()">↩ 전체 되돌리기</button>
+      <button class="bpe-tbtn" onclick="bpeClearSel()">선택 해제</button>
+      <span id="bpeSelInfo" style="font-size:11.5px;color:var(--brand,#9B1B33);font-weight:700"></span>
       <span class="bpe-sep"></span>
       <button class="bpe-tbtn save" onclick="bpeSave()">💾 저장</button>
       <span class="bpe-info" id="bpeInfo"></span>
@@ -2036,8 +2041,30 @@ function bpeClose(){ if(_bpe){ _bpe.files.forEach(f=>{ if(f.imgUrl){ try{URL.rev
 function bpePageMeta(k){ const fp=_bpe.flat[k]; return {f:_bpe.files[fp.fi], p:_bpe.files[fp.fi].pages[fp.pi], fp}; }
 function bpeMarkThumb(k){ document.querySelectorAll('.bpe-th').forEach((el,i)=>el.classList.toggle('on',i===k)); }
 function bpeUpdateInfo(){ const info=document.getElementById("bpeInfo"); if(!info||!_bpe) return; const kept=_bpe.flat.filter(fp=>!_bpe.files[fp.fi].pages[fp.pi].del).length; info.textContent=`총 ${_bpe.flat.length}p · 남길 ${kept}p`; }
-function bpeRot(deg){ if(_bpe) bpeRotAt(_bpe.cur||0,deg); }
-function bpeDel(){ if(_bpe) bpeDelAt(_bpe.cur||0); }
+function bpeSelKeys(){ return (_bpe&&_bpe.selected&&_bpe.selected.size)? [..._bpe.selected] : [_bpe?(_bpe.cur||0):0]; }
+function bpeRot(deg){ if(!_bpe) return; bpeSelKeys().forEach(k=>bpeRotAt(k,deg)); }
+function bpeDel(){ if(!_bpe) return; bpeSelKeys().forEach(k=>bpeDelAt(k)); }
+function bpeClearSel(){ if(!_bpe) return; _bpe.selected=new Set(); bpeApplySel(); }
+function bpeApplySel(){ if(!_bpe) return; for(let k=0;k<_bpe.flat.length;k++){ const w=document.getElementById("bpe-pg-"+k); if(w) w.classList.toggle("sel",_bpe.selected.has(k)); const th=document.querySelectorAll('.bpe-th')[k]; if(th) th.classList.toggle("sel",_bpe.selected.has(k)); } bpeUpdateSelInfo(); }
+function bpeUpdateSelInfo(){ const el=document.getElementById("bpeSelInfo"); if(el) el.textContent=(_bpe&&_bpe.selected&&_bpe.selected.size)?`${_bpe.selected.size}개 선택됨`:""; }
+/* 드래그 박스(마퀴) 선택 + 끌면 자동 스크롤 — #bpeView 위에서 드래그하면 겹치는 페이지들이 선택된다 */
+let _bpeMarq=null;
+function bpeViewMouseDown(e){ if(!_bpe) return; if(e.target.closest('.bpe-pgov')) return;
+  _bpeMarq={x0:e.clientX,y0:e.clientY,moved:false,base:new Set(_bpe.selected),dir:0,raf:null};
+  const box=document.createElement("div"); box.className="bpe-marq"; box.style.cssText="position:fixed;border:1.5px solid var(--brand,#9B1B33);background:rgba(155,27,51,.12);z-index:2600;pointer-events:none;left:"+e.clientX+"px;top:"+e.clientY+"px;width:0;height:0"; document.body.appendChild(box); _bpeMarq.box=box;
+  window.addEventListener("mousemove",bpeViewMouseMove); window.addEventListener("mouseup",bpeViewMouseUp); e.preventDefault(); }
+function bpeViewMouseMove(e){ if(!_bpeMarq) return; _bpeMarq.moved=true;
+  const x=e.clientX,y=e.clientY; const L=Math.min(x,_bpeMarq.x0),T=Math.min(y,_bpeMarq.y0),R=Math.max(x,_bpeMarq.x0),B=Math.max(y,_bpeMarq.y0);
+  const b=_bpeMarq.box; b.style.left=L+"px"; b.style.top=T+"px"; b.style.width=(R-L)+"px"; b.style.height=(B-T)+"px";
+  _bpe.selected=new Set(_bpeMarq.base);
+  for(let k=0;k<_bpe.flat.length;k++){ const w=document.getElementById("bpe-pg-"+k); if(!w) continue; const r=w.getBoundingClientRect(); if(!(r.right<L||r.left>R||r.bottom<T||r.top>B)) _bpe.selected.add(k); }
+  bpeApplySel();
+  const v=document.getElementById("bpeView"); const vr=v.getBoundingClientRect(); _bpeMarq.dir=(y<vr.top+40)?-1:(y>vr.bottom-40)?1:0;
+  if(_bpeMarq.dir && !_bpeMarq.raf) bpeAutoScroll(); }
+function bpeAutoScroll(){ if(!_bpeMarq) return; const v=document.getElementById("bpeView"); if(v && _bpeMarq.dir) v.scrollTop += _bpeMarq.dir*14; _bpeMarq.raf=_bpeMarq.dir?requestAnimationFrame(bpeAutoScroll):null; }
+function bpeViewMouseUp(){ window.removeEventListener("mousemove",bpeViewMouseMove); window.removeEventListener("mouseup",bpeViewMouseUp);
+  if(_bpeMarq){ if(_bpeMarq.box) _bpeMarq.box.remove(); if(_bpeMarq.raf) cancelAnimationFrame(_bpeMarq.raf); if(!_bpeMarq.moved){ _bpe.selected=new Set(); bpeApplySel(); } }
+  _bpeMarq=null; bpeUpdateSelInfo(); }
 async function bpeRotAt(k,deg){ if(!_bpe) return; const {p}=bpePageMeta(k); p.rot=((p.rot+deg)%360+360)%360; _bpe.dirty=true; await bpeRefreshPage(k); }
 async function bpeDelAt(k){ if(!_bpe) return; const {p}=bpePageMeta(k); p.del=!p.del; _bpe.dirty=true; await bpeRefreshPage(k); }
 function bpeReset(){ if(!_bpe) return; _bpe.files.forEach(f=>f.pages.forEach(p=>{p.rot=0;p.del=false;})); _bpe.dirty=false; bpeRenderThumbs(); bpeRenderView(); }
@@ -2080,6 +2107,7 @@ async function bpeRenderView(){
   }
   bpeUpdateInfo();
   v.onscroll=()=>{ if(!_bpe) return; const br=v.getBoundingClientRect(); let cur=0; for(let k=0;k<_bpe.flat.length;k++){ const w=document.getElementById("bpe-pg-"+k); if(!w) continue; if(w.getBoundingClientRect().top - br.top <= 90) cur=k; else break; } _bpe.cur=cur; bpeMarkThumb(cur); const th=document.querySelectorAll('.bpe-th')[cur]; if(th) th.scrollIntoView({block:"nearest"}); };
+  v.onmousedown=bpeViewMouseDown; bpeApplySel();
 }
 async function bpeRefreshPage(k){
   if(!_bpe) return; const {f,p,fp}=bpePageMeta(k);
