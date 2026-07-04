@@ -575,8 +575,8 @@ const WHERE_MSG = {
   "b5-2":"담당자가 추가로 요청드린 기타 서류",
   "b6-1":"은행 고객센터에 연락하시거나 은행 앱에서 거래내역서를 받으실 수 있어요. 가급적 PDF보다 엑셀(xlsx) 파일로 보내주시면 감사하겠습니다",
   "b6-2":"카드사 고객센터에 연락하시거나 카드사 앱에서 카드 거래내역서를 받으실 수 있어요. 가급적 PDF보다 엑셀(xlsx) 파일로 보내주시면 감사하겠습니다",
-  "b7-1":"판사님께 편지 쓴다고 생각하시고, 빚이 늘어나게 된 사정을 순서대로 정리해 주세요(양식 참고)",
-  "b7-2":"현재 거주 중인 집에 대해 '무상거주 사실확인서' 양식에 맞게 작성 부탁드립니다",
+  "b7-1":"빚이 늘어나게 된 사정을 시간 순서로 정리해 주세요(자유 양식)",
+  "b7-2":"현재 거주 중인 집의 소유자분이 '무상거주 사실확인서'에 서명해 주셔야 합니다",
 };
 function msgWhere(id){ return WHERE_MSG[id] || WHERE[id] || ""; }
 
@@ -1391,12 +1391,14 @@ function renderDetail(id){
       const isCol = collapsed[c.id+b.id];
       if(!anyVis && naHidden===0) return; // 보일 것도, 더보기할 것도 없으면 숨김
       const bpct=bp.total?Math.round(bp.done/bp.total*100):0;
+      const bHasFiles = collectBundleItems(c,b).some(it=>{ const s=c.items[it.id]; return s&&s.files&&s.files.length; }); // 이 묶음에 첨부파일이 하나라도 있나(합본 미리보기 버튼 표시 조건)
       html+=`<div class="bundle ${isCol?'collapsed':''}">
         <div class="bundle-head" style="flex-direction:column;align-items:stretch;gap:9px" onclick="toggleBundle('${c.id}','${b.id}')">
           <div style="display:flex;align-items:center;gap:11px">
             <div class="bnum" style="background:var(--brand-soft);color:var(--brand)">${bi+1}</div>
             <div class="bundle-title">${esc(b.title)}</div>
             <div class="bundle-prog">${bp.done}/${bp.total}</div>
+            ${bHasFiles?`<button class="btn btn-sm" style="margin-left:auto;padding:3px 10px;font-size:12px;white-space:nowrap" onclick="event.stopPropagation();previewBundle('${c.id}','${b.id}')" title="이 묶음 파일을 하나의 PDF로 합쳐 미리보기(출력 전 점검)">📄 묶음 미리보기</button>`:""}
             <div class="caret">▾</div>
           </div>
           <div class="tbar"><i style="width:${bpct}%"></i></div>
@@ -1736,12 +1738,12 @@ function fileDrop(cid,id,idx){
   const d=_fileDrag; _fileDrag=null;
   if(!d||d.cid!==cid||d.id!==id||d.idx===idx) return;
   const c=findClient(cid); const arr=c.items[id].files; const m=arr.splice(d.idx,1)[0]; arr.splice(idx,0,m);
-  touch(`[${c.name}] '${itemName(id,c)}' 파일 순서 변경`); renderDetail(cid); sbSaveFileOrder(cid,id);
+  touch(`[${c.name}] '${itemName(id,c)}' 파일 순서 변경`); renderDetail(cid);
 }
 function moveFile(cid,id,idx,dir){
   const c=findClient(cid); const arr=c.items[id].files; const j=idx+dir; if(j<0||j>=arr.length) return;
   const t=arr[idx]; arr[idx]=arr[j]; arr[j]=t;
-  touch(`[${c.name}] '${itemName(id,c)}' 파일 순서 변경`); renderDetail(cid); sbSaveFileOrder(cid,id);
+  touch(`[${c.name}] '${itemName(id,c)}' 파일 순서 변경`); renderDetail(cid);
 }
 async function openPreviewAll(cid,id){
   const c=findClient(cid); const s=c.items[id]; const files=(s&&s.files)||[]; if(!files.length) return;
@@ -2099,6 +2101,157 @@ async function doDownload(){
     }
     await deliverEach(outs);
   }catch(e){ console.error(e); toast("다운로드 실패: "+e.message); }
+}
+/* ---------- 6d. 묶음 합본 미리보기 (사이드바형 · 출력 전 점검용) ---------- */
+/* 출력('묶음 PDF로 합치기')과 동일 로직·순서로 그 묶음 파일을 한 PDF로 합쳐 팝업으로 보여준다.
+   왼쪽 묶음 목록으로 다른 묶음도 바로 넘겨볼 수 있다. 편집모드 토글은 2단계에서 실제 편집(회전·삭제·순서·자르기)이 붙는다(현재 준비 중). */
+let _pvbCtx=null;
+async function previewBundle(cid,bid){
+  if(!filesReady() && !githubReady()){ toast("설정(드라이브/깃헙) 연결 후 미리보기가 가능합니다"); return; }
+  const c=ensureItems(findClient(cid));
+  const groups=fileGroups(c); // 파일이 든 묶음만
+  if(!groups.length){ toast("첨부된 파일이 없습니다"); return; }
+  let idx=groups.findIndex(g=>g.bid===bid); if(idx<0) idx=0;
+  _pvbCtx={cid, groups, idx, token:0};
+  const side=groups.map((g,i)=>{ const fc=g.items.reduce((a,it)=>a+it.files.length,0);
+    return `<div class="pvb-item ${i===idx?'on':''}" onclick="pvbGo(${i})"><span>${g.bi+1}. ${esc(dlBlockLabel(g.bid,g.btitle))}</span><span class="pvb-c">${fc}</span></div>`; }).join("");
+  modal(`
+    <style>
+      .pvb-wrap{display:flex;border:1px solid var(--line,#e3e3e3);border-radius:10px;overflow:hidden;min-height:58vh}
+      .pvb-side{width:180px;flex:0 0 180px;background:#faf7f8;border-right:1px solid var(--line,#e3e3e3);padding:8px 6px;overflow:auto;max-height:74vh}
+      .pvb-wrap.side-off .pvb-side{display:none}
+      .pvb-sh{font-size:11.5px;color:#8a8a8a;font-weight:700;padding:4px 8px 8px}
+      .pvb-item{display:flex;align-items:center;gap:6px;padding:9px 9px;border-radius:8px;font-size:12.5px;color:#444;cursor:pointer;margin-bottom:3px}
+      .pvb-item .pvb-c{margin-left:auto;font-size:11px;color:#8a8a8a}
+      .pvb-item:hover{background:#f0e6e9}
+      .pvb-item.on{background:var(--brand,#9B1B33);color:#fff;font-weight:700}
+      .pvb-item.on .pvb-c{color:#f3c9d1}
+      .pvb-main{flex:1;display:flex;flex-direction:column;min-width:0}
+      .pvb-modebar{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--line,#e3e3e3);background:#fff}
+      .pvb-hbtn{border:1px solid var(--line,#e3e3e3);background:#fff;border-radius:7px;padding:5px 9px;font-size:12px;cursor:pointer;white-space:nowrap;color:#444}
+      .pvb-title{font-size:12.5px;color:#555;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .pvb-toggle{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:#999;cursor:pointer;white-space:nowrap}
+      .pvb-sw{width:40px;height:22px;border-radius:12px;background:#ccc;position:relative}
+      .pvb-sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff}
+      .pvb-soon{font-size:10px;color:#a77;border:1px solid #ddb;border-radius:5px;padding:1px 5px}
+      .pvb-pv{flex:1;display:flex;flex-direction:column;background:#33373d;padding:10px;overflow:hidden;max-height:74vh}
+      .pvb-exnote{color:#ffe9b0;font-size:12px;padding:0 4px 8px;text-align:center;line-height:1.6}
+      .pvb-viewer{display:flex;gap:8px;flex:1;min-height:0}
+      .pvb-thumbs{display:none;width:158px;flex:0 0 158px;overflow-y:auto;background:#2b2e33;border-radius:6px;padding:9px 8px}
+      .pvb-wrap.side-off .pvb-thumbs{display:block}
+      .pvb-thumb{background:#fff;border-radius:4px;margin-bottom:10px;border:2px solid transparent;cursor:pointer;padding:4px}
+      .pvb-thumb.on{border-color:var(--brand,#9B1B33)}
+      .pvb-thumb canvas{display:block;width:100%;height:auto;border-radius:2px}
+      .pvb-thumb-n{font-size:11.5px;color:#ccc;text-align:center;margin-top:3px}
+      .pvb-big{flex:1;overflow-y:auto;text-align:center;min-width:0}
+      .pvb-msg{color:#fff;padding:24px}
+      @media(max-width:640px){
+        .pvb-wrap{flex-direction:column}
+        .pvb-side{width:auto;flex:none;display:flex;gap:6px;overflow-x:auto;max-height:none;border-right:none;border-bottom:1px solid var(--line,#e3e3e3)}
+        .pvb-wrap.side-off .pvb-side{display:none}
+        .pvb-sh{display:none} .pvb-item{flex:0 0 auto;white-space:nowrap}
+        .pvb-viewer{flex-direction:column}
+        .pvb-thumbs{width:auto;flex:0 0 auto;overflow-x:auto;max-height:none}
+        .pvb-wrap.side-off .pvb-thumbs{display:flex;gap:8px}
+        .pvb-thumb{flex:0 0 110px;margin-bottom:0}
+      }
+    </style>
+    <div class="pvb-wrap">
+      <aside class="pvb-side"><div class="pvb-sh">📂 서류 묶음</div>${side}</aside>
+      <div class="pvb-main">
+        <div class="pvb-modebar">
+          <button class="pvb-hbtn" onclick="pvbToggleSide()" title="묶음 목록 접기/펴기">☰ 묶음</button>
+          <span class="pvb-title" id="pvbTitle">불러오는 중…</span>
+          <label class="pvb-toggle" onclick="toast('편집 기능은 곧 추가됩니다 (준비 중)')">편집모드 <span class="pvb-sw"></span> <span class="pvb-soon">준비중</span></label>
+        </div>
+        <div id="pvBundleBody" class="pvb-pv"><div class="pvb-msg">묶음 PDF 만드는 중…</div></div>
+      </div>
+    </div>
+    <div class="modal-actions" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="closeModal();openDownload('${cid}')">📥 출력/다운로드</button>
+      <button class="btn" onclick="closeModal()">닫기</button>
+    </div>`,980);
+  pvbRender();
+}
+function pvbToggleSide(){ const w=document.querySelector('.pvb-wrap'); if(w) w.classList.toggle('side-off'); }
+function pvbGo(i){ if(!_pvbCtx) return; _pvbCtx.idx=i;
+  document.querySelectorAll('.pvb-item').forEach((el,k)=>el.classList.toggle('on',k===i));
+  pvbRender(); }
+function pvbMarkThumb(n){ document.querySelectorAll('.pvb-thumb').forEach(el=>el.classList.toggle('on', String(el.dataset.n)===String(n))); }
+/* 합본 PDF를 한 번의 pdf.js 로딩으로 [큰 미리보기]와 [작은 페이지 썸네일]에 동시에 그린다. 썸네일 클릭 → 그 페이지로 스크롤 이동 */
+async function pvbRenderPdf(bytes, bigEl, thumbEl, token){
+  const ctx=_pvbCtx;
+  const pdfjsLib=await loadPdfJs();
+  if(!ctx || ctx.token!==token) return;
+  const data=(bytes instanceof Uint8Array)?bytes.slice(0):new Uint8Array(bytes);
+  const pdf=await pdfjsLib.getDocument({data}).promise;
+  if(!ctx || ctx.token!==token) return;
+  bigEl.innerHTML=""; thumbEl.innerHTML="";
+  const dpr=window.devicePixelRatio||1;
+  const cw=Math.max(280,(bigEl.clientWidth||600)-16);
+  for(let n=1;n<=pdf.numPages;n++){
+    if(!ctx || ctx.token!==token) return;
+    const page=await pdf.getPage(n);
+    const base=page.getViewport({scale:1});
+    const scale=Math.max(0.3,Math.min(3,cw/base.width));
+    const vp=page.getViewport({scale:scale*dpr});
+    const canvas=document.createElement("canvas");
+    canvas.width=vp.width; canvas.height=vp.height;
+    canvas.style.width=(base.width*scale)+"px"; canvas.style.maxWidth="100%"; canvas.style.height="auto";
+    canvas.style.display="block"; canvas.style.margin="0 auto 10px"; canvas.style.borderRadius="6px"; canvas.style.background="#fff";
+    canvas.id="pvbpg-"+n;
+    bigEl.appendChild(canvas);
+    await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;
+    if(!ctx || ctx.token!==token) return;
+    const tvp=page.getViewport({scale:(150/base.width)*dpr});
+    const tc=document.createElement("canvas");
+    tc.width=tvp.width; tc.height=tvp.height;
+    const wrap=document.createElement("div"); wrap.className="pvb-thumb"; wrap.dataset.n=n;
+    wrap.onclick=()=>{ const t=document.getElementById("pvbpg-"+n); if(t) t.scrollIntoView({behavior:"smooth",block:"start"}); pvbMarkThumb(n); };
+    wrap.appendChild(tc);
+    const lbl=document.createElement("div"); lbl.className="pvb-thumb-n"; lbl.textContent=n; wrap.appendChild(lbl);
+    thumbEl.appendChild(wrap);
+    await page.render({canvasContext:tc.getContext("2d"),viewport:tvp}).promise;
+  }
+  if(!ctx || ctx.token!==token) return;
+  pvbMarkThumb(1);
+}
+async function pvbRender(){
+  const ctx=_pvbCtx; if(!ctx) return;
+  const my=++ctx.token; // 렌더 토큰 — 만드는 도중 다른 묶음을 누르면 이전 렌더는 무시(화면 뒤섞임 방지)
+  const g=ctx.groups[ctx.idx];
+  const titleEl=document.getElementById("pvbTitle");
+  const fc=g.items.reduce((a,it)=>a+it.files.length,0);
+  if(titleEl) titleEl.textContent=`📄 ${dlBlockLabel(g.bid,g.btitle)} · ${fc}개 파일 합본`;
+  let body=document.getElementById("pvBundleBody");
+  if(body) body.innerHTML=`<div style="color:#fff;padding:24px">묶음 PDF 만드는 중… (파일이 많으면 몇 초 걸려요)</div>`;
+  try{
+    const PDFLib=await loadPdfLib();
+    const doc=await PDFLib.PDFDocument.create();
+    const excluded=[];
+    for(const it of g.items){ for(const fo of it.files){
+      const ext=extOf(fo.f.name).toLowerCase();
+      try{
+        const bytes=await fetchFileBytes(fo.f);
+        if(ctx.token!==my) return; // 다른 묶음으로 바뀜 → 이 렌더 중단
+        if(ext===".pdf"){ const src=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true}); const ps=await doc.copyPages(src,src.getPageIndices()); ps.forEach(p=>doc.addPage(p)); }
+        else if(ext===".jpg"||ext===".jpeg"){ const img=await doc.embedJpg(bytes); addImageA4(doc,img); }
+        else if(ext===".png"){ const img=await doc.embedPng(bytes); addImageA4(doc,img); }
+        else excluded.push(fo.f.name);
+      }catch(e){ console.warn("미리보기 합치기 건너뜀",fo.f.name,e); excluded.push(fo.f.name); }
+    } }
+    if(ctx.token!==my) return;
+    body=document.getElementById("pvBundleBody"); if(!body) return;
+    if(doc.getPageCount()===0){
+      body.innerHTML=`<div style="color:#fff;padding:22px;line-height:1.7">이 묶음은 합본 미리보기를 만들 수 없어요.<br>PDF·이미지(JPG/PNG)가 없고, 한글·엑셀 등만 있습니다.<br><span style="opacity:.6;font-size:12px">${excluded.map(esc).join(", ")}</span></div>`;
+      return;
+    }
+    const pdfBytes=await doc.save();
+    if(ctx.token!==my) return;
+    body=document.getElementById("pvBundleBody"); if(!body) return;
+    body.innerHTML=`${excluded.length?`<div class="pvb-exnote">※ 합칠 수 없는 파일 ${excluded.length}개는 제외됨(한글·엑셀 등): ${excluded.map(esc).join(", ")}</div>`:""}<div class="pvb-viewer"><div class="pvb-thumbs" id="pvbThumbs"></div><div class="pvb-big" id="pvbBig"><div class="pvb-msg">그리는 중…</div></div></div>`;
+    await pvbRenderPdf(pdfBytes, document.getElementById("pvbBig"), document.getElementById("pvbThumbs"), my);
+  }catch(e){ console.error(e); const b=document.getElementById("pvBundleBody"); if(b&&ctx.token===my) b.innerHTML=`<div class="pvb-msg">미리보기 실패: ${esc((e&&e.message)||e)}</div>`; }
 }
 function onItemMemo(cid,id){ const c=findClient(cid); const ta=event.target; c.items[id].memo=ta.value;
   state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
@@ -3217,22 +3370,6 @@ const SB_ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJl
 let BACKEND="supabase";   // ← "github" 로 바꾸면 기존 깃헙 방식 그대로 복귀
 let sb=null, sbUser=null;
 function sbInit(){ try{ if(!sb && window.supabase) sb=window.supabase.createClient(SB_URL,SB_ANON); }catch(_){} return sb; }
-/* ── 첨부파일 순서(sort_order) 저장 지원 ── */
-let SB_HAS_SORT=false;   // documents.sort_order 칸 존재 여부(로드 때 자동 감지). 없으면 순서저장만 자동으로 꺼지고 앱은 정상 동작
-let SB_HAS_PCT=false;    // clients.collect_pct 칸 존재 여부. 없으면 취합률 기록만 자동으로 꺼지고 앱은 정상 동작
-async function sbSelectDocuments(){
-  let r=await sb.from("documents").select("id,client_id,doc_key,file_name,storage_path,uploaded_by,is_public,created_at,kind,sort_order");
-  if(r.error){ SB_HAS_SORT=false; r=await sb.from("documents").select("id,client_id,doc_key,file_name,storage_path,uploaded_by,is_public,created_at,kind"); }
-  else { SB_HAS_SORT=true; }
-  return r;
-}
-async function sbSaveFileOrder(cid,id){
-  if(BACKEND!=="supabase" || !SB_HAS_SORT || !sbInit() || !sbUser) return;
-  const c=findClient(cid); const arr=(c&&c.items[id]&&c.items[id].files)||[];
-  try{
-    await Promise.all(arr.map((f,i)=>{ if(f&&f.docId){ f.sort_order=i; return sb.from("documents").update({sort_order:i}).eq("id",f.docId); } return null; }).filter(Boolean));
-  }catch(e){ console.warn("파일 순서 저장 실패",e); toast("⚠️ 파일 순서 저장 실패 — 새로고침하면 되돌아갈 수 있어요"); setSync("error"); }
-}
 
 /* 단계(stage) 되돌림: 케이스허브 → 서류취합 화면 단계 */
 const SB_STAGE_BACK={"서류취합중":"서류수집","취합완료":"검토","접수완료":"법원접수","개시결정":"개시결정","인가결정":"완료",
@@ -3282,12 +3419,12 @@ function sbBuildClient(row, rows, docs, memos, secret){
     }
   });
   /* 첨부파일(documents) 붙이기 → 새로고침해도 유지. 케이스허브 전용 '접수'서류는 서류취합 화면에 안 붙임 */
-  (docs||[]).slice().sort((a,b)=>{ const A=(a.sort_order==null?1e9:a.sort_order), B=(b.sort_order==null?1e9:b.sort_order); return (A-B) || String(a.created_at||"").localeCompare(String(b.created_at||"")); }).forEach(d=>{
+  (docs||[]).forEach(d=>{
     if(d.kind==="접수") return;
     let id=(d.doc_key && c.items[d.doc_key])?d.doc_key:null;
     if(!id){ id="doc_"+d.id; if(!c.items[id]){ c.items[id]={mode:"request",reqTag:"received",done:true,memo:"",reqDate:null,recvDate:d.created_at,link:"",rejected:false,rejectReason:"",files:[],manual:true}; (c.extra["b5"]=c.extra["b5"]||[]).push({id,name:d.file_name||"첨부",mode:"request"}); } }
     const s=c.items[id]; if(!s.files) s.files=[];
-    s.files.push({ name:d.file_name, size:0, driveId:d.storage_path, by:d.uploaded_by||"", ts:d.created_at, docId:d.id, is_public:!!d.is_public, sort_order:d.sort_order });
+    s.files.push({ name:d.file_name, size:0, driveId:d.storage_path, by:d.uploaded_by||"", ts:d.created_at, docId:d.id, is_public:!!d.is_public });
   });
   ensureItems(c);
   (aj.manualNa||[]).forEach(id=>{ const s=c.items[id]; if(s && !(s.files&&s.files.length)){ s.mode="na"; s.manual=true; } }); // 손으로 감춘 서류 복원 — 새로고침해도 해당없음 유지(파일 있으면 받음이 우선)
@@ -3307,13 +3444,12 @@ async function pullFromSupabase(silent){
   setSync("saving");
   try{
     const BASE="id,name,office_id,case_type,assignee,stage,phone,income_type,asset_type,court_deadline,deadline_kind,urgent,pinned,archived,amending,correcting,case_no,updated_at,created_at";
-    let cRes=await sb.from("clients").select(BASE+",is_public,app_json,collect_pct").order("name"); SB_HAS_PCT=!cRes.error;
-    if(cRes.error) cRes=await sb.from("clients").select(BASE+",is_public,app_json").order("name"); // collect_pct 칸 없을 때
+    let cRes=await sb.from("clients").select(BASE+",is_public,app_json").order("name");
     if(cRes.error) cRes=await sb.from("clients").select(BASE+",app_json").order("name"); // is_public 칸 없을 때
     if(cRes.error) cRes=await sb.from("clients").select(BASE).order("name");            // app_json 칸도 없을 때
     const [ciRes, dRes, mRes, sRes, oRes, pRes] = await Promise.all([
       sb.from("checklist_items").select("id,client_id,doc_key,doc_name,bundle,status,reject_reason,memo"),
-      sbSelectDocuments(),
+      sb.from("documents").select("id,client_id,doc_key,file_name,storage_path,uploaded_by,is_public,created_at,kind"),
       sb.from("memos").select("id,client_id,body,created_at,kind").order("created_at"),
       sb.from("secrets").select("id,client_id,cert_files,password"),
       sb.from("offices").select("id,name"),
@@ -3403,13 +3539,11 @@ function sbFirmFromOffice(oid){ const o=SB_OFFICES.find(x=>x.id===oid); if(!o) r
 function sbOfficeFromFirm(firm){ const blue=(firm||"").includes("블루"); const o=SB_OFFICES.find(x=> blue ? (x.name||"").includes("블루") : (x.name||"").includes("이준")); return o? o.id : OURS_OFFICE_ID; }
 /* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
 function sbAppJson(c){ return { firm:c.firm||null, housing:c.housing||"미정", msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }) }; }
-function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
+function sbClientPayload(c){ return { name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
   stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
   urgent:!!c.urgent, pinned:!!c.pinned, archived:!!c.archived, amending:!!c.amending, case_no:c.caseNo||null,
-  is_public:!!c.isPublic, app_json: sbAppJson(c) };
-  if(SB_HAS_PCT){ try{ __p.collect_pct = progress(c).pct; }catch(_){} }
-  return __p; }
+  is_public:!!c.isPublic, app_json: sbAppJson(c) }; }
 /* office_id는 의뢰인 저장 페이로드에서 제외 — 수정 시 관리자가 정한 사무소를 덮어쓰지 않도록. 신규 생성 때만 아래에서 지정. */
 function sbClientSig(c){ return JSON.stringify(sbClientPayload(c)); }
 
@@ -3443,7 +3577,7 @@ async function sbSyncClient(c){
   Object.keys(c.items).forEach(id=>{
     const s=c.items[id]; if(!s.files||!s.files.length) return;
     const dkey=ITEM_BY_ID[id]?id:(s.doc_key||id);
-    s.files.forEach((f,fidx)=>{ if(f.driveId && !f.docId){ const _doc={client_id:c.id,doc_key:dkey,file_name:f.name,storage_path:f.driveId,uploaded_by:f.by||deviceName||"직원",is_public:!!f.is_public,kind:"취합"}; if(SB_HAS_SORT) _doc.sort_order=fidx; docJobs.push(sb.from("documents").insert(_doc).select("id").single().then(r=>{ if(r.error) throw r.error; f.docId=r.data.id; })); } });
+    s.files.forEach(f=>{ if(f.driveId && !f.docId){ docJobs.push(sb.from("documents").insert({client_id:c.id,doc_key:dkey,file_name:f.name,storage_path:f.driveId,uploaded_by:f.by||deviceName||"직원",is_public:!!f.is_public,kind:"취합"}).select("id").single().then(r=>{ if(r.error) throw r.error; f.docId=r.data.id; })); } });
   });
   if(docJobs.length) await Promise.all(docJobs);
   // 의뢰인 메모(한 줄로 유지)
