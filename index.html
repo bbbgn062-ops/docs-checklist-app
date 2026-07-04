@@ -2001,6 +2001,14 @@ async function openBundlePageEditor(cid,bid){
     .bpe-page canvas,.bpe-page img{display:block;max-width:100%;height:auto;border-radius:6px}
     .bpe-tag{position:absolute;top:22px;left:22px;background:rgba(155,27,51,.92);color:#fff;font-size:11px;padding:3px 9px;border-radius:6px;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .bpe-delnote{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(179,38,30,.92);color:#fff;padding:8px 14px;border-radius:9px;font-size:13px}
+    .bpe-pgwrap{position:relative;width:fit-content;max-width:100%;margin:0 auto 16px}
+    .bpe-pgwrap.del{opacity:.45}
+    .bpe-pgc canvas,.bpe-pgc img{display:block;max-width:100%;height:auto;border-radius:6px;box-shadow:0 3px 14px rgba(0,0,0,.4)}
+    .bpe-pgov{position:absolute;top:8px;right:8px;display:flex;align-items:center;gap:4px;background:rgba(0,0,0,.62);border-radius:9px;padding:4px 6px;z-index:2}
+    .bpe-pgov .bpe-pgtag{color:#fff;font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:3px}
+    .bpe-pgov button{width:26px;height:26px;border:none;border-radius:6px;background:#fff;font-size:12px;cursor:pointer}
+    .bpe-pgov button.del{background:#ffd9d9}
+    .bpe-delflag{position:absolute;top:8px;left:8px;background:rgba(179,38,30,.92);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;z-index:2}
   </style>
   <div class="bpe-card">
     <div class="bpe-head"><span class="t">📄 ${esc(g.btitle)} · 페이지 편집</span><span class="x" onclick="bpeTryClose()">✕</span></div>
@@ -2025,11 +2033,15 @@ async function openBundlePageEditor(cid,bid){
 }
 function bpeTryClose(){ if(_bpe && _bpe.dirty && !confirm("저장하지 않고 나가면 편집한 내용이 사라집니다. 나갈까요?")) return; bpeClose(); }
 function bpeClose(){ if(_bpe){ _bpe.files.forEach(f=>{ if(f.imgUrl){ try{URL.revokeObjectURL(f.imgUrl);}catch(_){ } } }); } _bpe=null; const d=$("#bpeOv"); if(d) d.remove(); }
-function bpeCur(){ const fp=_bpe.flat[_bpe.cur]; return {f:_bpe.files[fp.fi], p:_bpe.files[fp.fi].pages[fp.pi], fp}; }
-function bpeRot(deg){ if(!_bpe) return; const {p}=bpeCur(); p.rot=((p.rot+deg)%360+360)%360; _bpe.dirty=true; bpeRenderThumbs(); bpeRenderView(); }
-function bpeDel(){ if(!_bpe) return; const {p}=bpeCur(); p.del=!p.del; _bpe.dirty=true; bpeRenderThumbs(); bpeRenderView(); }
+function bpePageMeta(k){ const fp=_bpe.flat[k]; return {f:_bpe.files[fp.fi], p:_bpe.files[fp.fi].pages[fp.pi], fp}; }
+function bpeMarkThumb(k){ document.querySelectorAll('.bpe-th').forEach((el,i)=>el.classList.toggle('on',i===k)); }
+function bpeUpdateInfo(){ const info=document.getElementById("bpeInfo"); if(!info||!_bpe) return; const kept=_bpe.flat.filter(fp=>!_bpe.files[fp.fi].pages[fp.pi].del).length; info.textContent=`총 ${_bpe.flat.length}p · 남길 ${kept}p`; }
+function bpeRot(deg){ if(_bpe) bpeRotAt(_bpe.cur||0,deg); }
+function bpeDel(){ if(_bpe) bpeDelAt(_bpe.cur||0); }
+async function bpeRotAt(k,deg){ if(!_bpe) return; const {p}=bpePageMeta(k); p.rot=((p.rot+deg)%360+360)%360; _bpe.dirty=true; await bpeRefreshPage(k); }
+async function bpeDelAt(k){ if(!_bpe) return; const {p}=bpePageMeta(k); p.del=!p.del; _bpe.dirty=true; await bpeRefreshPage(k); }
 function bpeReset(){ if(!_bpe) return; _bpe.files.forEach(f=>f.pages.forEach(p=>{p.rot=0;p.del=false;})); _bpe.dirty=false; bpeRenderThumbs(); bpeRenderView(); }
-function bpeGo(k){ if(!_bpe) return; _bpe.cur=k; bpeRenderThumbs(); bpeRenderView(); }
+function bpeGo(k){ if(!_bpe) return; _bpe.cur=k; const w=document.getElementById("bpe-pg-"+k); if(w) w.scrollIntoView({behavior:"smooth",block:"start"}); bpeMarkThumb(k); }
 async function bpeCanvas(f,pi,rot,maxw){
   if(f.isImg){ const img=f.imgEl; const w=img.naturalWidth||1, h=img.naturalHeight||1; const swap=(rot%180!==0); const bw=swap?h:w, bh=swap?w:h; const scale=Math.min(maxw/bw,2);
     const cv=document.createElement("canvas"); cv.width=Math.max(1,bw*scale); cv.height=Math.max(1,bh*scale); const cx=cv.getContext("2d");
@@ -2053,13 +2065,33 @@ async function bpeRenderThumbs(){
 }
 async function bpeRenderView(){
   const v=document.getElementById("bpeView"); if(!v||!_bpe) return; v.innerHTML="";
-  const fp=_bpe.flat[_bpe.cur]; const f=_bpe.files[fp.fi]; const p=f.pages[fp.pi];
-  const tag=document.createElement("div"); tag.className="bpe-tag"; tag.textContent="📄 "+f.name; v.appendChild(tag);
-  const wrap=document.createElement("div"); wrap.className="bpe-page";
-  try{ wrap.appendChild(await bpeCanvas(f,fp.pi,p.rot, Math.min(560,(v.clientWidth||600)-40))); }catch(_){ }
-  v.appendChild(wrap);
-  if(p.del){ const dn=document.createElement("div"); dn.className="bpe-delnote"; dn.textContent="이 페이지는 삭제 예정 — 다시 🗑을 누르면 취소"; v.appendChild(dn); }
-  const db=document.getElementById("bpeDelBtn"); if(db) db.textContent=p.del?"↩ 삭제 취소":"🗑 이 페이지 삭제";
+  const maxw=Math.min(560,(v.clientWidth||600)-40);
+  for(let k=0;k<_bpe.flat.length;k++){
+    const {f,p,fp}=bpePageMeta(k);
+    const wrap=document.createElement("div"); wrap.className="bpe-pgwrap"+(p.del?" del":""); wrap.id="bpe-pg-"+k;
+    const ov=document.createElement("div"); ov.className="bpe-pgov";
+    ov.innerHTML=`<span class="bpe-pgtag">📄 ${esc(f.name)} · ${k+1}p</span><button onclick="bpeRotAt(${k},-90)" title="왼쪽 회전">↺</button><button onclick="bpeRotAt(${k},90)" title="오른쪽 회전">↻</button><button class="del" onclick="bpeDelAt(${k})" title="삭제/취소">🗑</button>`;
+    wrap.appendChild(ov);
+    const inner=document.createElement("div"); inner.className="bpe-pgc";
+    try{ inner.appendChild(await bpeCanvas(f,fp.pi,p.rot,maxw)); }catch(_){ }
+    wrap.appendChild(inner);
+    if(p.del){ const dn=document.createElement("div"); dn.className="bpe-delflag"; dn.textContent="삭제 예정 (🗑 다시 눌러 취소)"; wrap.appendChild(dn); }
+    v.appendChild(wrap);
+  }
+  bpeUpdateInfo();
+  v.onscroll=()=>{ if(!_bpe) return; const br=v.getBoundingClientRect(); let cur=0; for(let k=0;k<_bpe.flat.length;k++){ const w=document.getElementById("bpe-pg-"+k); if(!w) continue; if(w.getBoundingClientRect().top - br.top <= 90) cur=k; else break; } _bpe.cur=cur; bpeMarkThumb(cur); const th=document.querySelectorAll('.bpe-th')[cur]; if(th) th.scrollIntoView({block:"nearest"}); };
+}
+async function bpeRefreshPage(k){
+  if(!_bpe) return; const {f,p,fp}=bpePageMeta(k);
+  const w=document.getElementById("bpe-pg-"+k);
+  if(w){ w.classList.toggle("del",p.del);
+    const inner=w.querySelector(".bpe-pgc"); if(inner){ inner.innerHTML=""; try{ inner.appendChild(await bpeCanvas(f,fp.pi,p.rot,Math.min(560,((document.getElementById("bpeView")||{}).clientWidth||600)-40))); }catch(_){ } }
+    let dn=w.querySelector(".bpe-delflag"); if(p.del&&!dn){ dn=document.createElement("div"); dn.className="bpe-delflag"; dn.textContent="삭제 예정 (🗑 다시 눌러 취소)"; w.appendChild(dn); } else if(!p.del&&dn){ dn.remove(); }
+  }
+  const th=document.querySelectorAll('.bpe-th')[k];
+  if(th){ th.classList.toggle("del",p.del); const old=th.querySelector("canvas,img"); try{ const nc=await bpeCanvas(f,fp.pi,p.rot,84); if(old) th.replaceChild(nc,old); else th.insertBefore(nc,th.firstChild); }catch(_){ }
+    let dx=th.querySelector(".dx"); if(p.del&&!dx){ dx=document.createElement("div"); dx.className="dx"; dx.textContent="삭제"; th.appendChild(dx);} else if(!p.del&&dx){ dx.remove(); } }
+  bpeUpdateInfo();
 }
 /* 저장: 파일별로 변경분을 반영. PDF=페이지 유지/회전 재구성, 이미지=회전. 업로드 성공 후 원본 교체(안전). 전부 삭제된 파일은 파일 자체 삭제. */
 async function bpeSaveFile(f){
