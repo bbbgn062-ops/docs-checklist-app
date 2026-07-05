@@ -255,7 +255,7 @@
  const CONSULT_KINDS=["통화","면담","문자","기타"];
  const PALETTE=[{bg:"#F4F5FC",dash:"#cdcdf0",dot:"#4F46E5"},{bg:"#EFF7F5",dash:"#bce3dd",dot:"#0D9488"},
    {bg:"#FBF3EF",dash:"#eccdba",dot:"#C2410C"},{bg:"#F6F2FB",dash:"#ddccef",dot:"#7C3AED"},{bg:"#F1F5F1",dash:"#cbe0cb",dot:"#3F7D3F"}];
- let MYROLE="office",MYNAME="",officeColor={},OFFNAME={},CLIENTS=[],PCT={},MISS={},viewF="all",searchQ="",officeF="";
+ let MYROLE="office",MYNAME="",MYOFFICE=null,officeColor={},OFFNAME={},CLIENTS=[],PCT={},MISS={},viewF="all",searchQ="",officeF="";
  let VIEWAS=null;
  let DOCS=[],DCID=null,DSEL=new Set(),PV={};
 
@@ -289,8 +289,8 @@
    $("#detailWrap").classList.add("hidden");$("#listWrap").classList.remove("hidden");
    const _aw=$("#adminWrap");if(_aw)_aw.classList.add("hidden");
    const {data:{session}}=await db.auth.getSession(); if(!session) return;
-   const {data:prof}=await db.from("profiles").select("role,name").eq("id",session.user.id).single();
-   MYROLE=prof?.role||"office"; MYNAME=prof?.name||"";
+   const {data:prof}=await db.from("profiles").select("role,name,office_id").eq("id",session.user.id).single();
+   MYROLE=prof?.role||"office"; MYNAME=prof?.name||""; MYOFFICE=prof?.office_id||null;
    $("#who").textContent=(MYNAME?MYNAME+" · ":"")+(ROLE_KO[MYROLE]||MYROLE);
    const _ab=$("#adminBtn");if(_ab)_ab.style.display=(MYROLE==="master")?"":"none";
    const [offRes,cliRes,progRes,itemRes]=await Promise.all([
@@ -301,6 +301,7 @@
    ]);
    officeColor={};OFFNAME={};
    (offRes.data||[]).forEach((o,i)=>{ const ours=(o.type==="ours")||((o.name||"").includes("이준")); officeColor[o.id]= ours ? {bg:"#FDECEF",dash:"#f0c9d2",dot:"#9B1B33"} : PALETTE[i%PALETTE.length]; OFFNAME[o.id]=o.name;});
+   try{if(!VIEWAS&&!sessionStorage.getItem("acc_logged")){sessionStorage.setItem("acc_logged","1");db.from("access_log").insert({user_name:MYNAME||"직원",role:MYROLE,office_name:OFFNAME[MYOFFICE]||null}).then(()=>{});}}catch(e){}
    PCT={};(progRes.data||[]).forEach(r=>PCT[r.client_id]=r.pct); (cliRes.data||[]).forEach(c=>{ if(c.collect_pct!=null) PCT[c.id]=c.collect_pct; });
    MISS={};
    (itemRes.data||[]).forEach(it=>{if(it.status==="미요청"||it.status==="요청중"){(MISS[it.client_id]=MISS[it.client_id]||[]).push(it.doc_name);}});
@@ -557,7 +558,7 @@
    openDetail(DCID);
  }
  async function dlOne(path,name){if(!path){toast("이 항목은 시험용(파일 없음)입니다");return;}const {data,error}=await db.storage.from("docs").download(path);if(error){toast("다운로드 실패: 권한 또는 파일 없음");return;}saveBlob(data,name);}
- async function dlZip(list){if(!list.length){toast("선택된 파일이 없습니다");return;}if(!window.JSZip){toast("압축 모듈 로딩 중, 잠시 후 다시");return;}toast("압축 준비 중...");const zip=new JSZip();let ok=0;for(const d of list){if(!d.storage_path)continue;const {data,error}=await db.storage.from("docs").download(d.storage_path);if(!error&&data){zip.file(d.file_name,data);ok++;}}if(ok===0){toast("받을 수 있는 파일이 없습니다");return;}const blob=await zip.generateAsync({type:"blob"});saveBlob(blob,"접수서류.zip");toast(ok+"건 ZIP 다운로드");}
+ async function dlZip(list){if(!list.length){toast("선택된 파일이 없습니다");return;}if(!window.JSZip){toast("압축 모듈 로딩 중, 잠시 후 다시");return;}toast("압축 준비 중...");const zip=new JSZip();let ok=0;for(const d of list){if(!d.storage_path)continue;const {data,error}=await db.storage.from("docs").download(d.storage_path);if(!error&&data){let nm=d.file_name||"파일";if(zip.file(nm)){const m=nm.match(/^(.*?)(\.[A-Za-z0-9]+)?$/);const b=m[1],x=m[2]||"";let k=1;while(zip.file(b+"("+k+")"+x))k++;nm=b+"("+k+")"+x;}zip.file(nm,data);ok++;}}if(ok===0){toast("받을 수 있는 파일이 없습니다");return;}const blob=await zip.generateAsync({type:"blob"});saveBlob(blob,"접수서류.zip");toast(ok+"건 ZIP 다운로드");}
  function dlSelected(){dlZip(DOCS.filter(d=>DSEL.has(d.id)));}
  function dlAll(){dlZip(curDocs());}
  function toggleAllDocs(ch){const vis=curDocs();if(ch)vis.forEach(d=>DSEL.add(d.id));else vis.forEach(d=>DSEL.delete(d.id));renderDocs();}
@@ -587,7 +588,7 @@
  function openNewClient(){const sel=$("#nc_office");if(sel)sel.innerHTML=Object.keys(OFFNAME).map(id=>`<option value="${id}">${esc(OFFNAME[id])}</option>`).join("");if($("#nc_name"))$("#nc_name").value="";if($("#nc_as"))$("#nc_as").value="";$("#ncModal").classList.remove("hidden");}
  function closeNewClient(){$("#ncModal").classList.add("hidden");}
  async function saveNewClient(){const name=$("#nc_name").value.trim();if(!name){toast("이름을 입력하세요.");return;}const office_id=$("#nc_office").value;if(!office_id){toast("원사무소를 선택하세요.");return;}const payload={name,office_id,case_type:$("#nc_type").value,assignee:$("#nc_as").value.trim()||null,stage:"서류취합중",is_public:false};const {data,error}=await db.from("clients").insert(payload).select();if(error){toast("등록 실패(권한 확인): "+error.message);return;}closeNewClient();toast("새 의뢰인을 등록했습니다.");if(data&&data[0])logAct(data[0].id,"의뢰인 등록");load();}
- async function delClient(cid){if(!canEdit()){toast("삭제 권한이 없습니다.");return;}const c=CLIENTS.find(x=>x.id===cid);if(!confirm(`'${c?c.name:""}' 의뢰인을 삭제할까요?\n서류·메모·기록이 모두 함께 삭제되며 되돌릴 수 없습니다.`))return;const {error}=await db.from("clients").delete().eq("id",cid);if(error){toast("삭제 실패: "+error.message);return;}toast("의뢰인을 삭제했습니다.");load();}
+ async function delClient(cid){if(!canEdit()){toast("삭제 권한이 없습니다.");return;}const c=CLIENTS.find(x=>x.id===cid);if(!confirm(`'${c?c.name:""}' 의뢰인을 삭제할까요?\n서류·메모·기록이 모두 함께 삭제되며 되돌릴 수 없습니다.`))return;try{const {data:_dfs}=await db.from("documents").select("storage_path").eq("client_id",cid);const _paths=(_dfs||[]).map(d=>d.storage_path).filter(Boolean);for(let i=0;i<_paths.length;i+=100){await db.storage.from("docs").remove(_paths.slice(i,i+100));}}catch(e){}const {error}=await db.from("clients").delete().eq("id",cid);if(error){toast("삭제 실패: "+error.message);return;}toast("의뢰인을 삭제했습니다.");load();}
 
  // ===== 파일 일괄 / 병합 =====
  async function bulkPub(cid,pub){const ids=[...DSEL];if(!ids.length){toast("선택된 파일이 없습니다");return;}for(const id of ids){await db.from("documents").update({is_public:pub}).eq("id",id);}logAct(cid,`서류 ${ids.length}건 ${pub?"공개":"내부"} 전환`);toast(`${ids.length}건 ${pub?"공개":"비공개"}로 바꿨습니다.`);openDetail(cid);}
@@ -609,10 +610,11 @@
  async function openAdmin(){
    if(MYROLE!=="master"){toast("관리자만 접근할 수 있습니다.");return;}
    $("#listWrap").classList.add("hidden");$("#detailWrap").classList.add("hidden");$("#adminWrap").classList.remove("hidden");window.scrollTo(0,0);
-   const [profRes,offRes,logRes]=await Promise.all([
+   const [profRes,offRes,logRes,accRes]=await Promise.all([
      db.from("profiles").select("id,name,role,office_id,active").order("role"),
      db.from("offices").select("id,name,type").order("name"),
-     db.from("activity_log").select("client_id,actor,action,created_at").order("created_at",{ascending:false}).limit(100)
+     db.from("activity_log").select("client_id,actor,action,created_at").order("created_at",{ascending:false}).limit(100),
+     db.from("access_log").select("user_name,role,office_name,created_at").order("created_at",{ascending:false}).limit(50)
    ]);
    const profs=profRes.data||[], offs=offRes.data||[];
    let emailMap={};
@@ -640,6 +642,11 @@
    html+=`<div class="section"><h3>원사무소 관리</h3><div class="sd">사무소를 추가하거나 이름을 바꿉니다.</div>`;
    offs.forEach(o=>{html+=`<div class="admrow"><div class="admname" style="flex:1">${esc(o.name)} <span class="logtag">${o.type==="ours"?"우리":"원사무소"}</span></div><button class="get" onclick="renameOffice('${o.id}')">이름변경</button></div>`;});
    html+=`<div class="frow2"><input class="in" id="newOffName" placeholder="새 원사무소 이름" style="flex:1;min-width:160px"><button class="savebtn" onclick="addOffice()">사무소 추가</button></div></div>`;
+   const accs=(accRes&&accRes.data)||[];
+   html+=`<div class="section"><details class="logwrap"><summary class="logsum"><span>접속 기록 (최근 ${accs.length}건)</span><span class="logtag">펼치기 / 접기</span></summary><div class="sd" style="margin-top:10px">누가 언제 케이스허브에 로그인했는지 자동 기록됩니다.</div>`;
+   if(!accs.length)html+=`<div class="sd">기록이 없습니다. (access_log 표가 없으면 SQL 16을 먼저 실행하세요)</div>`;
+   accs.forEach(a=>{html+=`<div class="logitem"><b>${esc(a.user_name||"")}</b> ${esc(ROLE_KO[a.role]||a.role||"")}${a.office_name?` · <span style="color:var(--mfg)">${esc(a.office_name)}</span>`:""}<span class="lt">${esc(fmtDt(a.created_at))}</span></div>`;});
+   html+=`</details></div>`;
    const logs=logRes.data||[];
    const cname=(id)=>{const c=CLIENTS.find(x=>x.id===id);return c?c.name:"";};
    html+=`<div class="section"><details class="logwrap" open><summary class="logsum"><span>전체 활동 로그 (${logs.length})</span><span class="logtag">펼치기 / 접기</span></summary><div class="sd" style="margin-top:10px">최근 100건 · 누가 언제 무엇을 했는지 자동 기록됩니다.</div>`;
@@ -822,5 +829,6 @@
  }
 
  (async()=>{const {data:{session}}=await db.auth.getSession(); if(session) load();})();
+ db.auth.onAuthStateChange((ev,session)=>{if(!session&&ev!=="INITIAL_SESSION"){$("#appView").classList.add("hidden");$("#loginView").classList.remove("hidden");toast("로그인이 만료되었습니다. 다시 로그인해 주세요.");}});
 </script>
 </body></html>
