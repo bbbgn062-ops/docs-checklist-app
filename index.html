@@ -2861,9 +2861,10 @@ async function pvbRender(){
   try{
     const PDFLib=await loadPdfLib();
     const doc=await PDFLib.PDFDocument.create();
-    const excluded=[];
+    const excluded=[]; const failed=[]; // excluded=형식이 안 맞아 제외(한글·엑셀 등), failed=pdf/이미지인데 불러오기 실패(일시 오류 등)
     for(const it of g.items){ for(const fo of it.files){
       const ext=extOf(fo.f.name).toLowerCase();
+      const isConv=(ext===".pdf"||ext===".jpg"||ext===".jpeg"||ext===".png");
       try{
         const bytes=await fetchFileBytes(fo.f);
         if(ctx.token!==my) return; // 다른 묶음으로 바뀜 → 이 렌더 중단
@@ -2871,18 +2872,19 @@ async function pvbRender(){
         else if(ext===".jpg"||ext===".jpeg"){ const img=await doc.embedJpg(bytes); addImageA4(doc,img); }
         else if(ext===".png"){ const img=await doc.embedPng(bytes); addImageA4(doc,img); }
         else excluded.push(fo.f.name);
-      }catch(e){ console.warn("미리보기 합치기 건너뜀",fo.f.name,e); excluded.push(fo.f.name); }
+      }catch(e){ console.warn("미리보기 합치기 건너뜀",fo.f.name,e); if(isConv) failed.push(fo.f.name); else excluded.push(fo.f.name); }
     } }
     if(ctx.token!==my) return;
     body=document.getElementById("pvBundleBody"); if(!body) return;
     if(doc.getPageCount()===0){
-      body.innerHTML=`<div style="color:#fff;padding:22px;line-height:1.7">이 묶음은 합본 미리보기를 만들 수 없어요.<br>PDF·이미지(JPG/PNG)가 없고, 한글·엑셀 등만 있습니다.<br><span style="opacity:.6;font-size:12px">${excluded.map(esc).join(", ")}</span></div>`;
+      if(failed.length){ body.innerHTML=`<div style="color:#fff;padding:22px;line-height:1.7">⚠️ 파일을 불러오지 못했어요. <b>일시적인 접속 오류</b>일 수 있습니다.<br>잠시 후 <b>새로고침하고 다시</b> 눌러 주세요. (계속 안 되면 알려주세요)<br><span style="opacity:.6;font-size:12px">불러오기 실패: ${failed.map(esc).join(", ")}</span></div>`; }
+      else { body.innerHTML=`<div style="color:#fff;padding:22px;line-height:1.7">이 묶음은 합본 미리보기를 만들 수 없어요.<br>PDF·이미지(JPG/PNG)가 없고, 한글·엑셀 등만 있습니다.<br><span style="opacity:.6;font-size:12px">${excluded.map(esc).join(", ")}</span></div>`; }
       return;
     }
     const pdfBytes=await doc.save();
     if(ctx.token!==my) return;
     body=document.getElementById("pvBundleBody"); if(!body) return;
-    body.innerHTML=`${excluded.length?`<div class="pvb-exnote">※ 합칠 수 없는 파일 ${excluded.length}개는 제외됨(한글·엑셀 등): ${excluded.map(esc).join(", ")}</div>`:""}<div class="pvb-viewer"><div class="pvb-thumbs" id="pvbThumbs"></div><div class="pvb-big" id="pvbBig"><div class="pvb-msg">그리는 중…</div></div></div>`;
+    body.innerHTML=`${failed.length?`<div class="pvb-exnote">⚠️ ${failed.length}개 파일은 불러오기 실패(일시 오류일 수 있어요 — 새로고침 후 다시): ${failed.map(esc).join(", ")}</div>`:""}${excluded.length?`<div class="pvb-exnote">※ 합칠 수 없는 파일 ${excluded.length}개 제외(한글·엑셀 등): ${excluded.map(esc).join(", ")}</div>`:""}<div class="pvb-viewer"><div class="pvb-thumbs" id="pvbThumbs"></div><div class="pvb-big" id="pvbBig"><div class="pvb-msg">그리는 중…</div></div></div>`;
     await pvbRenderPdf(pdfBytes, document.getElementById("pvbBig"), document.getElementById("pvbThumbs"), my);
   }catch(e){ console.error(e); const b=document.getElementById("pvBundleBody"); if(b&&ctx.token===my) b.innerHTML=`<div class="pvb-msg">미리보기 실패: ${esc((e&&e.message)||e)}</div>`; }
 }
