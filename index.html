@@ -623,19 +623,57 @@ function renderSampleLibrary(){
       </div></div>`;
   });
   h+=`</div>`;
-  h+=`<div style="font-weight:800;font-size:15px;margin:6px 0 8px">📘 발급 가이드 <span style="font-weight:500;color:var(--muted);font-size:12.5px">· 서류별 발급 방법 안내 (링크 연결 예정)</span></div>`;
+  h+=`<div style="font-weight:800;font-size:15px;margin:6px 0 8px">📘 발급 가이드 <span style="font-weight:500;color:var(--muted);font-size:12.5px">· 눌러서 미리보기·다운로드·링크복사</span></div>`;
   h+=`<div style="display:flex;flex-direction:column;gap:6px">`;
-  GUIDES.forEach(g=>{ const ready=g.html||g.pdf;
+  GUIDES.forEach((g,gi)=>{ const ready=g.html||g.pdf;
     h+=`<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:#fff">
       <span style="flex:1;font-size:13px;font-weight:600">${esc(g.t.replace(/_/g," · "))}</span>`;
-    if(g.html) h+=`<a class="btn btn-sm" href="${esc(g.html)}" target="_blank" rel="noopener">가이드</a>`;
-    if(g.pdf) h+=`<a class="btn btn-sm" href="${esc(g.pdf)}" target="_blank" rel="noopener">PDF</a>`;
+    if(g.html) h+=`<button class="btn btn-sm" onclick="openGuide(${gi},'html')">가이드</button>`;
+    if(g.pdf) h+=`<button class="btn btn-sm" onclick="openGuide(${gi},'pdf')">PDF</button>`;
     if(!ready) h+=`<span style="font-size:11.5px;color:var(--muted);background:var(--gray-soft);padding:3px 8px;border-radius:20px;white-space:nowrap">준비중</span>`;
     h+=`</div>`;
   });
   h+=`</div></div>`;
   return h;
 }
+/* 발급 가이드 미리보기 모달(HTML은 앱이 직접 불러와 렌더 → 수퍼베이스 text/plain 우회) */
+async function openGuide(gi,kind){
+  const g=GUIDES[gi]; if(!g) return;
+  const url = kind==='pdf' ? g.pdf : g.html;
+  if(!url){ toast("아직 준비되지 않은 가이드예요"); return; }
+  const title = g.t.replace(/_/g," · ");
+  modal(`<h3>📘 ${esc(title)} <span style="font-weight:500;font-size:13px;color:var(--muted)">${kind==='pdf'?'PDF':'HTML 가이드'}</span></h3>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn btn-primary" style="flex:1" onclick="downloadGuide(${gi},'${kind}')">⬇ 다운로드</button>
+      <button class="btn" style="flex:1" onclick="copyGuideLink('${esc(url)}')">🔗 링크 복사</button>
+      <button class="btn" style="flex:1" onclick="window.open('${esc(url)}','_blank')">↗ 새 창</button>
+    </div>
+    <div id="guidePv" style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff;height:64vh">
+      <div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted)">불러오는 중…</div></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">닫기</button></div>`, 760);
+  const pv=document.getElementById('guidePv'); if(!pv) return;
+  try{
+    if(kind==='pdf'){
+      pv.innerHTML=`<iframe src="${esc(url)}" style="width:100%;height:100%;border:0"></iframe>`;
+    } else {
+      const txt=await (await fetch(url)).text();
+      const ifr=document.createElement('iframe');
+      ifr.style.cssText="width:100%;height:100%;border:0;background:#fff";
+      pv.innerHTML=""; pv.appendChild(ifr);
+      ifr.srcdoc=txt;
+    }
+  }catch(e){ pv.innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:16px">미리보기를 불러오지 못했어요.<br>다운로드 또는 새 창으로 확인해 주세요.</div>'; }
+}
+function downloadGuide(gi,kind){
+  const g=GUIDES[gi]; if(!g) return;
+  const url = kind==='pdf' ? g.pdf : g.html;
+  const name = (g.t||"guide")+"_발급가이드"+(kind==='pdf'?".pdf":".html");
+  fetch(url).then(r=>r.blob()).then(b=>{
+    const u=URL.createObjectURL(b); const a=document.createElement("a"); a.href=u; a.download=name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),5000); toast("다운로드됨 ✓");
+  }).catch(()=>{ window.open(url,"_blank"); });
+}
+function copyGuideLink(url){ copyText(url).then(ok=>toast(ok?"링크 복사됨 ✓":"복사 실패 — 새 창으로 여세요")); }
 function openResource(id){
   const r=RESOURCES[id]; if(!r) return;
   modal(`<h3>📄 ${esc(r.title)}</h3>
