@@ -651,12 +651,12 @@ async function openGuide(gi,kind){
        <button class="btn" style="flex:1" onclick="window.open('${esc(url)}','_blank')">↗ 새 창</button>`
     : ``;
   modal(`<h3>📘 ${esc(title)} <span style="font-weight:500;font-size:13px;color:var(--muted)">${kind==='pdf'?'PDF':'HTML 가이드'}</span></h3>
-    <div style="display:flex;gap:6px;margin-bottom:8px">
+    <div id="guidePv" style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff;height:64vh">
+      <div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted)">불러오는 중…</div></div>
+    <div style="display:flex;gap:6px;margin-top:10px">
       <button class="btn btn-primary" style="flex:1" onclick="downloadGuide(${gi},'${kind}')">⬇ 다운로드</button>
       ${extraBtns}
     </div>
-    <div id="guidePv" style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff;height:64vh">
-      <div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted)">불러오는 중…</div></div>
     <div class="modal-actions"><button class="btn" onclick="closeModal()">닫기</button></div>`, 760);
   const pv=document.getElementById('guidePv'); if(!pv) return;
   try{
