@@ -553,6 +553,7 @@ const WHERE = {
   "b4-17":"정부24(gov.kr)에서 폐업사실증명원 발급 (폐업한 경우)",
   "b6-1":"거래은행 앱·창구에서 거래내역서 발급",
   "b6-2":"카드사 앱·고객센터에서 카드 거래내역서 발급",
+  "b6-3":"급여가 입금되는 통장의 거래은행 앱·창구에서 급여 거래내역서 발급",
   "b7-1":"채무가 늘어난 경위를 시간순으로 정리(첨부파일/PDF)",
   "b7-2":"주택 소유자가 서명한 무상거주 사실확인서",
 };
@@ -577,6 +578,7 @@ const WHERE_MSG = {
   "b5-2":"담당자가 추가로 요청드린 기타 서류",
   "b6-1":"은행 고객센터에 연락하시거나 은행 앱에서 거래내역서를 받으실 수 있어요. 가급적 PDF보다 엑셀(xlsx) 파일로 보내주시면 감사하겠습니다",
   "b6-2":"카드사 고객센터에 연락하시거나 카드사 앱에서 카드 거래내역서를 받으실 수 있어요. 가급적 PDF보다 엑셀(xlsx) 파일로 보내주시면 감사하겠습니다",
+  "b6-3":"급여(월급)가 들어오는 통장의 은행 앱·고객센터에서 급여 입금 거래내역서를 받으실 수 있어요. 가급적 PDF보다 엑셀(xlsx) 파일로 보내주시면 감사하겠습니다",
   "b7-1":"판사님께 편지 쓴다고 생각하시고, 빚이 늘어나게 된 사정을 순서대로 정리해 주세요(양식 참고)",
   "b7-2":"현재 거주 중인 집에 대해 '무상거주 사실확인서' 양식에 맞게 작성 부탁드립니다",
 };
@@ -594,12 +596,13 @@ const SITES=[
   { key:"nps",        name:"국민연금공단",                   url:"https://minwon.nps.or.kr", icon:"연", color:"#1d4ed8", ids:["b4-11","b4-12"] },
   { key:"credit4u",   name:"한국신용정보원 크레딧포유",      url:"https://www.credit4u.or.kr", icon:"신", color:"#7c3aed", ids:["b2-5","b2-7"] },
   { key:"realtyprice",name:"부동산공시가격알리미",           url:"https://www.realtyprice.kr", icon:"공", color:"#b45309", ids:["b3-10"] },
+  { key:"kbland",     name:"KB부동산(리브온) 빌라·아파트 시세", url:"https://kbland.kr", icon:"KB", color:"#f4b400", ids:[] },
   { key:"encar",      name:"엔카(자동차 중고시세)",          url:"https://www.encar.com", icon:"차", color:"#dc2626", ids:["b3-3"] },
   { key:"insure",     name:"내보험찾아줌(생·손보협회)",      url:"https://cont.insure.or.kr", icon:"내", color:"#0d9488", ids:["b3-6"] },
   { key:"payinfo",    name:"어카운트인포(계좌통합관리)",     url:"https://www.payinfo.or.kr", icon:"계", color:"#2563eb", ids:["b3-8"] },
   { key:"pension",    name:"통합연금포털(금감원)",           url:"https://www.fss.or.kr/fss/lifeplan/lifeplanIndex/index.do", icon:"퇴", color:"#9B1B33", ids:["b3-14"] },
   { key:"creditor",   name:"채권사·금융기관 직접 요청",      url:"", icon:"금", color:"#857D76", ids:["b2-1","b3-1","b3-7"] },
-  { key:"client",     name:"의뢰인·회사 직접 제출",          url:"", icon:"제", color:"#857D76", ids:["b1-5","b6-1","b6-2","b3-4","b4-1","b4-2","b4-8","b3-12","b3-13","b7-1","b7-2","b5-1","b5-2"] },
+  { key:"client",     name:"의뢰인·회사 직접 제출",          url:"", icon:"제", color:"#857D76", ids:["b1-5","b6-1","b6-2","b6-3","b3-4","b4-1","b4-2","b4-8","b3-12","b3-13","b7-1","b7-2","b5-1","b5-2"] },
   { key:"etc",        name:"발급처 확인 필요",               url:"", icon:"?", color:"#d97706", ids:["b2-6"] },
 ];
 /* ---------- 1-3. 서류 양식·샘플 자료 (id별, 이미지 내장) ---------- */
@@ -851,7 +854,7 @@ const TAG_GROUPS={
 };
 const TAG_CONTROLLED=["b4g1","b4g2","b3g5","b3g6","b3g1","b3g2","b3g4"];
 const ASSET_GROUPS=["b3g5","b3g6","b3g1","b3g2","b3g4"]; // 재산(자산) 묶음 — 자동 '해당없음' 숨김 금지(놓침 방지)
-const NA_DEFAULT=["b3-7","b3-12","b3-1","b3-13","b3-14","b4-6","b4-8","b4-17","b6-1","b6-2"]; // 세트 부활 예외 — 보험해약환급금·비품시가표·자동차보험증서·퇴직금세트·매입매출·월평균소득산정표·폐업사실증명·은행/카드거래내역은 항상 기본 해당없음
+const NA_DEFAULT=["b3-7","b3-12","b3-1","b3-13","b3-14","b4-6","b4-8","b4-17","b6-1","b6-2","b6-3"]; // 세트 부활 예외 — 보험해약환급금·비품시가표·자동차보험증서·퇴직금세트·매입매출·월평균소득산정표·폐업사실증명·은행/카드거래내역은 항상 기본 해당없음
 const ASSET_OPTS=["자가","임차보증금","차량","토지","사업용재산","기타재산"];
 const FIRMS=["법무법인 이준 서초 분사무소","법률사무소 블루"]; // 소속 사무소 구분 (요청 메시지·태그에 반영)
 function firmShort(f){ if(!f) return "사무소"; if(f.includes("블루")) return "블루"; if(f.includes("이준")) return "이준"; return f.length>6?f.slice(0,6):f; }
@@ -2601,7 +2604,7 @@ function renderDownloadModal(){
         <button style="flex:1" class="${_dlCtx.mode==='eachpdf'?'on-self':''}" onclick="_dlCtx.mode='eachpdf';renderDownloadModal()">파일별 PDF로<br><span style="font-size:11px;font-weight:400">이미지도 PDF 변환</span></button>
         <button style="flex:1" class="${_dlCtx.mode==='each'?'on-self':''}" onclick="_dlCtx.mode='each';renderDownloadModal()">파일별 원본<br><span style="font-size:11px;font-weight:400">올린 그대로(jpg 등)</span></button>
       </div>
-      ${_dlCtx.mode==='pdf'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· 묶음별로 처리돼요. 이미지·PDF는 그 묶음 안에서 <b>위에 놓은 순서대로</b> 한 개의 PDF로 합쳐집니다.<br>· 그 묶음에 한글·엑셀이 섞이면 [합친 PDF + 원본]을 <b>그 묶음 이름의 ZIP</b> 하나로 받습니다.</div>`:""}
+      ${_dlCtx.mode==='pdf'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· 묶음별로 처리돼요. 이미지·PDF는 그 묶음 안에서 <b>위에 놓은 순서대로</b> 한 개의 PDF로 합쳐집니다.<br>· 그 묶음에 한글·엑셀이 섞이면 [합친 PDF + 원본]을 <b>그 묶음 이름의 ZIP</b> 하나로 받습니다.<br>· <b>통장 거래내역</b>·<b>채무증대 경위서</b> 묶음은 합치지 않고 <b>파일이름별로 따로</b> 저장돼요.</div>`:""}
       ${_dlCtx.mode==='eachpdf'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· 이미지는 각각 1개의 PDF로 변환, PDF는 그대로, 한글·엑셀은 원본 — <b>파일별로 따로</b> 받아집니다.</div>`:""}
       ${_dlCtx.mode==='each'?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">· 올린 파일을 원본 그대로 <b>파일별로</b> 받습니다.</div>`:""}</div>
     <div style="margin-bottom:8px"><button class="btn btn-sm" onclick="dlSelectAll(true)">전체선택</button> <button class="btn btn-sm" onclick="dlSelectAll(false)">전체해제</button></div>
@@ -2645,6 +2648,11 @@ async function doDownload(){
     if(mode==="pdf"){
       const PDFLib=await loadPdfLib();
       for(const g of picked){
+        if(g.bid==="b6"||g.bid==="b7"){ // 통장 거래내역·채무증대 경위서 묶음: 합치지 않고 '파일이름별 원본'으로 따로 저장(거래내역은 엑셀이 많고, 경위서·무상거주 사실확인서는 각각 별개 서류라 합치기 부적합)
+          for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f);
+            const suffix=it.files.length>1?("_"+i):""; outs.push({name:nm+"_"+safeName(dlItemLabel(it.name))+suffix+extOf(fo.f.name), blob:new Blob([bytes])}); } }
+          continue;
+        }
         const doc=await PDFLib.PDFDocument.create(); const leftovers=[];
         for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f); const ext=extOf(fo.f.name).toLowerCase();
           try{
