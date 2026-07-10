@@ -4124,8 +4124,8 @@ async function _ibDoAssign(slot){
       if(!targets.length){ _ibClosePick(); _ibBusy=false; return; }
       toast(`${targets.length}개 업로드 중…`);
       const _nm=itemName(slot,c);
-      await _ibUploadFile(c,targets[0],slot); _ibAddFiled(targets[0], _nm, 1);          // 첫 파일이 폴더 생성
-      await Promise.all(targets.slice(1).map(async t=>{ await _ibUploadFile(c,t,slot); _ibAddFiled(t, _nm, 1); }));  // 나머지는 동시에(빠름)
+      /* 한 개씩 순차 업로드 — 동시 업로드 시 파일 전체를 메모리에 함께 올려 튕김(브라우저 강제 종료) 유발하므로 순차 처리 */
+      for(let i=0;i<targets.length;i++){ const t=targets[i]; if(targets.length>1) toast(`업로드 중… (${i+1}/${targets.length})`); await _ibUploadFile(c,t,slot); _ibAddFiled(t, _nm, 1); }
       _ibSel=new Set();
       touch(`[${c.name}] 받은 파일함 → '${itemName(slot,c)}' ${targets.length}개 배정`);
       _ibClosePick(); _ibRender(); toast(`'${_ibSlotName(slot)}'로 ${targets.length}개 배정 ✓`);
@@ -4276,7 +4276,9 @@ async function _ibUnsplit(driveId){
     f._refs=(f._refs||[]).filter(r=>r.driveId!==driveId);
     if(s) _ibUnmarkReceived(s);
     touch(`[${c.name}] 받은 파일함 분할 세트 취소: ${_ibSlotName(ref.slot)} (${pgs.length}p)`);
-    _ibDrawPages(f); _ibRender(); toast("그 세트 배정을 취소했어요 — 페이지를 다시 고를 수 있어요");
+    /* 취소된 페이지 셀만 원상복구 → 스크롤 위치 유지 */
+    { const grid=$("#ibPgGrid"); if(grid){ pgs.forEach(p=>{ const cell=[...grid.children].find(x=>+x.dataset.p===p); if(!cell)return; cell.classList.remove("done"); delete cell.dataset.set; const tg=cell.querySelector(".ib-pgtag"); if(tg) tg.remove(); }); } }
+    _ibRender(); toast("그 세트 배정을 취소했어요 — 페이지를 다시 고를 수 있어요");
   }catch(e){ console.error(e); toast("취소 실패: "+(e.message||e)); setSync("error"); }
   finally{ _ibBusy=false; }
 }
@@ -4311,7 +4313,12 @@ async function _ibBuildSplit(slot){
     if(_keepOrig && !f.origSaved){ _ibSaveOriginal(c,f); }   // 원본은 백그라운드 보관(완료를 막지 않음 — 조각은 이미 저장됨)
     touch(`[${c.name}] 받은 파일함 PDF 분할 → '${itemName(slot,c)}' ${pages.length}p`);
     _ibRender(); toast(`'${_ibSlotName(slot)}'로 ${pages.length}p 분할 완료 ✓`);
-    _ibDrawPages(f);
+    /* 전체 재렌더 대신 방금 배정한 페이지 셀만 갱신 → 스크롤 위치 유지 */
+    { const grid=$("#ibPgGrid"); if(grid){ const sName=_ibSlotName(slot);
+        pages.forEach(p=>{ const cell=[...grid.children].find(x=>+x.dataset.p===p); if(!cell)return;
+          cell.classList.remove("on"); cell.classList.add("done"); cell.dataset.set=j.id;
+          let tg=cell.querySelector(".ib-pgtag"); if(!tg){ tg=document.createElement("div"); tg.className="ib-pgtag"; cell.appendChild(tg); } tg.textContent="✓ "+sName; });
+        const sp=$("#ibSelPg"); if(sp) sp.textContent=_ibSplitSel.size; } }
   }catch(e){ console.error(e); toast("분할 실패: "+(e.message||e)); }
   finally{ _ibBusy=false; }
 }
