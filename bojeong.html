@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>보정 지식베이스 | 법무법인 이준 서초 분사무소</title>
+<!-- 보정 지식베이스 v2026-07-10a / 세션 F 산출물
+     같은 Supabase 프로젝트(취합앱·케이스허브 공용), kb_ 테이블 사용
+     사건번호 공통 키: 사례카드 case_no ↔ casehub.html?case=사건번호 (딥링크 준비) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Malgun Gothic","Apple SD Gothic Neo",sans-serif;background:#F6F5F2;color:#26221E;font-size:16px;line-height:1.6}
+.wrap{max-width:880px;margin:0 auto;padding:16px 14px 60px}
+header.top{background:#9B1B33;color:#fff;padding:14px 0}
+header.top .wrap{padding:0 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+header.top h1{font-size:19px;font-weight:700}
+header.top .sub{font-size:12.5px;opacity:.85}
+.userbox{display:flex;align-items:center;gap:8px;font-size:13px}
+.userbox .rolebadge{background:rgba(255,255,255,.18);padding:2px 8px;border-radius:4px}
+button{font-family:inherit;cursor:pointer}
+.btn{border:1px solid #C9C4BC;background:#fff;color:#26221E;border-radius:8px;padding:9px 14px;font-size:14.5px}
+.btn:hover{background:#F1EEE9}
+.btn.primary{background:#9B1B33;border-color:#9B1B33;color:#fff}
+.btn.primary:hover{background:#7E1529}
+.btn.small{padding:5px 10px;font-size:13px}
+.btn.ghost{border-color:transparent;background:transparent;color:#fff;text-decoration:underline;font-size:13px}
+input,select,textarea{font-family:inherit;font-size:15.5px;border:1px solid #C9C4BC;border-radius:8px;padding:9px 11px;background:#fff;color:#26221E;width:100%}
+textarea{min-height:90px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid #9B1B33;outline-offset:0;border-color:#9B1B33}
+label{font-size:13.5px;font-weight:700;color:#5B554D;display:block;margin:10px 0 4px}
+.tabs{display:flex;gap:6px;margin:14px 0 16px;border-bottom:2px solid #E4E0D8;padding-bottom:0}
+.tabs button{border:none;background:none;font-size:16px;font-weight:700;color:#8A8378;padding:10px 14px;border-bottom:3px solid transparent;margin-bottom:-2px}
+.tabs button.on{color:#9B1B33;border-bottom-color:#9B1B33}
+.panel{display:none}
+.panel.on{display:block}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.filters select{flex:1;min-width:150px;width:auto}
+.searchbox{position:relative;margin-bottom:6px}
+.hint{font-size:13px;color:#8A8378;margin-bottom:14px}
+.sec{margin:22px 0 8px;display:flex;align-items:baseline;gap:8px}
+.sec h2{font-size:16.5px;font-weight:700}
+.sec .cnt{font-size:13.5px;color:#8A8378}
+.card{background:#fff;border:1px solid #E4E0D8;border-radius:10px;padding:13px 15px;margin-bottom:8px;cursor:pointer}
+.card:hover{border-color:#B7B0A5}
+.card .kind{font-size:12px;font-weight:700;letter-spacing:.02em;margin-bottom:3px}
+.k-sop{color:#1D5F8A}.k-case{color:#0F6E56}.k-faq{color:#9B5A1B}.k-dict{color:#5F5E5A}.k-court{color:#9B1B33}
+.card .tt{font-size:16px;font-weight:700}
+.card .mini{font-size:13.5px;color:#6E675D;margin-top:3px;word-break:break-all}
+.card .body{display:none;margin-top:10px;border-top:1px solid #EEEBE4;padding-top:10px}
+.card.open .body{display:block}
+.fld{margin-bottom:9px}
+.fld b{display:block;font-size:12.5px;color:#8A8378;font-weight:700}
+.fld span,.fld div.v{font-size:15px;white-space:pre-wrap;word-break:break-word}
+.tagline{margin-top:6px}
+.tag{display:inline-block;background:#F1EEE9;color:#5B554D;font-size:12.5px;padding:2px 9px;border-radius:12px;margin:2px 3px 0 0}
+.chip{display:inline-block;font-size:12.5px;font-weight:700;padding:2px 9px;border-radius:5px}
+.c-wait{background:#FBEDE2;color:#9B5A1B}
+.c-done{background:#E4F1EA;color:#0F6E56}
+.c-reg{background:#E8ECF5;color:#1D3E8A}
+.c-urgent{background:#F9E3E3;color:#9B1B33}
+.c-draft{background:#EFEDE8;color:#8A8378}
+.empty{background:#fff;border:1px dashed #C9C4BC;border-radius:10px;padding:22px;text-align:center;color:#8A8378;font-size:14.5px}
+.qitem{background:#fff;border:1px solid #E4E0D8;border-radius:10px;padding:13px 15px;margin-bottom:8px}
+.qitem .meta{font-size:13px;color:#8A8378;margin-top:4px}
+.qitem .qtxt{font-size:15.5px;margin-top:4px;white-space:pre-wrap}
+.qitem .ans{margin-top:8px;background:#F8F6F2;border-radius:8px;padding:9px 11px;font-size:14.5px;white-space:pre-wrap}
+.formcard{background:#fff;border:1px solid #E4E0D8;border-radius:10px;padding:15px;margin-bottom:18px}
+.row2{display:flex;gap:10px}
+.row2>div{flex:1}
+.msg{font-size:14px;margin-top:8px;color:#0F6E56}
+.msg.err{color:#9B1B33}
+.adminbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.adminbar button{border:1px solid #C9C4BC;background:#fff;border-radius:16px;padding:6px 13px;font-size:13.5px;color:#5B554D}
+.adminbar button.on{background:#26221E;border-color:#26221E;color:#fff}
+.login{max-width:380px;margin:70px auto;background:#fff;border:1px solid #E4E0D8;border-radius:12px;padding:26px}
+.login h1{font-size:19px;color:#9B1B33;margin-bottom:2px}
+.login p{font-size:13.5px;color:#8A8378;margin-bottom:14px}
+.deep{display:inline-block;margin-top:4px;font-size:14px;color:#1D5F8A;text-decoration:underline}
+@media(max-width:560px){.row2{flex-direction:column}header.top h1{font-size:16.5px}}
+
+/* ── 카드 본문 리치 렌더링 (2026-07-10) ── */
+.rt-concl{background:#F7F2E7;border-left:4px solid #9B1B33;padding:10px 12px;border-radius:8px;font-weight:700;margin:8px 0;line-height:1.55}
+.rt-ol{margin:8px 0 8px 4px;padding-left:20px;line-height:1.65}
+.rt-ol li{margin:5px 0}
+.rt-h{font-weight:800;margin:12px 0 6px;color:#5B5344;font-size:13px}
+.rt-tb{border-collapse:collapse;width:100%;margin:4px 0 10px;font-size:13px}
+.rt-tb td{border:1px solid #E5DFD3;padding:7px 9px;line-height:1.5;vertical-align:top}
+.rt-tb td:first-child{background:#FAF7F0;font-weight:600;white-space:nowrap}
+.rt-tip{background:#FFF9E8;border:1px solid #F0E3B8;padding:9px 11px;border-radius:8px;margin:8px 0;line-height:1.55;font-size:13px}
+.rt-tip.warn{background:#FCEFEF;border-color:#EBC9C9}
+.rt-p{margin:6px 0;line-height:1.6}
+</style>
+</head>
+<body>
+
+<div id="loginView" style="display:none">
+  <div class="login">
+    <h1>보정 지식베이스</h1>
+    <p>법무법인 이준 서초 분사무소 내부용</p>
+    <label>이메일</label>
+    <input id="liEmail" type="email" autocomplete="username">
+    <label>비밀번호</label>
+    <input id="liPw" type="password" autocomplete="current-password">
+    <div style="margin-top:14px"><button class="btn primary" style="width:100%" onclick="doLogin()">로그인</button></div>
+    <div id="liMsg" class="msg err"></div>
+  </div>
+</div>
+
+<div id="appView" style="display:none">
+  <header class="top"><div class="wrap">
+    <div><h1>보정 지식베이스</h1><div class="sub">법무법인 이준 서초 분사무소</div></div>
+    <div class="userbox"><span id="whoami"></span><span class="rolebadge" id="roleBadge"></span><button class="btn ghost" onclick="doLogout()">로그아웃</button></div>
+  </div></header>
+  <div class="wrap">
+    <div class="tabs" id="tabBar">
+      <button data-tab="search" class="on" onclick="showTab('search')">검색</button>
+      <button data-tab="qna" onclick="showTab('qna')">질문함</button>
+      <button data-tab="admin" id="adminTabBtn" style="display:none" onclick="showTab('admin')">관리</button>
+    </div>
+
+    <div class="panel on" id="panel-search">
+      <div class="filters">
+        <select id="fCourt" onchange="renderSearch()"></select>
+        <select id="fType" onchange="renderSearch()"></select>
+      </div>
+      <div class="searchbox"><input id="fKw" placeholder="키워드 검색 (예: 월급, 급여명세, 4대보험 없음)" oninput="renderSearch()"></div>
+      <div class="hint">카드 제목뿐 아니라 검색 태그, FAQ 질문 문장, 보정 요지, 서류의 다른 이름까지 함께 찾습니다. 띄어쓰기는 달라도 됩니다.</div>
+      <div id="results"></div>
+    </div>
+
+    <div class="panel" id="panel-qna">
+      <div class="formcard">
+        <div style="font-size:16px;font-weight:700;margin-bottom:2px">질문 남기기</div>
+        <div style="font-size:13.5px;color:#8A8378">검색으로 답을 못 찾았을 때 남겨 주세요. 답변이 달리면 아래 목록에서 확인할 수 있어요.</div>
+        <label>질문 내용</label>
+        <textarea id="qText" placeholder="예: 소득 소명 보정에서 프리랜서는 어떤 서류를 내야 하나요?"></textarea>
+        <div class="row2">
+          <div><label>관련 사건번호 (있으면)</label><input id="qCase" placeholder="예: 2026개회12345"></div>
+          <div><label>질문자 이름</label><input id="qName" placeholder="이름"></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:7px;margin-top:12px;font-size:14.5px"><input type="checkbox" id="qUrgent" style="width:18px;height:18px"> 긴급 (기한 임박)</label>
+        <div style="margin-top:12px"><button class="btn primary" onclick="submitQuestion()">질문 남기기</button></div>
+        <div id="qMsg" class="msg"></div>
+      </div>
+      <div class="sec"><h2>질문 목록</h2><span class="cnt" id="qCnt"></span></div>
+      <div id="qList"></div>
+    </div>
+
+    <div class="panel" id="panel-admin">
+      <div class="adminbar" id="adminMenu"></div>
+      <div id="adminBody"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/*MAIN*/
+const SUPABASE_URL="https://zxwsfwhyjkixsnfpzpkt.supabase.co";
+const SUPABASE_ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4d3Nmd2h5amtpeHNuZnB6cGt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NjUxMzIsImV4cCI6MjA5ODA0MTEzMn0.mHfZJNRMmH-I2XI3ISutaYNemIbjKvWzFlOzMLmi-aQ";
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
+const CASEHUB_URL="casehub.html";
+
+let ME={id:null,email:"",role:null,name:""};
+let D={types:[],sop:[],cases:[],faq:[],dict:[],courts:[],questions:[]};
+
+function esc(s){return (s==null?"":String(s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function norm(s){return (s==null?"":String(s)).toLowerCase().replace(/\s+/g,"");}
+function typeName(code){const t=D.types.find(x=>x.code===code);return t?t.name:(code||"");}
+function fmtDate(s){if(!s)return"";const d=new Date(s);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+
+async function boot(){
+  const {data:{session}}=await db.auth.getSession();
+  if(!session){show("loginView");return;}
+  await initApp(session);
+}
+function show(id){
+  document.getElementById("loginView").style.display=(id==="loginView")?"block":"none";
+  document.getElementById("appView").style.display=(id==="appView")?"block":"none";
+}
+async function doLogin(){
+  const email=document.getElementById("liEmail").value.trim();
+  const pw=document.getElementById("liPw").value;
+  const m=document.getElementById("liMsg");m.textContent="";
+  if(!email||!pw){m.textContent="이메일과 비밀번호를 입력해 주세요.";return;}
+  const {data,error}=await db.auth.signInWithPassword({email,password:pw});
+  if(error){m.textContent="로그인 실패: 이메일 또는 비밀번호를 확인해 주세요.";return;}
+  await initApp(data.session);
+}
+async function doLogout(){await db.auth.signOut();location.reload();}
+
+async function initApp(session){
+  ME.id=session.user.id;ME.email=session.user.email||"";
+  const {data:prof}=await db.from("profiles").select("role,name").eq("id",ME.id).single();
+  ME.role=prof?prof.role:null;ME.name=prof&&prof.name?prof.name:"";
+  if(ME.role!=="master"&&ME.role!=="staff"){
+    show("loginView");
+    document.getElementById("liMsg").textContent="이 앱은 법무법인 이준 서초 분사무소 내부 직원용입니다.";
+    await db.auth.signOut();return;
+  }
+  document.getElementById("whoami").textContent=ME.name||ME.email;
+  document.getElementById("roleBadge").textContent=(ME.role==="master")?"관리자":"직원";
+  if(ME.role==="master")document.getElementById("adminTabBtn").style.display="";
+  show("appView");
+  await loadAll();
+  buildFilters();
+  applyUrlParams();
+  renderSearch();renderQna();
+  if(ME.role==="master")renderAdmin("q");
+  const nm=localStorage.getItem("kb_my_name");if(nm)document.getElementById("qName").value=nm;
+}
+
+async function loadAll(){
+  const [t,s,c,f,dd,cp,q]=await Promise.all([
+    db.from("kb_types").select("*").order("sort_order"),
+    db.from("kb_sop_cards").select("*").order("card_no"),
+    db.from("kb_case_cards").select("*").order("card_no"),
+    db.from("kb_faq_cards").select("*").order("card_no"),
+    db.from("kb_doc_dict").select("*").order("name"),
+    db.from("kb_court_profiles").select("*").order("court"),
+    db.from("kb_questions").select("*").order("created_at",{ascending:false})
+  ]);
+  D.types=t.data||[];D.sop=s.data||[];D.cases=c.data||[];D.faq=f.data||[];
+  D.dict=dd.data||[];D.courts=cp.data||[];D.questions=q.data||[];
+}
+
+function buildFilters(){
+  const set=new Set();
+  D.courts.forEach(x=>{if(x.court)set.add(x.court);});
+  D.cases.forEach(x=>{if(x.court)set.add(x.court);});
+  D.sop.forEach(x=>{if(x.court)set.add(x.court);});
+  const cs=document.getElementById("fCourt");
+  cs.innerHTML='<option value="">법원: 전체</option>'+[...set].sort().map(c=>'<option value="'+esc(c)+'">'+esc(c)+"</option>").join("");
+  const ts=document.getElementById("fType");
+  ts.innerHTML='<option value="">보정유형: 전체</option>'+D.types.map(t=>'<option value="'+esc(t.code)+'">'+esc(t.name||t.code)+"</option>").join("");
+}
+function applyUrlParams(){
+  const p=new URLSearchParams(location.search);
+  const v=p.get("case")||p.get("q");
+  if(v)document.getElementById("fKw").value=v;
+}
+
+function showTab(t){
+  document.querySelectorAll(".tabs button").forEach(b=>b.classList.toggle("on",b.dataset.tab===t));
+  document.querySelectorAll(".panel").forEach(p=>p.classList.remove("on"));
+  document.getElementById("panel-"+t).classList.add("on");
+}
+
+function kwMatch(hay,tokens){
+  const h=norm(hay);
+  return tokens.every(tk=>h.includes(tk));
+}
+function tokens(){
+  return document.getElementById("fKw").value.trim().toLowerCase().split(/\s+/).filter(Boolean).map(norm);
+}
+
+function tagHtml(tags){
+  if(!tags)return"";
+  return '<div class="tagline">'+String(tags).split(",").map(x=>x.trim()).filter(Boolean).map(x=>'<span class="tag">'+esc(x)+"</span>").join("")+"</div>";
+}
+function richText(s){
+  if(s==null||String(s).trim()==="")return"";
+  const lines=String(s).replace(/\r/g,"").split("\n");
+  let html="",list=[],tbl=[],mode="";
+  const flushList=()=>{if(list.length){html+='<ol class="rt-ol">'+list.map(x=>"<li>"+x+"</li>").join("")+"</ol>";list=[];}};
+  const flushTbl=()=>{if(tbl.length){html+='<table class="rt-tb">'+tbl.map(r=>"<tr>"+r.map(c=>"<td>"+c+"</td>").join("")+"</tr>").join("")+"</table>";tbl=[];}};
+  for(const raw of lines){
+    const t=raw.trim();
+    if(!t){flushList();flushTbl();mode="";continue;}
+    let m;
+    if(/^결론\s*:/.test(t)){flushList();flushTbl();mode="";html+='<div class="rt-concl">'+esc(t.replace(/^결론\s*:\s*/,""))+"</div>";}
+    else if(m=t.match(/^(\d+)[.)]\s*(.*)/)){flushTbl();mode="";list.push(esc(m[2]));}
+    else if(t.startsWith("■")){flushList();flushTbl();html+='<div class="rt-h">'+esc(t.replace(/^■\s*/,""))+"</div>";mode="tbl";}
+    else if(t.startsWith("|")){flushList();tbl.push(t.split("|").map(x=>x.trim()).filter(x=>x!=="").map(x=>esc(x)));}
+    else if(t.startsWith("-")&&mode==="tbl"){flushList();const b=t.replace(/^-\s*/,"");const i=b.indexOf(":");tbl.push(i>0?[esc(b.slice(0,i).trim()),esc(b.slice(i+1).trim())]:[esc(b),""]);}
+    else if(/^[⚠💬※★]/u.test(t)){flushList();flushTbl();mode="";html+='<div class="rt-tip'+(t.startsWith("⚠")?" warn":"")+'">'+esc(t)+"</div>";}
+    else {flushList();flushTbl();mode="";html+='<div class="rt-p">'+esc(t)+"</div>";}
+  }
+  flushList();flushTbl();return html;
+}
+function fld(label,val){
+  if(val==null||String(val).trim()==="")return"";
+  return '<div class="fld"><b>'+esc(label)+'</b><div class="v">'+richText(val)+"</div></div>";
+}
+function toggleCard(el){el.classList.toggle("open");}
+
+function renderSearch(){
+  const court=document.getElementById("fCourt").value;
+  const type=document.getElementById("fType").value;
+  const tks=tokens();
+  const out=[];
+  const kwOn=tks.length>0;
+
+  const prof=D.courts.filter(x=>(!court||x.court===court)&&(!kwOn||kwMatch([x.court,x.dept,x.top_types,x.notes,x.deadline_practice].join(" "),tks)));
+  if(court&&prof.length){
+    out.push(sec("법원 프로필",prof.length));
+    prof.forEach(x=>{
+      out.push(cardHtml("k-court","법원 프로필",(x.court||"")+(x.dept?" "+x.dept:""),
+        "집계 "+(x.sample_count!=null?x.sample_count+"건":"기록 없음"),
+        fld("자주 나오는 보정유형 순위",x.top_types)+fld("개시결정까지 평균 기간",x.avg_days_to_start)+fld("보정 기한 관행",x.deadline_practice)+fld("특이사항",x.notes)));
+    });
+  }
+
+  const sop=D.sop.filter(x=>x.reviewed)
+    .filter(x=>!court||!x.court||x.court===court)
+    .filter(x=>!type||x.type_code===type)
+    .filter(x=>!kwOn||kwMatch([x.title,x.search_tags,typeName(x.type_code),x.required_docs,x.steps,x.caution].join(" "),tks));
+  out.push(sec("SOP 카드 (대응 절차)",sop.length));
+  if(!sop.length)out.push(emptyBox("이 조건에 맞는 SOP 카드가 아직 없어요."));
+  sop.forEach(x=>{
+    out.push(cardHtml("k-sop",(x.card_no||"SOP")+" · "+typeName(x.type_code),x.title,
+      (x.court?x.court+" 전용":"전 법원 공통"),
+      fld("대응 절차",x.steps)+fld("필요 서류",x.required_docs)+fld("주의사항",x.caution)+tagHtml(x.search_tags)));
+  });
+
+  const cs=D.cases.filter(x=>x.reviewed)
+    .filter(x=>!court||x.court===court)
+    .filter(x=>!type||x.type_code===type)
+    .filter(x=>!kwOn||kwMatch([x.summary,x.response,x.search_tags,typeName(x.type_code),x.submitted_docs,x.case_no,x.court,x.dept].join(" "),tks));
+  out.push(sec("사례카드 (실제 사건)",cs.length));
+  if(!cs.length)out.push(emptyBox("이 조건에 맞는 사례카드가 아직 없어요."));
+  cs.forEach(x=>{
+    const link=x.case_no?'<a class="deep" target="_blank" href="'+CASEHUB_URL+'?case='+encodeURIComponent(x.case_no)+'">케이스허브에서 이 사건 열기</a>':"";
+    out.push(cardHtml("k-case",(x.card_no||"사례")+" · "+typeName(x.type_code),
+      (x.case_no||"사건번호 미기재")+" · "+(x.result||"결과 미기재"),
+      (x.court||"")+(x.dept?" "+x.dept:"")+" · "+oneLine(x.summary),
+      fld("보정 요지",x.summary)+fld("우리 대응 요약",x.response)+fld("제출서류 목록",x.submitted_docs)+fld("결과",x.result)+fld("원본 위치",x.source_loc)+tagHtml(x.search_tags)+link));
+  });
+
+  const fq=D.faq.filter(x=>x.reviewed)
+    .filter(x=>!type||x.type_code===type)
+    .filter(x=>!kwOn||kwMatch([x.question,x.answer,x.search_tags,typeName(x.type_code)].join(" "),tks));
+  out.push(sec("FAQ (자주 묻는 질문)",fq.length));
+  if(!fq.length)out.push(emptyBox("이 조건에 맞는 FAQ가 아직 없어요. 질문함에 남겨 주세요."));
+  fq.forEach(x=>{
+    out.push(cardHtml("k-faq",(x.card_no||"FAQ")+" · "+typeName(x.type_code),x.question,
+      oneLine(x.answer),
+      fld("답변",x.answer)+fld("근거 카드번호",x.ref_cards)+tagHtml(x.search_tags)));
+  });
+
+  const dictShow=kwOn?D.dict.filter(x=>x.reviewed).filter(x=>kwMatch([x.name,x.search_tags,x.description,x.kind].join(" "),tks)):(type?[]:D.dict.filter(x=>x.reviewed));
+  if(dictShow.length||kwOn){
+    out.push(sec("서류 사전",dictShow.length));
+    dictShow.forEach(x=>{
+      const g=x.guide_link?'<a class="deep" target="_blank" href="'+esc(x.guide_link)+'">관련 가이드 열기</a>':"";
+      out.push(cardHtml("k-dict",x.kind||"서류",x.name,oneLine(x.description),
+        fld("설명",x.description)+fld("발급처와 방법",x.issue_how)+fld("작성 요령",x.howto)+fld("견본 이미지",x.sample_path)+fld("빈 양식",x.blank_form_path)+tagHtml(x.search_tags)+g));
+    });
+  }
+
+  document.getElementById("results").innerHTML=out.join("");
+}
+function oneLine(s){s=(s||"").replace(/\s+/g," ").trim();return s.length>60?s.slice(0,60)+"…":s;}
+function sec(t,n){return '<div class="sec"><h2>'+esc(t)+'</h2><span class="cnt">'+n+'건</span></div>';}
+function emptyBox(t){return '<div class="empty">'+esc(t)+"</div>";}
+function cardHtml(kindCls,kind,title,mini,body){
+  return '<div class="card" onclick="toggleCard(this)"><div class="kind '+kindCls+'">'+esc(kind)+'</div><div class="tt">'+esc(title)+'</div><div class="mini">'+esc(mini)+'</div><div class="body" onclick="event.stopPropagation()">'+body+"</div></div>";
+}
+
+async function submitQuestion(){
+  const text=document.getElementById("qText").value.trim();
+  const cno=document.getElementById("qCase").value.trim();
+  const name=document.getElementById("qName").value.trim();
+  const urgent=document.getElementById("qUrgent").checked;
+  const m=document.getElementById("qMsg");m.className="msg";m.textContent="";
+  if(!text){m.className="msg err";m.textContent="질문 내용을 입력해 주세요.";return;}
+  if(!name){m.className="msg err";m.textContent="질문자 이름을 입력해 주세요. (답변 확인용)";return;}
+  const {error}=await db.from("kb_questions").insert({question:text,case_no:cno||null,urgent:urgent,asked_by:name,status:"대기"});
+  if(error){m.className="msg err";m.textContent="저장에 실패했어요. 잠시 후 다시 시도해 주세요.";return;}
+  localStorage.setItem("kb_my_name",name);
+  document.getElementById("qText").value="";document.getElementById("qCase").value="";document.getElementById("qUrgent").checked=false;
+  m.textContent="질문이 접수됐어요. 답변이 달리면 아래 목록에 표시됩니다.";
+  const {data}=await db.from("kb_questions").select("*").order("created_at",{ascending:false});
+  D.questions=data||D.questions;
+  renderQna();if(ME.role==="master")renderAdmin(curAdmin);
+}
+
+function statusChip(q){
+  if(q.status==="답변완료")return '<span class="chip c-done">답변완료</span>';
+  if(q.status==="카드등록")return '<span class="chip c-reg">카드등록</span>';
+  return '<span class="chip c-wait">대기</span>';
+}
+function renderQna(){
+  document.getElementById("qCnt").textContent=D.questions.length+"건";
+  const out=D.questions.map(q=>{
+    return '<div class="qitem">'+statusChip(q)+(q.urgent?' <span class="chip c-urgent">긴급</span>':"")
+      +'<div class="qtxt">'+esc(q.question)+"</div>"
+      +'<div class="meta">'+esc(q.asked_by||"")+" · "+fmtDate(q.created_at)+(q.case_no?" · 사건 "+esc(q.case_no):"")+"</div>"
+      +(q.answer?'<div class="ans"><b style="font-size:12.5px;color:#8A8378">답변</b><br>'+esc(q.answer)+"</div>":"")
+      +"</div>";
+  });
+  document.getElementById("qList").innerHTML=out.join("")||emptyBox("아직 질문이 없어요.");
+}
+
+/* ---------------- 관리 (master 전용) ---------------- */
+const ADMIN_DEFS=[
+  {key:"q",label:"질문함 관리"},
+  {key:"sop",label:"SOP 카드",table:"kb_sop_cards",upd:1,data:()=>D.sop,fields:[
+    {k:"card_no",l:"카드번호",ph:"SOP-001"},{k:"type_code",l:"보정유형",type:"type"},
+    {k:"title",l:"제목",req:1},{k:"court",l:"법원 (전 법원 공통이면 비움)"},
+    {k:"steps",l:"대응 절차",type:"ta"},{k:"required_docs",l:"필요 서류",type:"ta"},
+    {k:"caution",l:"주의사항",type:"ta"},{k:"search_tags",l:"검색 태그 (쉼표로 구분)"},
+    {k:"reviewed",l:"검수 완료 (체크해야 검색에 노출)",type:"cb"}]},
+  {key:"case",label:"사례카드",table:"kb_case_cards",upd:1,data:()=>D.cases,fields:[
+    {k:"card_no",l:"카드번호",ph:"CASE-001"},{k:"case_no",l:"사건번호",ph:"2026개회12345"},
+    {k:"court",l:"법원"},{k:"dept",l:"재판부"},{k:"type_code",l:"보정유형",type:"type"},
+    {k:"summary",l:"보정 요지",type:"ta"},{k:"response",l:"우리 대응 요약",type:"ta"},
+    {k:"submitted_docs",l:"제출서류 목록",type:"ta"},
+    {k:"result",l:"결과",type:"sel",opts:["통과","재보정","기각"]},
+    {k:"search_tags",l:"검색 태그 (쉼표로 구분)"},{k:"source_loc",l:"원본 위치"},
+    {k:"reviewed",l:"검수 완료 (체크해야 검색에 노출)",type:"cb"}]},
+  {key:"faq",label:"FAQ 카드",table:"kb_faq_cards",upd:1,data:()=>D.faq,fields:[
+    {k:"card_no",l:"카드번호",ph:"FAQ-001"},{k:"type_code",l:"보정유형",type:"type"},
+    {k:"question",l:"질문",type:"ta",req:1},{k:"answer",l:"답변",type:"ta",req:1},
+    {k:"ref_cards",l:"근거 카드번호 (쉼표: SOP-001,CASE-003)"},
+    {k:"search_tags",l:"검색 태그 (같은 질문의 다른 표현들)"},
+    {k:"reviewed",l:"검수 완료 (체크해야 검색에 노출)",type:"cb"}]},
+  {key:"dict",label:"서류 사전",table:"kb_doc_dict",upd:1,data:()=>D.dict,fields:[
+    {k:"name",l:"서류 이름",req:1},{k:"kind",l:"종류",type:"sel",opts:["발급형","작성형"]},
+    {k:"description",l:"한 줄 설명"},{k:"issue_how",l:"발급처와 방법 (발급형)",type:"ta"},
+    {k:"howto",l:"작성 요령 (작성형)",type:"ta"},{k:"sample_path",l:"견본 이미지 주소"},
+    {k:"blank_form_path",l:"빈 양식 주소"},{k:"guide_link",l:"관련 가이드 주소"},
+    {k:"search_tags",l:"검색 태그 (서류의 다른 이름들)"},
+    {k:"reviewed",l:"검수 완료 (체크해야 검색에 노출)",type:"cb"}]},
+  {key:"court",label:"법원 프로필",table:"kb_court_profiles",upd:1,data:()=>D.courts,fields:[
+    {k:"court",l:"법원",req:1},{k:"dept",l:"재판부 (비우면 법원 전체)"},
+    {k:"sample_count",l:"집계 사건 수",type:"num"},{k:"top_types",l:"자주 나오는 보정유형 순위",type:"ta"},
+    {k:"avg_days_to_start",l:"개시결정까지 평균 기간"},{k:"deadline_practice",l:"보정 기한 관행"},
+    {k:"notes",l:"특이사항",type:"ta"}]},
+  {key:"types",label:"보정유형 목록",table:"kb_types",data:()=>D.types,pk:"code",fields:[
+    {k:"code",l:"유형코드 (예: 소득소명)",req:1},{k:"name",l:"화면 표시 이름",req:1},
+    {k:"sort_order",l:"정렬 순서",type:"num"},{k:"memo",l:"비고",type:"ta"}]}
+];
+let curAdmin="q",editingId=null;
+
+function renderAdminMenu(){
+  document.getElementById("adminMenu").innerHTML=ADMIN_DEFS.map(d=>
+    '<button class="'+(d.key===curAdmin?"on":"")+'" onclick="renderAdmin(\''+d.key+'\')">'+esc(d.label)+"</button>").join("");
+}
+function renderAdmin(key){
+  curAdmin=key;editingId=null;renderAdminMenu();
+  if(key==="q"){renderAdminQ();return;}
+  renderAdminTable();
+}
+
+function renderAdminQ(){
+  const groups=["대기","답변완료","카드등록"];
+  let html="";
+  groups.forEach(g=>{
+    const list=D.questions.filter(q=>(q.status||"대기")===g);
+    html+=sec("질문함: "+g,list.length);
+    if(!list.length){html+=emptyBox(g+" 상태의 질문이 없어요.");return;}
+    list.forEach(q=>{
+      html+='<div class="qitem">'+statusChip(q)+(q.urgent?' <span class="chip c-urgent">긴급</span>':"")
+        +'<div class="qtxt">'+esc(q.question)+"</div>"
+        +'<div class="meta">'+esc(q.asked_by||"")+" · "+fmtDate(q.created_at)+(q.case_no?" · 사건 "+esc(q.case_no):"")+"</div>"
+        +'<label>답변 (저장하면 질문자에게 보입니다)</label>'
+        +'<textarea id="ans-'+q.id+'">'+esc(q.answer||"")+"</textarea>"
+        +'<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">'
+        +'<button class="btn small primary" onclick="saveAnswer(\''+q.id+'\')">답변 저장 (답변완료)</button>'
+        +'<button class="btn small" onclick="setQStatus(\''+q.id+'\',\'카드등록\')">카드등록으로 표시</button>'
+        +'<button class="btn small" onclick="setQStatus(\''+q.id+'\',\'대기\')">대기로 되돌리기</button>'
+        +'<button class="btn small" onclick="delQuestion(\''+q.id+'\')">삭제</button>'
+        +"</div></div>";
+    });
+  });
+  document.getElementById("adminBody").innerHTML=html;
+}
+async function saveAnswer(id){
+  const v=document.getElementById("ans-"+id).value.trim();
+  if(!v){alert("답변 내용을 입력해 주세요.");return;}
+  const {error}=await db.from("kb_questions").update({answer:v,status:"답변완료",answered_at:new Date().toISOString()}).eq("id",id);
+  if(error){alert("저장 실패: "+error.message);return;}
+  await refreshQ();
+}
+async function setQStatus(id,st){
+  const {error}=await db.from("kb_questions").update({status:st}).eq("id",id);
+  if(error){alert("변경 실패: "+error.message);return;}
+  await refreshQ();
+}
+async function delQuestion(id){
+  if(!confirm("이 질문을 삭제할까요? 되돌릴 수 없어요."))return;
+  const {error}=await db.from("kb_questions").delete().eq("id",id);
+  if(error){alert("삭제 실패: "+error.message);return;}
+  await refreshQ();
+}
+async function refreshQ(){
+  const {data}=await db.from("kb_questions").select("*").order("created_at",{ascending:false});
+  D.questions=data||[];renderQna();if(curAdmin==="q")renderAdminQ();
+}
+
+function defOf(key){return ADMIN_DEFS.find(d=>d.key===key);}
+function renderAdminTable(){
+  const def=defOf(curAdmin);
+  const rows=def.data();
+  let html='<div style="margin-bottom:10px"><button class="btn primary" onclick="editRow(null)">새 '+esc(def.label)+' 추가</button></div>';
+  html+='<div id="editArea"></div>';
+  if(!rows.length)html+=emptyBox("아직 등록된 항목이 없어요.");
+  rows.forEach(r=>{
+    const id=def.pk?r[def.pk]:r.id;
+    const title=r.title||r.question||r.name||r.court||r.code||"(제목 없음)";
+    const badge=("reviewed"in r)?(r.reviewed?'<span class="chip c-done">검수완료</span>':'<span class="chip c-draft">검수 대기 (미노출)</span>'):"";
+    html+='<div class="qitem">'+badge+'<div style="font-size:15.5px;font-weight:700;margin-top:3px">'+esc((r.card_no?r.card_no+" · ":"")+title)+"</div>"
+      +'<div style="margin-top:7px;display:flex;gap:6px">'
+      +'<button class="btn small" onclick="editRow(\''+esc(String(id))+'\')">수정</button>'
+      +'<button class="btn small" onclick="delRow(\''+esc(String(id))+'\')">삭제</button>'
+      +"</div></div>";
+  });
+  document.getElementById("adminBody").innerHTML=html;
+}
+function editRow(id){
+  const def=defOf(curAdmin);
+  editingId=id;
+  const row=id?def.data().find(r=>String(def.pk?r[def.pk]:r.id)===String(id)):{};
+  let f='<div class="formcard"><div style="font-size:16px;font-weight:700;margin-bottom:4px">'+(id?"수정":"새로 추가")+" · "+esc(def.label)+"</div>";
+  def.fields.forEach(fd=>{
+    const v=row&&row[fd.k]!=null?row[fd.k]:"";
+    f+="<label>"+esc(fd.l)+(fd.req?" *":"")+"</label>";
+    if(fd.type==="ta")f+='<textarea id="f-'+fd.k+'">'+esc(v)+"</textarea>";
+    else if(fd.type==="cb")f+='<label style="display:flex;align-items:center;gap:7px;font-size:14.5px;font-weight:400"><input type="checkbox" id="f-'+fd.k+'" style="width:18px;height:18px" '+(v?"checked":"")+"> 예</label>";
+    else if(fd.type==="num")f+='<input type="number" id="f-'+fd.k+'" value="'+esc(v)+'">';
+    else if(fd.type==="sel")f+='<select id="f-'+fd.k+'"><option value=""></option>'+fd.opts.map(o=>'<option '+(v===o?"selected":"")+">"+esc(o)+"</option>").join("")+"</select>";
+    else if(fd.type==="type")f+='<select id="f-'+fd.k+'"><option value="">(유형 선택)</option>'+D.types.map(t=>'<option value="'+esc(t.code)+'" '+(v===t.code?"selected":"")+">"+esc(t.name||t.code)+"</option>").join("")+"</select>";
+    else f+='<input id="f-'+fd.k+'" value="'+esc(v)+'" placeholder="'+esc(fd.ph||"")+'">';
+  });
+  f+='<div style="margin-top:14px;display:flex;gap:8px"><button class="btn primary" onclick="saveRow()">저장</button><button class="btn" onclick="renderAdminTable()">취소</button></div><div id="saveMsg" class="msg err"></div></div>';
+  renderAdminTable();
+  document.getElementById("editArea").innerHTML=f;
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+async function saveRow(){
+  const def=defOf(curAdmin);
+  const payload={};
+  for(const fd of def.fields){
+    const el=document.getElementById("f-"+fd.k);
+    let v;
+    if(fd.type==="cb")v=el.checked;
+    else if(fd.type==="num")v=el.value===""?null:Number(el.value);
+    else v=el.value.trim()||null;
+    if(fd.req&&(v==null||v==="")){document.getElementById("saveMsg").textContent="'"+fd.l+"' 칸은 꼭 채워 주세요.";return;}
+    payload[fd.k]=v;
+  }
+  if(def.upd)payload.updated_at=new Date().toISOString();
+  let error;
+  if(def.pk){
+    ({error}=await db.from(def.table).upsert(payload,{onConflict:def.pk}));
+  }else if(editingId){
+    ({error}=await db.from(def.table).update(payload).eq("id",editingId));
+  }else{
+    ({error}=await db.from(def.table).insert(payload));
+  }
+  if(error){document.getElementById("saveMsg").textContent="저장 실패: "+error.message;return;}
+  await loadAll();buildFilters();renderSearch();renderAdminTable();
+}
+async function delRow(id){
+  const def=defOf(curAdmin);
+  if(!confirm("정말 삭제할까요? 되돌릴 수 없어요."))return;
+  const col=def.pk||"id";
+  const {error}=await db.from(def.table).delete().eq(col,id);
+  if(error){alert("삭제 실패: "+error.message);return;}
+  await loadAll();buildFilters();renderSearch();renderAdminTable();
+}
+
+document.addEventListener("keydown",e=>{
+  if(e.key==="Enter"&&document.getElementById("loginView").style.display!=="none"&&(e.target.id==="liEmail"||e.target.id==="liPw"))doLogin();
+});
+boot();
+</script>
+</body>
+</html>
