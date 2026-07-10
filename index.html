@@ -349,6 +349,8 @@
   <section id="view-dashboard">
     <div id="dashHeader"></div>
     <div id="dashStats"></div>
+    <div id="urgentBoard"></div>
+    <div id="cancelMemo"></div>
     <div id="dashBoard"></div>
     <div id="dashLinks"></div>
     <div class="toolbar">
@@ -1278,6 +1280,105 @@ function renderDashHeaderStatsBoard(){
   if(board) board.innerHTML=bh;
 }
 function dbMonth(el){ const ro=document.getElementById("dbMonthRO"); if(!ro)return; ro.style.color="var(--ink)"; ro.textContent=el.dataset.l+" 접수: 이준 "+el.dataset.j+"건 · 블루 "+el.dataset.b+"건 · 합계 "+((+el.dataset.j)+(+el.dataset.b))+"건"; }
+
+/* ===== 급건 대시보드 + 취소·삭제 메모(관리자 편집) + 오피스 미리보기 ===== */
+function mimeOf(name){ const e=(extOf(name)||"").toLowerCase();
+  const m={".pdf":"application/pdf",".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",".gif":"image/gif",".webp":"image/webp",
+    ".xlsx":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",".xls":"application/vnd.ms-excel",
+    ".docx":"application/vnd.openxmlformats-officedocument.wordprocessingml.document",".doc":"application/msword",
+    ".hwp":"application/octet-stream",".zip":"application/zip",".txt":"text/plain",".csv":"text/csv"};
+  return m[e]||"application/octet-stream"; }
+
+function isAdminUser(){ return MYROLE==="master"; }
+
+function renderUrgentBoard(){
+  const el=document.getElementById("urgentBoard"); if(!el) return;
+  const list=state.clients.filter(c=>!c.archived && c.urgent && (!firmF||firmShort(c.firm)===firmF));
+  if(!list.length){ el.innerHTML=""; return; }
+  list.sort((a,b)=>{ const da=dDay(a), db=dDay(b); return (da===null?99999:da)-(db===null?99999:db); });
+  const soon=list.filter(c=>{ const d=dDay(c); return d!==null && d<=7; }).length;
+  const metric=(v,l)=>`<div style="flex:1;background:rgba(255,255,255,.16);border-radius:10px;padding:9px 12px"><div style="font-size:12px;color:rgba(255,255,255,.88);font-weight:700">${l}</div><div style="font-size:24px;font-weight:900;color:#fff;line-height:1.15">${v}</div></div>`;
+  const row=c=>{ const d=dDay(c); let dtxt="",dbg="rgba(255,255,255,.18)",dcol="#fff";
+    if(d!==null){ if(d<0){dtxt="기한 "+(-d)+"일 지남";dbg="#fff";dcol="#9B1B33";} else if(d===0){dtxt="D-DAY";dbg="#fff";dcol="#9B1B33";} else {dtxt="D-"+d; if(d<=7){dbg="#FFE58A";dcol="#7a1226";}} }
+    return `<div onclick="openDetail('${c.id}')" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid rgba(255,255,255,.22);cursor:pointer">
+      <span style="font-size:13.5px;color:#fff;font-weight:700">${esc(c.name||"이름 없음")}<span style="font-weight:400;color:rgba(255,255,255,.82);font-size:12px"> · ${esc(c.caseType||"개인회생")}</span></span>
+      ${dtxt?`<span style="font-size:11px;font-weight:800;padding:2px 9px;border-radius:20px;background:${dbg};color:${dcol};white-space:nowrap">${dtxt}</span>`:""}
+    </div>`; };
+  el.innerHTML=`<div style="background:#9B1B33;border-radius:12px;padding:14px 16px;margin:6px 0 14px">
+    <div style="font-size:14px;font-weight:900;color:#fff;margin-bottom:11px">🚨 급한 사건</div>
+    <div style="display:flex;gap:10px;margin-bottom:4px">${metric(list.length,"급건")}${metric(soon,"기한 임박")}</div>
+    <div>${list.map(row).join("")}</div>
+  </div>`;
+}
+
+function renderCancelMemo(){
+  const el=document.getElementById("cancelMemo"); if(!el) return;
+  const admin=isAdminUser(); const items=CANCEL_NOTES||[];
+  const rowHtml=n=>{ const meta=[n.ident,n.cancel_date].filter(Boolean).map(esc).join(" · ");
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed rgba(150,120,0,.30)">
+      <span style="flex:1;font-size:13.5px;color:#4a3d00"><b style="font-weight:800">${esc(n.name||"")}</b>${meta?` <span style="color:#7a6a1a;font-size:12.5px">${meta}</span>`:""}</span>
+      ${admin?`<button onclick="cnEditPrompt('${n.id}')" style="border:none;background:none;cursor:pointer;font-size:12px;color:#8a6d00;font-weight:700">수정</button><button onclick="cnDelete('${n.id}')" style="border:none;background:none;cursor:pointer;font-size:12px;color:#b0002a;font-weight:700">삭제</button>`:""}
+    </div>`; };
+  el.innerHTML=`<div style="background:#FFF3A8;border:1px solid #F2D64B;border-radius:12px;padding:12px 15px;margin:0 0 16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:13.5px;font-weight:900;color:#7a5f00">📝 취소·삭제 사건 메모</span>
+      ${admin?`<button onclick="cnAddPrompt()" style="border:1px solid #E0BE2E;background:#FFEB8A;border-radius:8px;padding:4px 11px;font-size:12px;font-weight:800;color:#6b5300;cursor:pointer">+ 추가</button>`:""}
+    </div>
+    ${items.length?`<div>${items.map(rowHtml).join("")}</div>`:`<div style="font-size:12.5px;color:#9a8420">${admin?"오른쪽 위 + 추가 버튼으로 취소·삭제된 사건을 적어두세요.":"등록된 취소·삭제 사건 메모가 없습니다."}</div>`}
+  </div>`;
+}
+
+function cnAddPrompt(){ if(!isAdminUser()){ toast("관리자만 편집할 수 있습니다"); return; }
+  modal(`<h3 style="margin-top:0">취소·삭제 사건 추가</h3>
+    <div class="field"><label>이름</label><input id="cn_name" placeholder="홍길동"/></div>
+    <div class="field"><label>전화번호 또는 주민번호 앞자리 (동명이인 구분용)</label><input id="cn_ident" placeholder="010-1234-5678"/></div>
+    <div class="field"><label>취소일 (선택)</label><input id="cn_date" placeholder="2026-07-02"/></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">취소</button><button class="btn btn-primary" onclick="cnSaveNew()">저장</button></div>`,420);
+}
+async function cnSaveNew(){ const name=(document.getElementById("cn_name").value||"").trim(); if(!name){ toast("이름을 입력하세요"); return; }
+  const ident=(document.getElementById("cn_ident").value||"").trim(); const date=(document.getElementById("cn_date").value||"").trim();
+  const so=(CANCEL_NOTES.length?Math.max.apply(null,CANCEL_NOTES.map(n=>n.sort_order||0))+1:0);
+  try{ const {data,error}=await sb.from("cancel_notes").insert({name,ident,cancel_date:date||null,sort_order:so}).select().single(); if(error) throw error;
+    CANCEL_NOTES.push(data); closeModal(); renderCancelMemo(); toast("추가됨");
+  }catch(e){ toast("저장 실패: "+((e&&e.message)||e)); }
+}
+function cnEditPrompt(id){ if(!isAdminUser()){ toast("관리자만 편집할 수 있습니다"); return; }
+  const n=(CANCEL_NOTES||[]).find(x=>String(x.id)===String(id)); if(!n) return;
+  modal(`<h3 style="margin-top:0">취소·삭제 사건 수정</h3>
+    <div class="field"><label>이름</label><input id="cn_name" value="${esc(n.name||"")}"/></div>
+    <div class="field"><label>전화번호 또는 주민번호 앞자리 (동명이인 구분용)</label><input id="cn_ident" value="${esc(n.ident||"")}"/></div>
+    <div class="field"><label>취소일 (선택)</label><input id="cn_date" value="${esc(n.cancel_date||"")}"/></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">취소</button><button class="btn btn-primary" onclick="cnSaveEdit('${n.id}')">저장</button></div>`,420);
+}
+async function cnSaveEdit(id){ const name=(document.getElementById("cn_name").value||"").trim(); if(!name){ toast("이름을 입력하세요"); return; }
+  const ident=(document.getElementById("cn_ident").value||"").trim(); const date=(document.getElementById("cn_date").value||"").trim();
+  try{ const {data,error}=await sb.from("cancel_notes").update({name,ident,cancel_date:date||null}).eq("id",id).select().single(); if(error) throw error;
+    const i=CANCEL_NOTES.findIndex(x=>String(x.id)===String(id)); if(i>=0) CANCEL_NOTES[i]=data; closeModal(); renderCancelMemo(); toast("수정됨");
+  }catch(e){ toast("수정 실패: "+((e&&e.message)||e)); }
+}
+async function cnDelete(id){ if(!isAdminUser()){ toast("관리자만 삭제할 수 있습니다"); return; }
+  const n=(CANCEL_NOTES||[]).find(x=>String(x.id)===String(id)); if(!confirm("'"+((n&&n.name)||"항목")+"'을(를) 삭제할까요?")) return;
+  try{ const {error}=await sb.from("cancel_notes").delete().eq("id",id); if(error) throw error;
+    CANCEL_NOTES=CANCEL_NOTES.filter(x=>String(x.id)!==String(id)); renderCancelMemo(); toast("삭제됨");
+  }catch(e){ toast("삭제 실패: "+((e&&e.message)||e)); }
+}
+
+let _xlsxMod=null, _mammothMod=null;
+async function loadXlsx(){ if(_xlsxMod) return _xlsxMod; const m=await import("https://esm.sh/xlsx@0.18.5"); _xlsxMod=m.default||m; return _xlsxMod; }
+async function renderXlsxPreview(bytes, container){
+  try{ const XLSX=await loadXlsx(); const wb=XLSX.read(bytes,{type:"array"}); let html="";
+    (wb.SheetNames||[]).forEach(nm=>{ const ws=wb.Sheets[nm]; const t=XLSX.utils.sheet_to_html(ws);
+      html+=`<div style="color:#fff;font-size:12px;margin:8px 2px 3px;text-align:left;font-weight:700">${esc(nm)}</div><div style="background:#fff;border-radius:6px;overflow:auto;margin-bottom:12px;padding:4px">${t}</div>`; });
+    container.innerHTML=`<style>#pvBody table{border-collapse:collapse;font-size:12px;color:#111}#pvBody td,#pvBody th{border:1px solid #ccc;padding:3px 6px;white-space:nowrap}</style><div style="text-align:left">${html||"(내용 없음)"}</div>`;
+  }catch(e){ container.innerHTML=`<div style="color:#fff;padding:18px;text-align:center;line-height:1.7">엑셀 미리보기를 표시하지 못했습니다.<br>아래 📥 다운로드로 원본을 확인해 주세요.<br><span style="opacity:.55;font-size:12px">${esc((e&&e.message)||e)}</span></div>`; }
+}
+async function loadMammoth(){ if(_mammothMod) return _mammothMod; const m=await import("https://esm.sh/mammoth@1.6.0"); _mammothMod=m.default||m; return _mammothMod; }
+async function renderDocxPreview(bytes, container){
+  try{ const mammoth=await loadMammoth(); const ab=bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset+bytes.byteLength);
+    const res=await mammoth.convertToHtml({arrayBuffer:ab});
+    container.innerHTML=`<div style="background:#fff;color:#111;border-radius:6px;padding:18px 20px;text-align:left;line-height:1.7;font-size:14px">${res.value||"(내용 없음)"}</div>`;
+  }catch(e){ container.innerHTML=`<div style="color:#fff;padding:18px;text-align:center;line-height:1.7">워드 미리보기를 표시하지 못했습니다.<br>아래 📥 다운로드로 원본을 확인해 주세요.<br><span style="opacity:.55;font-size:12px">${esc((e&&e.message)||e)}</span></div>`; }
+}
 function renderFirmChips(){
   const el=document.getElementById("firmChips"); if(!el) return;
   const act=state.clients.filter(c=>!c.archived);
@@ -1330,6 +1431,8 @@ function renderDashboard(){
     return (b.updatedAt||"").localeCompare(a.updatedAt||"");
   });
   renderDashHeaderStatsBoard();
+  renderUrgentBoard();
+  renderCancelMemo();
   renderFirmChips();
   renderStagePills();
   renderQuickLinks();
@@ -1779,11 +1882,13 @@ async function openPreview(cid,id,idx){
   const isImg=[".png",".jpg",".jpeg",".gif",".webp"].includes(ext);
   const isPdf=(ext===".pdf");
   const isHwp=(ext===".hwp");
-  if(!isImg&&!isPdf&&!isHwp){ return openFile(cid,id,idx); } /* 미리보기 불가 형식은 다운로드 */
+  const isXlsx=[".xlsx",".xls"].includes(ext);
+  const isDocx=(ext===".docx");
+  if(!isImg&&!isPdf&&!isHwp&&!isXlsx&&!isDocx){ return openFile(cid,id,idx); } /* 미리보기 불가 형식은 다운로드 */
   toast("미리보기 여는 중…");
   try{
     const bytes=await fetchFileBytes(f);
-    const type=isPdf?"application/pdf":isHwp?"application/octet-stream":(ext===".png"?"image/png":ext===".gif"?"image/gif":ext===".webp"?"image/webp":"image/jpeg");
+    const type=mimeOf(f.name);
     if(_previewUrl){ try{URL.revokeObjectURL(_previewUrl);}catch(_){ } }
     _previewUrl=URL.createObjectURL(new Blob([bytes],{type})); _previewName=f.name;
     modal(`
@@ -1799,6 +1904,8 @@ async function openPreview(cid,id,idx){
     const body=document.getElementById("pvBody");
     if(isImg){ body.innerHTML=`<img src="${_previewUrl}" style="max-width:100%;height:auto;border-radius:6px" alt="${esc(f.name)}">`; }
     else if(isPdf){ await renderPdfPreview(bytes,body); }
+    else if(isXlsx){ await renderXlsxPreview(bytes,body); }
+    else if(isDocx){ await renderDocxPreview(bytes,body); }
     else { await renderHwpPreview(bytes,body); }
   }catch(e){ console.error(e); toast("미리보기 실패: "+e.message); }
 }
@@ -1837,7 +1944,7 @@ async function openFile(cid,id,idx){
   toast("파일 여는 중…");
   try{
     const bytes=await fetchFileBytes(f);
-    const blob=new Blob([bytes]); const url=URL.createObjectURL(blob);
+    const blob=new Blob([bytes],{type:mimeOf(f.name)}); const url=URL.createObjectURL(blob);
     const a=document.createElement("a"); a.href=url; a.download=f.name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),15000);
   }catch(e){ console.error(e); toast("파일 열기 실패: "+e.message); }
@@ -3920,7 +4027,7 @@ function _ibComplete(){
 }
 function _ibDoneStay(){ const d=$("#ibDoneOv"); if(d) d.remove(); }
 function _ibDoneClose(){ const d=$("#ibDoneOv"); if(d) d.remove(); _ibClose(); }
-function _ibPick(){ const inp=document.createElement("input"); inp.type="file"; inp.multiple=true; inp.accept="image/*,application/pdf,.pdf";
+function _ibPick(){ const inp=document.createElement("input"); inp.type="file"; inp.multiple=true; inp.accept="image/*,application/pdf,.pdf,.xlsx,.xls,.docx,.doc,.hwp,.ppt,.pptx,.txt,.csv";
   inp.onchange=()=>{ let big=0; for(const f of inp.files){ if(f.size>40*1024*1024){ big++; continue; } _ib.push({id:_ibUid++, file:f, url:URL.createObjectURL(f), type:f.type||"", name:f.name, size:f.size, slot:null, splitPages:{}, origSaved:false}); } if(big) toast(`${big}개는 40MB 초과로 제외(큰 파일은 🔗링크 권장)`); _ibRender(); };
   inp.click(); }
 function _ibClearSel(){ _ibSel=new Set(); _ibRender(); }
@@ -4232,7 +4339,7 @@ async function _ibSaveOriginal(c,f){
 const SB_URL="https://zxwsfwhyjkixsnfpzpkt.supabase.co";
 const SB_ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4d3Nmd2h5amtpeHNuZnB6cGt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NjUxMzIsImV4cCI6MjA5ODA0MTEzMn0.mHfZJNRMmH-I2XI3ISutaYNemIbjKvWzFlOzMLmi-aQ";
 let BACKEND="supabase";   // ← "github" 로 바꾸면 기존 깃헙 방식 그대로 복귀
-let sb=null, sbUser=null;
+let sb=null, sbUser=null; let MYROLE=null; let CANCEL_NOTES=[];
 function sbInit(){ try{ if(!sb && window.supabase) sb=window.supabase.createClient(SB_URL,SB_ANON); }catch(_){} return sb; }
 /* ── 첨부파일 순서(sort_order) 저장 지원 ── */
 let SB_HAS_SORT=false;   // documents.sort_order 칸 존재 여부(로드 때 자동 감지). 없으면 순서저장만 자동으로 꺼지고 앱은 정상 동작
@@ -4346,6 +4453,8 @@ async function pullFromSupabase(silent){
     const clients=(cRes.data||[]).map(row=> sbBuildClient(row, byClient[row.id]||[], docBy[row.id]||[], memoBy[row.id]||[], secBy[row.id]||null) );
     state={ clients, log:(state&&state.log)||[], updatedAt: now(), updatedBy: deviceName||"미설정", _ver:8 };
     saveLocal();
+    try{ const _rr=await sb.rpc("my_role"); MYROLE=_rr.data||null; }catch(_){ }
+    try{ const _cn=await sb.from("cancel_notes").select("*").order("sort_order",{ascending:true}); if(!_cn.error) CANCEL_NOTES=_cn.data||[]; }catch(_){ }
     currentClientId=null; renderDashboard();
     setSync("ok");
     if(!silent) toast("케이스허브에서 불러왔습니다 ✓");
