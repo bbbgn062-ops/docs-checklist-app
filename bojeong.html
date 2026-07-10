@@ -79,17 +79,24 @@ label{font-size:13.5px;font-weight:700;color:#5B554D;display:block;margin:10px 0
 .deep{display:inline-block;margin-top:4px;font-size:14px;color:#1D5F8A;text-decoration:underline}
 @media(max-width:560px){.row2{flex-direction:column}header.top h1{font-size:16.5px}}
 
-/* ── 카드 본문 리치 렌더링 (2026-07-10) ── */
-.rt-concl{background:#F7F2E7;border-left:4px solid #9B1B33;padding:10px 12px;border-radius:8px;font-weight:700;margin:8px 0;line-height:1.55}
-.rt-ol{margin:8px 0 8px 4px;padding-left:20px;line-height:1.65}
-.rt-ol li{margin:5px 0}
-.rt-h{font-weight:800;margin:12px 0 6px;color:#5B5344;font-size:13px}
-.rt-tb{border-collapse:collapse;width:100%;margin:4px 0 10px;font-size:13px}
-.rt-tb td{border:1px solid #E5DFD3;padding:7px 9px;line-height:1.5;vertical-align:top}
-.rt-tb td:first-child{background:#FAF7F0;font-weight:600;white-space:nowrap}
-.rt-tip{background:#FFF9E8;border:1px solid #F0E3B8;padding:9px 11px;border-radius:8px;margin:8px 0;line-height:1.55;font-size:13px}
-.rt-tip.warn{background:#FCEFEF;border-color:#EBC9C9}
-.rt-p{margin:6px 0;line-height:1.6}
+/* ── 카드 본문 리치 렌더링 v2: 시안1+2+4 조합 (2026-07-10) ── */
+.rt-concl{background:#9B1B33;color:#fff;border-radius:10px;padding:12px 14px;margin:10px 0;line-height:1.6;font-size:14px}
+.rt-lbl{display:block;font-size:11px;opacity:.85;margin-bottom:2px}
+.rt-steps{position:relative;margin:12px 0;padding-left:34px}
+.rt-vline{position:absolute;left:10px;top:6px;bottom:6px;width:2px;background:#EBE4D8}
+.rt-step{position:relative;margin-bottom:14px;line-height:1.65;font-size:14px}
+.rt-step:last-child{margin-bottom:2px}
+.rt-num{position:absolute;left:-34px;top:1px;width:22px;height:22px;border-radius:50%;background:#9B1B33;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.rt-dt{border:1px solid #E5DFD3;border-radius:8px;padding:10px 12px;margin:10px 0;background:#FDFBF7}
+.rt-dt summary{cursor:pointer;font-weight:700;color:#9B1B33;font-size:13.5px}
+.rt-tb{border-collapse:collapse;width:100%;margin:8px 0 2px;font-size:13px}
+.rt-tb td{border:1px solid #E5DFD3;padding:8px 10px;line-height:1.55;vertical-align:top;background:#fff}
+.rt-tb td:first-child{background:#F7F3EC;font-weight:700;white-space:nowrap;width:38%}
+.rt-tip{border:1px solid #E5DFD3;background:#F7F3EC;border-radius:8px;padding:10px 12px;margin:10px 0;line-height:1.6;font-size:13.5px}
+.rt-tip.warn{background:#FCF0F0;border-color:#EBC9C9}
+.rt-tl{font-weight:700;color:#5B5344;margin-right:4px}
+.rt-tip.warn .rt-tl{color:#9B1B33}
+.rt-p{margin:7px 0;line-height:1.65;font-size:14px}
 </style>
 </head>
 <body>
@@ -261,19 +268,19 @@ function tagHtml(tags){
 function richText(s){
   if(s==null||String(s).trim()==="")return"";
   const lines=String(s).replace(/\r/g,"").split("\n");
-  let html="",list=[],tbl=[],mode="";
-  const flushList=()=>{if(list.length){html+='<ol class="rt-ol">'+list.map(x=>"<li>"+x+"</li>").join("")+"</ol>";list=[];}};
-  const flushTbl=()=>{if(tbl.length){html+='<table class="rt-tb">'+tbl.map(r=>"<tr>"+r.map(c=>"<td>"+c+"</td>").join("")+"</tr>").join("")+"</table>";tbl=[];}};
+  let html="",list=[],tbl=[],sec="",mode="";
+  const flushList=()=>{if(list.length){html+='<div class="rt-steps"><div class="rt-vline"></div>'+list.map((x,i)=>'<div class="rt-step"><span class="rt-num">'+(i+1)+"</span>"+x+"</div>").join("")+"</div>";list=[];}};
+  const flushTbl=()=>{if(tbl.length){const t='<table class="rt-tb">'+tbl.map(r=>"<tr>"+r.map(c=>"<td>"+c+"</td>").join("")+"</tr>").join("")+"</table>";html+=sec?'<details class="rt-dt"><summary>'+esc(sec)+" 열기</summary>"+t+"</details>":t;tbl=[];}sec="";};
   for(const raw of lines){
     const t=raw.trim();
     if(!t){flushList();flushTbl();mode="";continue;}
     let m;
-    if(/^결론\s*:/.test(t)){flushList();flushTbl();mode="";html+='<div class="rt-concl">'+esc(t.replace(/^결론\s*:\s*/,""))+"</div>";}
+    if(/^결론\s*:/.test(t)){flushList();flushTbl();mode="";html+='<div class="rt-concl"><span class="rt-lbl">결론</span>'+esc(t.replace(/^결론\s*:\s*/,""))+"</div>";}
     else if(m=t.match(/^(\d+)[.)]\s*(.*)/)){flushTbl();mode="";list.push(esc(m[2]));}
-    else if(t.startsWith("■")){flushList();flushTbl();html+='<div class="rt-h">'+esc(t.replace(/^■\s*/,""))+"</div>";mode="tbl";}
+    else if(t.startsWith("■")){flushList();flushTbl();sec=t.replace(/^■\s*/,"").replace(/\s*열기$/,"");mode="tbl";}
     else if(t.startsWith("|")){flushList();tbl.push(t.split("|").map(x=>x.trim()).filter(x=>x!=="").map(x=>esc(x)));}
-    else if(t.startsWith("-")&&mode==="tbl"){flushList();const b=t.replace(/^-\s*/,"");const i=b.indexOf(":");tbl.push(i>0?[esc(b.slice(0,i).trim()),esc(b.slice(i+1).trim())]:[esc(b),""]);}
-    else if(/^[⚠💬※★]/u.test(t)){flushList();flushTbl();mode="";html+='<div class="rt-tip'+(t.startsWith("⚠")?" warn":"")+'">'+esc(t)+"</div>";}
+    else if(t.startsWith("-")&&mode==="tbl"){flushList();const b=t.replace(/^-\s*/,"");const i2=b.indexOf(":");tbl.push(i2>0?[esc(b.slice(0,i2).trim()),esc(b.slice(i2+1).trim())]:[esc(b),""]);}
+    else if(/^[⚠💬※★]/u.test(t)){flushList();flushTbl();mode="";const warn=t.startsWith("⚠");const body=t.replace(/^[⚠💬※★\uFE0F]+\s*/u,"");html+='<div class="rt-tip'+(warn?" warn":"")+'"><span class="rt-tl">'+(warn?"주의":"팁")+"</span>"+esc(body)+"</div>";}
     else {flushList();flushTbl();mode="";html+='<div class="rt-p">'+esc(t)+"</div>";}
   }
   flushList();flushTbl();return html;
