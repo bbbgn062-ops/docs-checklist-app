@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>보정 지식베이스 | 법무법인 이준 서초 분사무소</title>
-<!-- 보정 지식베이스 v2026-07-10a / 세션 F 산출물
+<!-- 보정 지식베이스 v2026-07-11a / 세션 F 산출물 + 서류사전 견본 미리보기·양식 버튼(세션 D 연동)
      같은 Supabase 프로젝트(취합앱·케이스허브 공용), kb_ 테이블 사용
      사건번호 공통 키: 사례카드 case_no ↔ casehub.html?case=사건번호 (딥링크 준비) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -77,6 +77,14 @@ label{font-size:13.5px;font-weight:700;color:#5B554D;display:block;margin:10px 0
 .login h1{font-size:19px;color:#9B1B33;margin-bottom:2px}
 .login p{font-size:13.5px;color:#8A8378;margin-bottom:14px}
 .deep{display:inline-block;margin-top:4px;font-size:14px;color:#1D5F8A;text-decoration:underline}
+.smp-wrap{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.smp-thumb{max-height:150px;max-width:46%;border:1px solid #E4E0D8;border-radius:10px;cursor:zoom-in;background:#fff}
+.smp-thumb:hover{outline:2px solid #9B1B33}
+.filebtn{display:inline-block;border:1px solid #C9C4BC;background:#fff;border-radius:8px;padding:7px 12px;font-size:13.5px;color:#26221E;text-decoration:none;margin:2px 6px 2px 0}
+.filebtn:hover{background:#F1EEE9}
+#lightbox{position:fixed;inset:0;background:rgba(20,17,14,.78);display:none;align-items:center;justify-content:center;z-index:99;padding:18px;cursor:zoom-out}
+#lightbox img{max-width:96%;max-height:92vh;border-radius:10px;background:#fff}
+#lightbox .lb-hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#fff;font-size:13px;opacity:.85}
 @media(max-width:560px){.row2{flex-direction:column}header.top h1{font-size:16.5px}}
 
 /* ── 카드 본문 리치 렌더링 v3: 토스형 본체 + 노션 콜아웃 (2026-07-10) ── */
@@ -172,6 +180,8 @@ label{font-size:13.5px;font-weight:700;color:#5B554D;display:block;margin:10px 0
     </div>
   </div>
 </div>
+
+<div id="lightbox" onclick="closeLightbox()"><img id="lightboxImg" alt="견본 크게 보기"><div class="lb-hint">화면을 누르면 닫혀요</div></div>
 
 <script>
 /*MAIN*/
@@ -273,6 +283,24 @@ function tokens(){
   return document.getElementById("fKw").value.trim().toLowerCase().split(/\s+/).filter(Boolean).map(norm);
 }
 
+/* 서류사전 견본·양식·가이드 렌더링 (세션 D 연동) */
+function urlParts(s){return (s==null?"":String(s)).split(" / ").map(x=>x.trim()).filter(x=>/^https?:\/\//.test(x));}
+function sampleHtml(s){
+  const us=urlParts(s);if(!us.length)return"";
+  return '<div class="fld"><b>견본 이미지 (누르면 크게 보여요)</b><div class="smp-wrap">'+us.map((u,i)=>'<img class="smp-thumb" loading="lazy" src="'+esc(u)+'" alt="견본 '+(i+1)+'" onclick="openLightbox(\''+esc(u)+'\')">').join("")+"</div></div>";
+}
+function formHtml(s){
+  const us=urlParts(s);if(!us.length)return"";
+  return '<div class="fld"><b>빈 양식</b><div>'+us.map(u=>'<a class="filebtn" href="'+esc(u)+'">양식 내려받기 (엑셀)</a>').join("")+"</div></div>";
+}
+function guideHtml(u){
+  if(u==null||String(u).trim()==="")return"";
+  if(!/^https?:\/\//.test(String(u).trim()))return '<div class="fld"><b>관련 가이드</b><div class="v">'+esc(u)+"</div></div>";
+  return '<a class="deep" target="_blank" href="'+esc(String(u).trim())+'">관련 가이드 열기</a>';
+}
+function openLightbox(u){document.getElementById("lightboxImg").src=u;document.getElementById("lightbox").style.display="flex";}
+function closeLightbox(){document.getElementById("lightbox").style.display="none";document.getElementById("lightboxImg").src="";}
+
 function tagHtml(tags){
   if(!tags)return"";
   return '<div class="tagline">'+String(tags).split(",").map(x=>x.trim()).filter(Boolean).map(x=>'<span class="tag">'+esc(x)+"</span>").join("")+"</div>";
@@ -372,9 +400,9 @@ function renderSearch(){
   if(dictShow.length||kwOn){
     out.push(sec("서류 사전",dictShow.length));
     dictShow.forEach(x=>{
-      const g=x.guide_link?'<a class="deep" target="_blank" href="'+esc(x.guide_link)+'">관련 가이드 열기</a>':"";
+      const g=guideHtml(x.guide_link);
       out.push(cardHtml("k-dict",x.kind||"서류",x.name,oneLine(x.description),
-        fld("설명",x.description)+fld("발급처와 방법",x.issue_how)+fld("작성 요령",x.howto)+fld("견본 이미지",x.sample_path)+fld("빈 양식",x.blank_form_path)+tagHtml(x.search_tags)+g));
+        fld("설명",x.description)+fld("발급처와 방법",x.issue_how)+fld("작성 요령",x.howto)+sampleHtml(x.sample_path)+formHtml(x.blank_form_path)+tagHtml(x.search_tags)+g));
     });
   }
 
