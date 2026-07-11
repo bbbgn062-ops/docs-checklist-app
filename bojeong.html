@@ -101,6 +101,14 @@ label{font-size:13.5px;font-weight:700;color:#5B554D;display:block;margin:10px 0
 .rt-tl{font-weight:700;color:#5B5344;flex:none}
 .rt-tip.warn .rt-tl{color:#9B1B33}
 .rt-p{margin:9px 0;line-height:1.7;font-size:15px}
+.rt-sl{font-size:12px;color:#8A8378;font-weight:700;letter-spacing:.5px;margin:16px 0 8px}
+.rt-docs{display:flex;flex-direction:column;gap:8px;margin:0 0 6px}
+.rt-doc{display:flex;align-items:center;gap:10px;border:1px solid #ECE7DD;border-radius:12px;padding:11px 14px}
+.rt-dn{font-size:14.5px;font-weight:700;flex:1;line-height:1.4}
+.rt-db{font-size:12px;border-radius:6px;padding:3px 9px;flex:none;font-weight:700}
+.rt-db.b{color:#1D5F8A;background:#EBF2F8}
+.rt-db.g{color:#0F6E56;background:#E7F2ED}
+.rt-db.a{color:#9B5A1B;background:#FBEDE2}
 </style>
 </head>
 <body>
@@ -273,8 +281,18 @@ function richText(s){
   if(s==null||String(s).trim()==="")return"";
   const lines=String(s).replace(/\r/g,"").split("\n");
   let html="",list=[],tbl=[],sec="",mode="";
-  const flushList=()=>{if(list.length){html+='<div class="rt-steps"><div class="rt-vline"></div>'+list.map((x,i)=>'<div class="rt-step"><span class="rt-num">'+(i+1)+"</span>"+x+"</div>").join("")+"</div>";list=[];}};
-  const flushTbl=()=>{if(tbl.length){const t='<table class="rt-tb">'+tbl.map(r=>"<tr>"+r.map(c=>"<td>"+c+"</td>").join("")+"</tr>").join("")+"</table>";html+=sec?'<details class="rt-dt"><summary>'+esc(sec)+"</summary>"+t+"</details>":t;tbl=[];}sec="";};
+  const flushList=()=>{if(list.length){html+='<div class="rt-sl">절차</div><div class="rt-steps"><div class="rt-vline"></div>'+list.map((x,i)=>'<div class="rt-step"><span class="rt-num">'+(i+1)+"</span>"+x+"</div>").join("")+"</div>";list=[];}};
+  const flushTbl=()=>{if(tbl.length){
+    if(sec&&/서류/.test(sec)&&tbl.every(r=>r.length===2)){
+      html+='<div class="rt-sl">'+esc(sec)+'</div><div class="rt-docs">'+tbl.map(r=>{
+        const cls=/우리/.test(r[1])?"g":(/고용주|회사|제공자|임대인|배우자|보관/.test(r[1])?"a":"b");
+        return '<div class="rt-doc"><span class="rt-dn">'+r[0]+'</span><span class="rt-db '+cls+'">'+r[1]+"</span></div>";
+      }).join("")+"</div>";
+    }else{
+      const t='<table class="rt-tb">'+tbl.map(r=>"<tr>"+r.map(c=>"<td>"+c+"</td>").join("")+"</tr>").join("")+"</table>";
+      html+=sec?'<details class="rt-dt"><summary>'+esc(sec)+"</summary>"+t+"</details>":t;
+    }
+    tbl=[];}sec="";};
   for(const raw of lines){
     const t=raw.trim();
     if(!t){flushList();flushTbl();mode="";continue;}
