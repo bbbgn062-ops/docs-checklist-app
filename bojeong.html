@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>보정 지식베이스 | 법무법인 이준 서초 분사무소</title>
-<!-- 보정 지식베이스 v2026-07-11a / 세션 F 산출물 + 서류사전 견본 미리보기·양식 버튼(세션 D 연동)
+<!-- 보정 지식베이스 v2026-07-11b / 세션 F 산출물 + 서류사전 견본 미리보기 + 필요서류 칩 클릭 팝업(세션 D 연동)
      같은 Supabase 프로젝트(취합앱·케이스허브 공용), kb_ 테이블 사용
      사건번호 공통 키: 사례카드 case_no ↔ casehub.html?case=사건번호 (딥링크 준비) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -85,6 +85,11 @@ label{font-size:13.5px;font-weight:700;color:#5B554D;display:block;margin:10px 0
 #lightbox{position:fixed;inset:0;background:rgba(20,17,14,.78);display:none;align-items:center;justify-content:center;z-index:99;padding:18px;cursor:zoom-out}
 #lightbox img{max-width:96%;max-height:92vh;border-radius:10px;background:#fff}
 #lightbox .lb-hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#fff;font-size:13px;opacity:.85}
+#docModal{position:fixed;inset:0;background:rgba(20,17,14,.55);display:none;z-index:90;align-items:flex-start;justify-content:center;padding:24px 14px;overflow:auto}
+.dm-box{background:#fff;border-radius:18px;max-width:640px;width:100%;padding:20px 22px;margin:auto}
+.rt-doc.link{cursor:pointer}
+.rt-doc.link:hover{border-color:#9B1B33;background:#FDFBF8}
+.rt-db.v{color:#9B1B33;background:#F5E8EB}
 @media(max-width:560px){.row2{flex-direction:column}header.top h1{font-size:16.5px}}
 
 /* ── 카드 본문 리치 렌더링 v3: 토스형 본체 + 노션 콜아웃 (2026-07-10) ── */
@@ -181,6 +186,7 @@ label{font-size:13.5px;font-weight:700;color:#5B554D;display:block;margin:10px 0
   </div>
 </div>
 
+<div id="docModal" onclick="if(event.target===this)closeDocModal()"><div class="dm-box" id="docModalBox"></div></div>
 <div id="lightbox" onclick="closeLightbox()"><img id="lightboxImg" alt="견본 크게 보기"><div class="lb-hint">화면을 누르면 닫혀요</div></div>
 
 <script>
@@ -300,6 +306,30 @@ function guideHtml(u){
 }
 function openLightbox(u){document.getElementById("lightboxImg").src=u;document.getElementById("lightbox").style.display="flex";}
 function closeLightbox(){document.getElementById("lightbox").style.display="none";document.getElementById("lightboxImg").src="";}
+function dictFind(label){
+  const n=norm(String(label).replace(/\(.*?\)/g,""));
+  if(!n)return null;
+  for(const d of D.dict){
+    if(!d.reviewed)continue;
+    const dn=norm(String(d.name).replace(/\(.*?\)/g,""));
+    if(dn&&(n.includes(dn)||dn.includes(n)))return d;
+  }
+  for(const d of D.dict){
+    if(!d.reviewed||!d.search_tags)continue;
+    if(String(d.search_tags).split(",").some(t=>{const tt=norm(t);return tt&&n.includes(tt);}))return d;
+  }
+  return null;
+}
+function openDocDict(id){
+  const d=D.dict.find(x=>String(x.id)===String(id));
+  if(!d)return;
+  document.getElementById("docModalBox").innerHTML=
+    '<div class="kind k-dict">'+esc(d.kind||"서류")+'</div><div style="font-size:17px;font-weight:700;line-height:1.5">'+esc(d.name)+"</div>"
+    +'<div style="margin-top:12px">'+fld("설명",d.description)+sampleHtml(d.sample_path)+formHtml(d.blank_form_path)+fld("발급처와 방법",d.issue_how)+fld("작성 요령",d.howto)+guideHtml(d.guide_link)+"</div>"
+    +'<div style="margin-top:14px;text-align:right"><button class="btn" onclick="closeDocModal()">닫기</button></div>';
+  document.getElementById("docModal").style.display="flex";
+}
+function closeDocModal(){document.getElementById("docModal").style.display="none";}
 
 function tagHtml(tags){
   if(!tags)return"";
@@ -314,7 +344,10 @@ function richText(s){
     if(sec&&/서류/.test(sec)&&tbl.every(r=>r.length===2)){
       html+='<div class="rt-sl">'+esc(sec)+'</div><div class="rt-docs">'+tbl.map(r=>{
         const cls=/우리/.test(r[1])?"g":(/고용주|회사|제공자|임대인|배우자|보관/.test(r[1])?"a":"b");
-        return '<div class="rt-doc"><span class="rt-dn">'+r[0]+'</span><span class="rt-db '+cls+'">'+r[1]+"</span></div>";
+        const dd=(typeof dictFind==="function"&&typeof D!=="undefined")?dictFind(r[0]):null;
+        const openable=dd&&(dd.sample_path||dd.blank_form_path||/^https?:/.test(String(dd.guide_link||"")));
+        const attr=openable?' link" onclick="openDocDict(\''+esc(String(dd.id))+'\')"':'"';
+        return '<div class="rt-doc'+attr+'><span class="rt-dn">'+r[0]+'</span><span class="rt-db '+cls+'">'+r[1]+"</span>"+(openable?'<span class="rt-db v">견본 보기</span>':"")+"</div>";
       }).join("")+"</div>";
     }else{
       const t='<table class="rt-tb">'+tbl.map(r=>"<tr>"+r.map(c=>"<td>"+c+"</td>").join("")+"</tr>").join("")+"</table>";
