@@ -41,17 +41,17 @@ label{font-size:13.5px;font-weight:700;color:#5B554D;display:block;margin:10px 0
 .sec{margin:22px 0 8px;display:flex;align-items:baseline;gap:8px}
 .sec h2{font-size:16.5px;font-weight:700}
 .sec .cnt{font-size:13.5px;color:#8A8378}
-.card{background:#fff;border:1px solid #E4E0D8;border-radius:10px;padding:13px 15px;margin-bottom:8px;cursor:pointer}
-.card:hover{border-color:#B7B0A5}
-.card .kind{font-size:12px;font-weight:700;letter-spacing:.02em;margin-bottom:3px}
+.card{background:#fff;border:none;border-radius:18px;padding:20px 22px;margin-bottom:12px;cursor:pointer}
+.card:hover{outline:2px solid #E3DCD0}
+.card .kind{font-size:13px;font-weight:700;letter-spacing:.02em;margin-bottom:6px}
 .k-sop{color:#1D5F8A}.k-case{color:#0F6E56}.k-faq{color:#9B5A1B}.k-dict{color:#5F5E5A}.k-court{color:#9B1B33}
-.card .tt{font-size:16px;font-weight:700}
-.card .mini{font-size:13.5px;color:#6E675D;margin-top:3px;word-break:break-all}
-.card .body{display:none;margin-top:10px;border-top:1px solid #EEEBE4;padding-top:10px}
+.card .tt{font-size:17px;font-weight:700;line-height:1.5}
+.card .mini{font-size:13.5px;color:#8A8378;margin-top:5px;word-break:break-all}
+.card .body{display:none;margin-top:16px;border-top:1px solid #F0EDE7;padding-top:16px}
 .card.open .body{display:block}
 .fld{margin-bottom:9px}
 .fld b{display:block;font-size:12.5px;color:#8A8378;font-weight:700}
-.fld span,.fld div.v{font-size:15px;white-space:pre-wrap;word-break:break-word}
+.fld span,.fld div.v{font-size:15px;white-space:pre-wrap;word-break:break-word;line-height:1.7}
 .tagline{margin-top:6px}
 .tag{display:inline-block;background:#F1EEE9;color:#5B554D;font-size:12.5px;padding:2px 9px;border-radius:12px;margin:2px 3px 0 0}
 .chip{display:inline-block;font-size:12.5px;font-weight:700;padding:2px 9px;border-radius:5px}
@@ -79,24 +79,28 @@ label{font-size:13.5px;font-weight:700;color:#5B554D;display:block;margin:10px 0
 .deep{display:inline-block;margin-top:4px;font-size:14px;color:#1D5F8A;text-decoration:underline}
 @media(max-width:560px){.row2{flex-direction:column}header.top h1{font-size:16.5px}}
 
-/* ── 카드 본문 리치 렌더링 v2: 시안1+2+4 조합 (2026-07-10) ── */
-.rt-concl{background:#9B1B33;color:#fff;border-radius:10px;padding:12px 14px;margin:10px 0;line-height:1.6;font-size:14px}
-.rt-lbl{display:block;font-size:11px;opacity:.85;margin-bottom:2px}
-.rt-steps{position:relative;margin:12px 0;padding-left:34px}
-.rt-vline{position:absolute;left:10px;top:6px;bottom:6px;width:2px;background:#EBE4D8}
-.rt-step{position:relative;margin-bottom:14px;line-height:1.65;font-size:14px}
-.rt-step:last-child{margin-bottom:2px}
-.rt-num{position:absolute;left:-34px;top:1px;width:22px;height:22px;border-radius:50%;background:#9B1B33;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
-.rt-dt{border:1px solid #E5DFD3;border-radius:8px;padding:10px 12px;margin:10px 0;background:#FDFBF7}
-.rt-dt summary{cursor:pointer;font-weight:700;color:#9B1B33;font-size:13.5px}
-.rt-tb{border-collapse:collapse;width:100%;margin:8px 0 2px;font-size:13px}
-.rt-tb td{border:1px solid #E5DFD3;padding:8px 10px;line-height:1.55;vertical-align:top;background:#fff}
+/* ── 카드 본문 리치 렌더링 v3: 토스형 본체 + 노션 콜아웃 (2026-07-10) ── */
+.rt-concl{font-size:18px;font-weight:700;color:#191612;line-height:1.5;margin:4px 0 14px}
+.rt-steps{margin:14px 0}
+.rt-vline{display:none}
+.rt-step{position:relative;padding-left:38px;margin-bottom:13px;line-height:1.65;font-size:15px}
+.rt-step:last-child{margin-bottom:4px}
+.rt-num{position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:9px;background:#F5E8EB;color:#9B1B33;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.rt-dt{margin:12px 0}
+.rt-dt summary{cursor:pointer;background:#F7F6F3;border-radius:12px;padding:13px 16px;font-weight:700;font-size:14.5px;color:#26221E;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.rt-dt summary::-webkit-details-marker{display:none}
+.rt-dt summary::after{content:"펼치기";font-size:12.5px;font-weight:400;color:#8A8378}
+.rt-dt[open] summary{border-radius:12px 12px 0 0}
+.rt-dt[open] summary::after{content:"접기"}
+.rt-dt .rt-tb{margin:0}
+.rt-tb{border-collapse:collapse;width:100%;font-size:13.5px}
+.rt-tb td{border:1px solid #E5DFD3;padding:9px 11px;line-height:1.55;vertical-align:top;background:#fff}
 .rt-tb td:first-child{background:#F7F3EC;font-weight:700;white-space:nowrap;width:38%}
-.rt-tip{border:1px solid #E5DFD3;background:#F7F3EC;border-radius:8px;padding:10px 12px;margin:10px 0;line-height:1.6;font-size:13.5px}
-.rt-tip.warn{background:#FCF0F0;border-color:#EBC9C9}
-.rt-tl{font-weight:700;color:#5B5344;margin-right:4px}
+.rt-tip{background:#F3F1EC;border-radius:12px;padding:13px 16px;margin:12px 0;line-height:1.65;font-size:14.5px;display:flex;gap:9px}
+.rt-tip.warn{background:#FBF1F1}
+.rt-tl{font-weight:700;color:#5B5344;flex:none}
 .rt-tip.warn .rt-tl{color:#9B1B33}
-.rt-p{margin:7px 0;line-height:1.65;font-size:14px}
+.rt-p{margin:9px 0;line-height:1.7;font-size:15px}
 </style>
 </head>
 <body>
@@ -270,12 +274,12 @@ function richText(s){
   const lines=String(s).replace(/\r/g,"").split("\n");
   let html="",list=[],tbl=[],sec="",mode="";
   const flushList=()=>{if(list.length){html+='<div class="rt-steps"><div class="rt-vline"></div>'+list.map((x,i)=>'<div class="rt-step"><span class="rt-num">'+(i+1)+"</span>"+x+"</div>").join("")+"</div>";list=[];}};
-  const flushTbl=()=>{if(tbl.length){const t='<table class="rt-tb">'+tbl.map(r=>"<tr>"+r.map(c=>"<td>"+c+"</td>").join("")+"</tr>").join("")+"</table>";html+=sec?'<details class="rt-dt"><summary>'+esc(sec)+" 열기</summary>"+t+"</details>":t;tbl=[];}sec="";};
+  const flushTbl=()=>{if(tbl.length){const t='<table class="rt-tb">'+tbl.map(r=>"<tr>"+r.map(c=>"<td>"+c+"</td>").join("")+"</tr>").join("")+"</table>";html+=sec?'<details class="rt-dt"><summary>'+esc(sec)+"</summary>"+t+"</details>":t;tbl=[];}sec="";};
   for(const raw of lines){
     const t=raw.trim();
     if(!t){flushList();flushTbl();mode="";continue;}
     let m;
-    if(/^결론\s*:/.test(t)){flushList();flushTbl();mode="";html+='<div class="rt-concl"><span class="rt-lbl">결론</span>'+esc(t.replace(/^결론\s*:\s*/,""))+"</div>";}
+    if(/^결론\s*:/.test(t)){flushList();flushTbl();mode="";html+='<div class="rt-concl">'+esc(t.replace(/^결론\s*:\s*/,""))+"</div>";}
     else if(m=t.match(/^(\d+)[.)]\s*(.*)/)){flushTbl();mode="";list.push(esc(m[2]));}
     else if(t.startsWith("■")){flushList();flushTbl();sec=t.replace(/^■\s*/,"").replace(/\s*열기$/,"");mode="tbl";}
     else if(t.startsWith("|")){flushList();tbl.push(t.split("|").map(x=>x.trim()).filter(x=>x!=="").map(x=>esc(x)));}
@@ -341,7 +345,7 @@ function renderSearch(){
   if(!fq.length)out.push(emptyBox("이 조건에 맞는 FAQ가 아직 없어요. 질문함에 남겨 주세요."));
   fq.forEach(x=>{
     out.push(cardHtml("k-faq",(x.card_no||"FAQ")+" · "+typeName(x.type_code),x.question,
-      oneLine(x.answer),
+      "",
       fld("답변",x.answer)+fld("근거 카드번호",x.ref_cards)+tagHtml(x.search_tags)));
   });
 
@@ -361,7 +365,8 @@ function oneLine(s){s=(s||"").replace(/\s+/g," ").trim();return s.length>60?s.sl
 function sec(t,n){return '<div class="sec"><h2>'+esc(t)+'</h2><span class="cnt">'+n+'건</span></div>';}
 function emptyBox(t){return '<div class="empty">'+esc(t)+"</div>";}
 function cardHtml(kindCls,kind,title,mini,body){
-  return '<div class="card" onclick="toggleCard(this)"><div class="kind '+kindCls+'">'+esc(kind)+'</div><div class="tt">'+esc(title)+'</div><div class="mini">'+esc(mini)+'</div><div class="body" onclick="event.stopPropagation()">'+body+"</div></div>";
+  const m=(mini&&String(mini).trim())?'<div class="mini">'+esc(mini)+"</div>":"";
+  return '<div class="card" onclick="toggleCard(this)"><div class="kind '+kindCls+'">'+esc(kind)+'</div><div class="tt">'+esc(title)+'</div>'+m+'<div class="body" onclick="event.stopPropagation()">'+body+"</div></div>";
 }
 
 async function submitQuestion(){
