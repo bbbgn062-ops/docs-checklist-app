@@ -300,7 +300,7 @@ function richText(s){
     if(/^결론\s*:/.test(t)){flushList();flushTbl();mode="";html+='<div class="rt-concl">'+esc(t.replace(/^결론\s*:\s*/,""))+"</div>";}
     else if(m=t.match(/^(\d+)[.)]\s*(.*)/)){flushTbl();mode="";list.push(esc(m[2]));}
     else if(t.startsWith("■")){flushList();flushTbl();sec=t.replace(/^■\s*/,"").replace(/\s*열기$/,"");mode="tbl";}
-    else if(t.startsWith("|")){flushList();tbl.push(t.split("|").map(x=>x.trim()).filter(x=>x!=="").map(x=>esc(x)));}
+    else if(t.includes("|")&&(mode==="tbl"||t.startsWith("|"))){flushList();tbl.push(t.split("|").map(x=>x.trim()).filter(x=>x!=="").map(x=>esc(x)));}
     else if(t.startsWith("-")&&mode==="tbl"){flushList();const b=t.replace(/^-\s*/,"");const i2=b.indexOf(":");tbl.push(i2>0?[esc(b.slice(0,i2).trim()),esc(b.slice(i2+1).trim())]:[esc(b),""]);}
     else if(/^[⚠💬※★]/u.test(t)){flushList();flushTbl();mode="";const warn=t.startsWith("⚠");const body=t.replace(/^[⚠💬※★\uFE0F]+\s*/u,"");html+='<div class="rt-tip'+(warn?" warn":"")+'"><span class="rt-tl">'+(warn?"주의":"팁")+"</span>"+esc(body)+"</div>";}
     else {flushList();flushTbl();mode="";html+='<div class="rt-p">'+esc(t)+"</div>";}
@@ -309,7 +309,8 @@ function richText(s){
 }
 function fld(label,val){
   if(val==null||String(val).trim()==="")return"";
-  return '<div class="fld"><b>'+esc(label)+'</b><div class="v">'+richText(val)+"</div></div>";
+  const b=label?'<b>'+esc(label)+"</b>":"";
+  return '<div class="fld">'+b+'<div class="v">'+richText(val)+"</div></div>";
 }
 function toggleCard(el){el.classList.toggle("open");}
 
@@ -339,7 +340,7 @@ function renderSearch(){
   sop.forEach(x=>{
     out.push(cardHtml("k-sop",(x.card_no||"SOP")+" · "+typeName(x.type_code),x.title,
       (x.court?x.court+" 전용":"전 법원 공통"),
-      fld("대응 절차",x.steps)+fld("필요 서류",x.required_docs)+fld("주의사항",x.caution)+tagHtml(x.search_tags)));
+      fld("",x.steps)+fld("",x.required_docs)+fld("",x.caution)+tagHtml(x.search_tags)));
   });
 
   const cs=D.cases.filter(x=>x.reviewed)
@@ -364,7 +365,7 @@ function renderSearch(){
   fq.forEach(x=>{
     out.push(cardHtml("k-faq",(x.card_no||"FAQ")+" · "+typeName(x.type_code),x.question,
       "",
-      fld("답변",x.answer)+fld("근거 카드번호",x.ref_cards)+tagHtml(x.search_tags)));
+      fld("",x.answer)+fld("근거 카드번호",x.ref_cards)+tagHtml(x.search_tags)));
   });
 
   const dictShow=kwOn?D.dict.filter(x=>x.reviewed).filter(x=>kwMatch([x.name,x.search_tags,x.description,x.kind].join(" "),tks)):(type?[]:D.dict.filter(x=>x.reviewed));
