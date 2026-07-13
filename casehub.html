@@ -330,7 +330,12 @@
    try{if(!VIEWAS&&!sessionStorage.getItem("acc_logged")){sessionStorage.setItem("acc_logged","1");db.from("access_log").insert({user_name:MYNAME||"직원",role:MYROLE,office_name:OFFNAME[MYOFFICE]||null}).then(()=>{});}}catch(e){}
    PCT={};(progRes.data||[]).forEach(r=>PCT[r.client_id]=r.pct); (cliRes.data||[]).forEach(c=>{ if(c.collect_pct!=null) PCT[c.id]=c.collect_pct; });
    MISS={};
-   (itemRes.data||[]).forEach(it=>{if(it.status==="미요청"||it.status==="요청중"){(MISS[it.client_id]=MISS[it.client_id]||[]).push(it.doc_name);}});
+   /* ★부족 서류 목록에 '보완필요'도 포함한다. 파일이 왔지만 부족한 서류(예: 사업자가 2곳인데 사업자등록증 1장만 옴)는
+      아직 받은 것이 아니므로 원사무실에도 부족 서류로 보여야 한다 — 2026-07-13 추가 */
+   (itemRes.data||[]).forEach(it=>{
+     if(it.status==="미요청"||it.status==="요청중"){ (MISS[it.client_id]=MISS[it.client_id]||[]).push(it.doc_name); }
+     else if(it.status==="보완필요"){ (MISS[it.client_id]=MISS[it.client_id]||[]).push(it.doc_name+" (보완필요)"); }
+   });
    CLIENTS=cliRes.data||[];
    if(effRole()!=="master") CLIENTS=CLIENTS.filter(c=>c.is_public); // 작성팀·원사무실은 공개된 의뢰인만
    renderPreviewBar();

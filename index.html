@@ -836,8 +836,11 @@ function ensureItems(client){
   if(!client.cert) client.cert={ files:[], pw:"" };         // 공동인증서
   if(!Array.isArray(client.cert.files)) client.cert.files=[];
   if(!client.firm) client.firm=(typeof cfg!=="undefined"&&cfg.firmName)?cfg.firmName:FIRMS[0]; // 소속 사무소
-  // 파일이 있으면 무조건 '받음'으로 정리 — 예전 버그로 파일은 있는데 미확보로 남은 것 자동 복구
-  Object.keys(client.items).forEach(id=>{ const s=client.items[id]; if(s && s.files && s.files.length && !s.done){ if(s.mode==="na") s.mode="self"; s.done=true; s.rejected=false; if(s.mode==="request") s.reqTag="received"; if(!s.recvDate) s.recvDate=now(); } });
+  /* 파일이 있으면 '받음'으로 정리 — 예전 버그로 파일은 있는데 미확보로 남은 것 자동 복구.
+     ★단, 사람이 일부러 '보완필요'로 표시한 항목은 건드리지 않는다.
+     (예: 사업자가 2곳인데 사업자등록증이 1장만 온 경우 → 파일은 있지만 보완필요가 맞다.
+      이 예외가 없어서, ⚠보완을 눌러도 화면을 그리는 순간 자동으로 '받음'으로 되돌아갔다 — 2026-07-13 수정) */
+  Object.keys(client.items).forEach(id=>{ const s=client.items[id]; if(s && s.files && s.files.length && !s.done && !s.rejected){ if(s.mode==="na") s.mode="self"; s.done=true; if(s.mode==="request") s.reqTag="received"; if(!s.recvDate) s.recvDate=now(); } });
   return client;
 }
 function formatPhone(v){ const d=(v||"").replace(/\D/g,"").slice(0,11);
@@ -4757,6 +4760,33 @@ function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:
 /* office_id는 의뢰인 저장 페이로드에서 제외 — 수정 시 관리자가 정한 사무소를 덮어쓰지 않도록. 신규 생성 때만 아래에서 지정. */
 function sbClientSig(c){ return JSON.stringify(sbClientPayload(c)); }
 
+/* ★서류 칸(checklist_items) 저장 — "없으면 만들고, 있으면 고쳐 쓴다"
+   왜: 예전에는 앱이 읽어온 데이터만 보고 "서버에 줄이 없다"고 판단해 무조건 새로 만들었다.
+       그 판단이 틀리면(1,000줄 한계로 못 읽었거나, 다른 기기가 먼저 만들었거나) 중복 줄이 생겼다.
+       실제로 그렇게 4,940줄이 쌓였다(2026-07-13 정리 완료).
+   이제: 만들기 전에 서버에 같은 줄이 있는지 확인하고, 있으면 그 줄을 고쳐 쓴다.
+        동시에 두 기기가 만들어 충돌(23505)이 나도 그 줄을 찾아 고쳐 쓴다. */
+async function sbUpsertItem(c, s, meta, status, isig, dkey){
+  const payload={ status, reject_reason:s.rejectReason||null, memo:s.memo||null, doc_key:dkey, bundle:meta.bundle, doc_name:meta.name };
+  if(dkey){                       // 표준 서류 칸: 먼저 서버에 있는지 확인
+    const f=await sb.from("checklist_items").select("id").eq("client_id",c.id).eq("doc_key",dkey).limit(1);
+    if(f.error) throw f.error;
+    const row=(f.data&&f.data[0])||null;
+    if(row){ const u=await sb.from("checklist_items").update(payload).eq("id",row.id); if(u.error) throw u.error;
+             s._sbRow=row.id; s._sbSig=isig; return; }
+  }
+  const r=await sb.from("checklist_items").insert(Object.assign({client_id:c.id}, payload)).select("id").single();
+  if(r.error){
+    if(dkey && String(r.error.code)==="23505"){   // 자물쇠 충돌 = 그 찰나에 다른 기기가 만듦 → 그 줄을 찾아 고쳐 쓴다
+      const f2=await sb.from("checklist_items").select("id").eq("client_id",c.id).eq("doc_key",dkey).limit(1);
+      const row2=(f2.data&&f2.data[0])||null;
+      if(row2){ const u2=await sb.from("checklist_items").update(payload).eq("id",row2.id); if(u2.error) throw u2.error;
+                s._sbRow=row2.id; s._sbSig=isig; return; }
+    }
+    throw r.error;
+  }
+  s._sbRow=r.data.id; s._sbSig=isig;
+}
 async function sbSyncClient(c){
   const sig=sbClientSig(c);
   const payload=sbClientPayload(c); payload.updated_at=new Date().toISOString();
@@ -4778,8 +4808,8 @@ async function sbSyncClient(c){
     const status=sbStatusFwd(s); const isig=sbItemSig(c,id,s); const dkey=ITEM_BY_ID[id]?id:(s.doc_key||null);
     if(s._sbRow){
       if(s._sbSig!==isig){ jobs.push(sb.from("checklist_items").update({status,reject_reason:s.rejectReason||null,memo:s.memo||null,doc_key:dkey,bundle:meta.bundle,doc_name:meta.name}).eq("id",s._sbRow).then(r=>{ if(r.error) throw r.error; s._sbSig=isig; })); }
-    } else if(s._sbSig!==isig){   // ★ 서버에 줄이 없는 항목은 '직원이 실제로 건드린 것만' 새로 만든다(새 의뢰인은 전체 생성). 기존 의뢰인의 안 건드린 항목을 무더기로 만들어 케이스허브 진행률을 흔들지 않기 위함.
-      jobs.push(sb.from("checklist_items").insert({client_id:c.id,doc_key:dkey,doc_name:meta.name,bundle:meta.bundle,status,reject_reason:s.rejectReason||null,memo:s.memo||null}).select("id").single().then(r=>{ if(r.error) throw r.error; s._sbRow=r.data.id; s._sbSig=isig; }));
+    } else if(s._sbSig!==isig){   // ★ 서버에 줄이 없어 보이는 항목은 '직원이 실제로 건드린 것만' 처리(안 건드린 항목을 무더기로 만들어 진행률을 흔들지 않기 위함).
+      jobs.push(sbUpsertItem(c, s, meta, status, isig, dkey));   // ★있으면 고쳐 쓰기 — 중복 줄이 생기지 않는다
     }
   });
   /* ★체크리스트 저장이 실패해도 아래 첨부파일 장부 기록은 반드시 시도한다.
