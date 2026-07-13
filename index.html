@@ -2036,7 +2036,7 @@ async function openPreview(cid,id,idx){
       <div id="pvBody" style="max-height:72vh;overflow:auto;background:#33373d;border-radius:10px;padding:8px;text-align:center"><div style="color:#fff;padding:24px">불러오는 중…</div></div>
       <div class="modal-actions" style="gap:8px;margin-top:12px;flex-wrap:wrap">
         ${isImg?`<button class="btn" id="pvA4Btn" onclick="pvShowA4(!_pvA4)">📄 A4 미리보기</button>`:""}
-        ${(isImg||isPdf)?`<button class="btn" onclick="closeModal();openBundlePageEditor('${cid}',null,'${id}')" title="회전·삭제·순서변경·다른 서류로 페이지 이동">✏ 편집</button>`:""}
+        ${(isImg||isPdf)?`<button class="btn" onclick="closeModal();openBundlePageEditor('${cid}',null,'${id}')" title="자르기(A4 비율)·회전·삭제·순서변경·다른 서류로 페이지 이동">✏ 편집</button>`:""}
         <button class="btn btn-primary" onclick="dlPreview()">📥 다운로드</button>
         <button class="btn" onclick="closeModal()">닫기</button>
       </div>`,820);
@@ -2426,6 +2426,7 @@ async function openBundlePageEditor(cid,bid,onlyId){
     <div class="bpe-tb">
       <button class="bpe-tbtn" onclick="bpeRot(-90)">↺ 왼쪽</button>
       <button class="bpe-tbtn" onclick="bpeRot(90)">↻ 오른쪽</button>
+      <button class="bpe-tbtn" onclick="bpeCrop()" title="지금 보고 있는 페이지를 자릅니다 (A4 세로·가로 비율 맞춤 가능)">✂ 자르기</button>
       <span class="bpe-sep"></span>
       <button class="bpe-tbtn del" id="bpeDelBtn" onclick="bpeDel()">🗑 이 페이지 삭제</button>
       <button class="bpe-tbtn" id="bpeMoveBtn" onclick="bpeMovePages()">↪ 선택 페이지 다른 서류로</button>
@@ -2516,7 +2517,7 @@ function bpeReindex(){
       tn.ondragstart=e=>{ _bpeDrag=k; tn.classList.add("drag"); try{e.dataTransfer.effectAllowed="move";}catch(_){ } };
       const nn=tn.querySelector('.n'); if(nn) nn.textContent=(k+1); tn.classList.remove('sel'); tn.classList.toggle('on',k===_bpe.cur); }
     const vn=vmap[uid]; if(vn){ vbox.appendChild(vn); vn.id="bpe-pg-"+k; vn.classList.remove('sel');
-      const ov=vn.querySelector('.bpe-pgov'); if(ov) ov.innerHTML=`<span class="bpe-pgtag">📄 ${esc(f.name)} · ${k+1}p</span><button onclick="bpeRotAt(${k},-90)" title="왼쪽 회전">↺</button><button onclick="bpeRotAt(${k},90)" title="오른쪽 회전">↻</button><button class="del" onclick="bpeDelAt(${k})" title="삭제/취소">🗑</button>`; }
+      const ov=vn.querySelector('.bpe-pgov'); if(ov) ov.innerHTML=`<span class="bpe-pgtag">📄 ${esc(f.name)} · ${k+1}p</span><button onclick="bpeRotAt(${k},-90)" title="왼쪽 회전">↺</button><button onclick="bpeRotAt(${k},90)" title="오른쪽 회전">↻</button><button onclick="bpeCropAt(${k})" title="자르기(A4 비율)">✂</button><button class="del" onclick="bpeDelAt(${k})" title="삭제/취소">🗑</button>`; }
   }
   vbox.scrollTop=st; bpeUpdateSelInfo(); bpeUpdateInfo(); bpeRefreshMoveMarks(); }
 function bpeViewMouseDown(e){ if(!_bpe) return; if(e.target.closest('.bpe-pgov')) return;
@@ -2548,18 +2549,95 @@ function bpeAutoScroll(){ if(!_bpeMarq) return; const se=_bpeMarq.scrollEl; if(s
 function bpeViewMouseUp(){ window.removeEventListener("mousemove",bpeViewMouseMove); window.removeEventListener("mouseup",bpeViewMouseUp);
   if(_bpeMarq){ if(_bpeMarq.box) _bpeMarq.box.remove(); if(_bpeMarq.raf) cancelAnimationFrame(_bpeMarq.raf); if(!_bpeMarq.moved && !_bpeMarq.fromThumb){ _bpe.selected=new Set(); bpeApplySel(); } }
   _bpeMarq=null; bpeUpdateSelInfo(); }
-async function bpeRotAt(k,deg){ if(!_bpe) return; const {p}=bpePageMeta(k); p.rot=((p.rot+deg)%360+360)%360; _bpe.dirty=true; await bpeRefreshPage(k); }
+async function bpeRotAt(k,deg){ if(!_bpe) return; const {p}=bpePageMeta(k); p.crop=bpeRotCropRect(p.crop,deg); p.rot=((p.rot+deg)%360+360)%360; _bpe.dirty=true; await bpeRefreshPage(k); }
 async function bpeDelAt(k){ if(!_bpe) return; const {p}=bpePageMeta(k); p.del=!p.del; _bpe.dirty=true; await bpeRefreshPage(k); }
-function bpeReset(){ if(!_bpe) return; _bpe.files.forEach(f=>f.pages.forEach(p=>{p.rot=0;p.del=false;})); _bpe.dirty=false; bpeRenderThumbs(); bpeRenderView(); }
+function bpeReset(){ if(!_bpe) return; _bpe.files.forEach(f=>f.pages.forEach(p=>{p.rot=0;p.del=false;p.crop=null;})); _bpe.dirty=false; bpeRenderThumbs(); bpeRenderView(); }
 function bpeGo(k){ if(!_bpe) return; _bpe.cur=k; const w=document.getElementById("bpe-pg-"+k); if(w) w.scrollIntoView({behavior:"smooth",block:"start"}); bpeMarkThumb(k); }
-async function bpeCanvas(f,pi,rot,maxw){
+/* 자르기 영역(crop)은 "회전이 적용된 화면 기준"의 비율값(0~1)이다.
+   따라서 페이지를 회전하면 잘라둔 영역도 같이 돌려줘야 같은 자리를 가리킨다. */
+function bpeRotCropRect(c,deg){ if(!c) return c||null; const d=((deg%360)+360)%360;
+  if(d===90) return {x:1-(c.y+c.h), y:c.x, w:c.h, h:c.w};
+  if(d===270) return {x:c.y, y:1-(c.x+c.w), w:c.h, h:c.w};
+  if(d===180) return {x:1-(c.x+c.w), y:1-(c.y+c.h), w:c.w, h:c.h};
+  return c; }
+function bpeCutCanvas(cv,c){ if(!c) return cv;
+  const x=Math.max(0,Math.min(cv.width-1,Math.round(c.x*cv.width)));
+  const y=Math.max(0,Math.min(cv.height-1,Math.round(c.y*cv.height)));
+  const w=Math.max(1,Math.min(cv.width-x,Math.round(c.w*cv.width)));
+  const h=Math.max(1,Math.min(cv.height-y,Math.round(c.h*cv.height)));
+  const out=document.createElement("canvas"); out.width=w; out.height=h;
+  out.getContext("2d").drawImage(cv,x,y,w,h,0,0,w,h); return out; }
+async function bpeCanvas(f,pi,rot,maxw,crop){
   if(f.isImg){ const img=f.imgEl; const w=img.naturalWidth||1, h=img.naturalHeight||1; const swap=(rot%180!==0); const bw=swap?h:w, bh=swap?w:h; const scale=Math.min(maxw/bw,2);
     const cv=document.createElement("canvas"); cv.width=Math.max(1,bw*scale); cv.height=Math.max(1,bh*scale); const cx=cv.getContext("2d");
-    cx.save(); cx.translate(cv.width/2,cv.height/2); cx.rotate(rot*Math.PI/180); cx.scale(scale,scale); cx.drawImage(img,-w/2,-h/2); cx.restore(); return cv; }
+    cx.save(); cx.translate(cv.width/2,cv.height/2); cx.rotate(rot*Math.PI/180); cx.scale(scale,scale); cx.drawImage(img,-w/2,-h/2); cx.restore(); return bpeCutCanvas(cv,crop); }
   const page=await f.pdfDoc.getPage(pi+1);
   const total=(((page.rotate||0)+rot)%360+360)%360; // ★ 페이지 원래 회전값 + 사용자가 준 회전을 더함(원래 회전을 덮어쓰지 않도록)
   const base=page.getViewport({scale:1,rotation:total}); const s=Math.min(maxw/base.width,2); const vp=page.getViewport({scale:s,rotation:total});
-  const cv=document.createElement("canvas"); cv.width=vp.width; cv.height=vp.height; await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise; return cv;
+  const cv=document.createElement("canvas"); cv.width=vp.width; cv.height=vp.height; await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise; return bpeCutCanvas(cv,crop);
+}
+/* ---- 자르기 편집기 (사진·PDF 페이지 공용) ----
+   화면에 보이는 그대로(회전 반영) 한 장을 띄우고 Cropper로 영역을 고른다.
+   고른 영역은 비율값으로 저장 → 💾 저장 때 사진은 실제로 잘라 다시 인코딩, PDF는 CropBox로 잘라낸다. */
+let _bpeCrop=null; // {k, cropper}
+function bpeCrop(){ if(!_bpe) return; bpeCropAt(_bpe.cur||0); }
+async function bpeCropAt(k){
+  if(!_bpe||_bpeCrop) return;
+  const {f,p,fp}=bpePageMeta(k);
+  if(p.del){ toast("삭제 예정인 페이지입니다 · 🗑을 다시 눌러 취소한 뒤 잘라주세요"); return; }
+  let Cropper; try{ Cropper=await loadCropper(); }catch(e){ toast("자르기 편집기 로드 실패(인터넷 필요)"); return; }
+  toast("자르기 편집기 여는 중…");
+  let full; try{ full=await bpeCanvas(f,fp.pi,p.rot,1600,null); }catch(e){ toast("페이지를 불러오지 못했습니다"); return; }
+  const src=full.toDataURL("image/png");
+  const ov=document.createElement("div"); ov.id="bpeCropOv";
+  ov.style.cssText="position:fixed;inset:0;z-index:2700;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:14px";
+  ov.innerHTML=`<div style="background:#fff;border-radius:12px;width:720px;max-width:96vw;max-height:92vh;overflow:auto;padding:14px 16px 16px;box-shadow:0 14px 44px rgba(0,0,0,.4)">
+    <h3 style="font-size:15px;margin:0 0 4px">✂ 자르기 · ${esc(f.name)} · ${k+1}p</h3>
+    <p class="hint" style="margin:0 0 8px">모서리 점을 끌어 남길 부분을 정하세요 · 박스 안을 끌면 이동합니다. <b>A4 세로/가로</b>를 누르면 인쇄 용지 비율에 딱 맞게 잘립니다.</p>
+    <div style="background:#222;border-radius:10px;overflow:hidden;max-height:56vh"><img id="bpeCropImg" src="${src}" style="max-width:100%;display:block"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center">
+      <span style="font-size:12px;color:var(--muted);font-weight:800">비율</span>
+      <button class="btn btn-sm" id="bcP" onclick="bpeCropRatio('p')">A4 세로</button>
+      <button class="btn btn-sm" id="bcL" onclick="bpeCropRatio('l')">A4 가로</button>
+      <button class="btn btn-sm" id="bcF" onclick="bpeCropRatio('free')">자유</button>
+      <button class="btn btn-sm" onclick="bpeCropRatio('full')" title="자르기 취소(페이지 전체)">전체</button>
+    </div>
+    <div class="modal-actions" style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="bpeCropClose()">취소</button>
+      <button class="btn btn-primary" onclick="bpeCropApply()">이 영역으로 자르기</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const im=document.getElementById("bpeCropImg");
+  const init=()=>{
+    const cr=new Cropper(im,{viewMode:1,autoCropArea:1,background:false,dragMode:"crop",zoomable:false,rotatable:false,aspectRatio:NaN,
+      ready(){ if(p.crop){ const nw=im.naturalWidth, nh=im.naturalHeight;
+        cr.setData({x:p.crop.x*nw, y:p.crop.y*nh, width:p.crop.w*nw, height:p.crop.h*nh}); } }});
+    _bpeCrop={k,cropper:cr}; bpeCropMark("free");
+  };
+  if(im.complete) init(); else im.onload=init;
+}
+function bpeCropMark(r){ ["bcP","bcL","bcF"].forEach(i=>{ const b=document.getElementById(i); if(b){ b.style.background=""; b.style.color=""; } });
+  const on=document.getElementById(r==="p"?"bcP":r==="l"?"bcL":"bcF"); if(on){ on.style.background="var(--brand)"; on.style.color="#fff"; } }
+function bpeCropRatio(r){ if(!_bpeCrop) return; const cr=_bpeCrop.cropper;
+  if(r==="full"){ cr.setAspectRatio(NaN); cr.reset(); bpeCropMark("free"); return; }
+  cr.setAspectRatio(r==="p"?595.28/841.89:r==="l"?841.89/595.28:NaN); bpeCropMark(r); }
+function bpeCropClose(){ if(_bpeCrop){ try{ _bpeCrop.cropper.destroy(); }catch(_){ } _bpeCrop=null; } const ov=document.getElementById("bpeCropOv"); if(ov) ov.remove(); }
+async function bpeCropApply(){
+  if(!_bpe||!_bpeCrop) return;
+  const k=_bpeCrop.k; const cr=_bpeCrop.cropper;
+  const im=document.getElementById("bpeCropImg"); const nw=im.naturalWidth||1, nh=im.naturalHeight||1;
+  const d=cr.getData(true);
+  let x=d.x/nw, y=d.y/nh, w=d.width/nw, h=d.height/nh;
+  x=Math.max(0,Math.min(1,x)); y=Math.max(0,Math.min(1,y));
+  w=Math.max(0,Math.min(1-x,w)); h=Math.max(0,Math.min(1-y,h));
+  if(!(w>0.02&&h>0.02)){ toast("자를 영역이 너무 작습니다"); return; }
+  const {p}=bpePageMeta(k);
+  p.crop=(w>0.995&&h>0.995&&x<0.005&&y<0.005)?null:{x,y,w,h}; // 사실상 전체면 자르기 없음으로 처리
+  _bpe.dirty=true;
+  bpeCropClose();
+  await bpeRefreshPage(k);
+  toast(p.crop?"잘랐습니다 · 💾 저장을 눌러야 실제 파일에 반영됩니다":"자르기를 해제했습니다");
 }
 async function bpeRenderThumbs(){
   const box=document.getElementById("bpeThumbs"); if(!box||!_bpe) return; box.innerHTML="";
@@ -2578,7 +2656,7 @@ async function bpeRenderThumbs(){
       d.ondragleave=()=>{ d.classList.remove("over"); };
       d.ondrop=e=>{ e.preventDefault(); d.classList.remove("over"); bpeDrop(k); };
     }
-    try{ d.appendChild(await bpeCanvas(f,fp.pi,p.rot,84)); }catch(_){ }
+    try{ d.appendChild(await bpeCanvas(f,fp.pi,p.rot,84,p.crop)); }catch(_){ }
     const n=document.createElement("div"); n.className="n"; n.textContent=(k+1); d.appendChild(n);
     if(p.del){ const dx=document.createElement("div"); dx.className="dx"; dx.textContent="삭제"; d.appendChild(dx); }
     box.appendChild(d);
@@ -2595,10 +2673,10 @@ async function bpeRenderView(){
     const {f,p,fp}=bpePageMeta(k);
     const wrap=document.createElement("div"); wrap.className="bpe-pgwrap"+(p.del?" del":""); wrap.id="bpe-pg-"+k; wrap.dataset.uid=p.uid;
     const ov=document.createElement("div"); ov.className="bpe-pgov";
-    ov.innerHTML=`<span class="bpe-pgtag">📄 ${esc(f.name)} · ${k+1}p</span><button onclick="bpeRotAt(${k},-90)" title="왼쪽 회전">↺</button><button onclick="bpeRotAt(${k},90)" title="오른쪽 회전">↻</button><button class="del" onclick="bpeDelAt(${k})" title="삭제/취소">🗑</button>`;
+    ov.innerHTML=`<span class="bpe-pgtag">📄 ${esc(f.name)} · ${k+1}p</span><button onclick="bpeRotAt(${k},-90)" title="왼쪽 회전">↺</button><button onclick="bpeRotAt(${k},90)" title="오른쪽 회전">↻</button><button onclick="bpeCropAt(${k})" title="자르기(A4 비율)">✂</button><button class="del" onclick="bpeDelAt(${k})" title="삭제/취소">🗑</button>`;
     wrap.appendChild(ov);
     const inner=document.createElement("div"); inner.className="bpe-pgc";
-    try{ inner.appendChild(await bpeCanvas(f,fp.pi,p.rot,maxw)); }catch(_){ }
+    try{ inner.appendChild(await bpeCanvas(f,fp.pi,p.rot,maxw,p.crop)); }catch(_){ }
     wrap.appendChild(inner);
     if(p.del){ const dn=document.createElement("div"); dn.className="bpe-delflag"; dn.textContent="삭제 예정 (🗑 다시 눌러 취소)"; wrap.appendChild(dn); }
     v.appendChild(wrap);
@@ -2611,19 +2689,33 @@ async function bpeRefreshPage(k){
   if(!_bpe) return; const {f,p,fp}=bpePageMeta(k);
   const w=document.getElementById("bpe-pg-"+k);
   if(w){ w.classList.toggle("del",p.del);
-    const inner=w.querySelector(".bpe-pgc"); if(inner){ inner.innerHTML=""; try{ inner.appendChild(await bpeCanvas(f,fp.pi,p.rot,Math.min(560,((document.getElementById("bpeView")||{}).clientWidth||600)-40))); }catch(_){ } }
+    const inner=w.querySelector(".bpe-pgc"); if(inner){ inner.innerHTML=""; try{ inner.appendChild(await bpeCanvas(f,fp.pi,p.rot,Math.min(560,((document.getElementById("bpeView")||{}).clientWidth||600)-40),p.crop)); }catch(_){ } }
     let dn=w.querySelector(".bpe-delflag"); if(p.del&&!dn){ dn=document.createElement("div"); dn.className="bpe-delflag"; dn.textContent="삭제 예정 (🗑 다시 눌러 취소)"; w.appendChild(dn); } else if(!p.del&&dn){ dn.remove(); }
   }
   const th=document.querySelectorAll('.bpe-th')[k];
-  if(th){ th.classList.toggle("del",p.del); const old=th.querySelector("canvas,img"); try{ const nc=await bpeCanvas(f,fp.pi,p.rot,84); if(old) th.replaceChild(nc,old); else th.insertBefore(nc,th.firstChild); }catch(_){ }
+  if(th){ th.classList.toggle("del",p.del); const old=th.querySelector("canvas,img"); try{ const nc=await bpeCanvas(f,fp.pi,p.rot,84,p.crop); if(old) th.replaceChild(nc,old); else th.insertBefore(nc,th.firstChild); }catch(_){ }
     let dx=th.querySelector(".dx"); if(p.del&&!dx){ dx=document.createElement("div"); dx.className="dx"; dx.textContent="삭제"; th.appendChild(dx);} else if(!p.del&&dx){ dx.remove(); } }
   bpeUpdateInfo();
 }
-/* 저장: 파일별로 변경분을 반영. PDF=페이지 유지/회전 재구성, 이미지=회전. 업로드 성공 후 원본 교체(안전). 전부 삭제된 파일은 파일 자체 삭제. */
+/* 화면 기준 자르기 영역(비율) → PDF 좌표(포인트)로 변환. pdf.js 뷰포트가 회전까지 계산해 주므로 그대로 되돌리면 된다. */
+async function bpePdfCropBox(f,p){
+  if(!f.pdfDoc||!p.crop) return null;
+  const page=await f.pdfDoc.getPage(p.i+1);
+  const total=(((page.rotate||0)+(p.rot||0))%360+360)%360;
+  const vp=page.getViewport({scale:1,rotation:total});
+  const c=p.crop;
+  const a=vp.convertToPdfPoint(c.x*vp.width, c.y*vp.height);
+  const b=vp.convertToPdfPoint((c.x+c.w)*vp.width, (c.y+c.h)*vp.height);
+  const x=Math.min(a[0],b[0]), y=Math.min(a[1],b[1]);
+  const w=Math.abs(b[0]-a[0]), h=Math.abs(b[1]-a[1]);
+  if(!(w>1&&h>1)) return null;
+  return {x,y,w,h};
+}
+/* 저장: 파일별로 변경분을 반영. PDF=페이지 유지/회전/자르기(CropBox) 재구성, 이미지=회전·자르기. 업로드 성공 후 원본 교체(안전). 전부 삭제된 파일은 파일 자체 삭제. */
 async function bpeSaveFile(f){
   const c=findClient(_bpe.cid);
   const keep=f.pages.filter(p=>!p.del && !p.moveTo);
-  const changed = keep.length!==f.pages.length || keep.some(p=>p.rot);
+  const changed = keep.length!==f.pages.length || keep.some(p=>p.rot||p.crop);
   if(!changed) return null;
   const fileObj=f.fileRef; const arr=c.items[f.itemId].files||[];
   const supa=(typeof BACKEND!=="undefined" && BACKEND==="supabase");
@@ -2640,12 +2732,19 @@ async function bpeSaveFile(f){
     const src=await PDFLib.PDFDocument.load(f.srcBytes,{ignoreEncryption:true});
     const out=await PDFLib.PDFDocument.create();
     const copied=await out.copyPages(src, keep.map(p=>p.i));
-    copied.forEach((pg,k)=>{ let base=0; try{ base=pg.getRotation().angle||0; }catch(_){ } const rot=((base+keep[k].rot)%360+360)%360; try{ pg.setRotation(PDFLib.degrees(rot)); }catch(_){ } out.addPage(pg); });
+    for(let k=0;k<copied.length;k++){
+      const pg=copied[k], kp=keep[k];
+      let base=0; try{ base=pg.getRotation().angle||0; }catch(_){ }
+      const rot=((base+kp.rot)%360+360)%360; try{ pg.setRotation(PDFLib.degrees(rot)); }catch(_){ }
+      if(kp.crop){ try{ const box=await bpePdfCropBox(f,kp); if(box) pg.setCropBox(box.x,box.y,box.w,box.h); }catch(e){ console.warn("PDF 자르기 반영 실패",e); } }
+      out.addPage(pg);
+    }
     newBytes=await out.save(); newMime="application/pdf";
     newName=(fileObj.name||"문서").replace(/\.[^.]+$/,"").replace(/_편집$/,"")+"_편집.pdf";
   } else {
-    const rot=((f.pages[0].rot||0)%360+360)%360;
-    const cv=await bpeCanvas(f,0,rot,4000);
+    const p0=keep[0]||f.pages[0];
+    const rot=((p0.rot||0)%360+360)%360;
+    const cv=await bpeCanvas(f,0,rot,4000,p0.crop);
     newBytes=await new Promise(r=>cv.toBlob(b=>b.arrayBuffer().then(r),"image/jpeg",0.92));
     newMime="image/jpeg";
     newName=(fileObj.name||"image").replace(/\.[^.]+$/,"").replace(/_편집$/,"")+"_편집.jpg";
@@ -2665,7 +2764,7 @@ async function bpeSaveFile(f){
 function bpeSave(){ // 진입점: 서류 간 이동이 있으면 저장 전에 '이동 요약' 확인
   if(!_bpe) return;
   try{
-    const anyChange=_bpe.files.some(f=>f.pages.some(p=>p.del||p.rot||p.moveTo));
+    const anyChange=_bpe.files.some(f=>f.pages.some(p=>p.del||p.rot||p.crop||p.moveTo));
     if(!anyChange){ toast("변경된 내용이 없습니다"); return; }
     const hasMove=_bpe.files.some(f=>f.pages.some(p=>p.moveTo&&!p.del));
     if(hasMove){ bpeMoveSummary(); return; }
@@ -2679,8 +2778,8 @@ function bpeMoveSummary(){
   const moves={};
   _bpe.files.forEach(f=>{ f.pages.forEach(p=>{ if(p.moveTo&&!p.del){ const key=f.itemId+"|"+p.moveTo; if(!moves[key]) moves[key]={src:f.itemId,tgt:p.moveTo,n:0}; moves[key].n++; } }); });
   const rows=Object.values(moves).map(m=>`<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#2b2b2b;padding:6px 0;border-bottom:1px solid #f2f2f2"><span style="color:#1565C0">↪</span><div style="flex:1;min-width:0"><span style="color:#888">${esc(itemName(m.src,c))}</span> <span style="color:#c3c3c3">→</span> <b>${esc(bpeMoveTgtName(m.tgt))}</b></div><span style="color:#1565C0;font-weight:800;white-space:nowrap">${m.n}쪽</span></div>`).join("");
-  let delN=0,rotN=0; _bpe.files.forEach(f=>f.pages.forEach(p=>{ if(p.del)delN++; else if(p.rot)rotN++; }));
-  const extra=[]; if(delN)extra.push(`🗑 삭제 ${delN}쪽`); if(rotN)extra.push(`↻ 회전 ${rotN}쪽`);
+  let delN=0,rotN=0,cropN=0; _bpe.files.forEach(f=>f.pages.forEach(p=>{ if(p.del)delN++; else { if(p.rot)rotN++; if(p.crop)cropN++; } }));
+  const extra=[]; if(delN)extra.push(`🗑 삭제 ${delN}쪽`); if(rotN)extra.push(`↻ 회전 ${rotN}쪽`); if(cropN)extra.push(`✂ 자르기 ${cropN}쪽`);
   const extraHtml=extra.length?`<div style="margin-top:10px;background:#f7f7f8;border-radius:9px;padding:8px 11px;font-size:12px;color:#666">함께 저장될 편집 · ${extra.join(" · ")}</div>`:"";
   const totalMove=Object.values(moves).reduce((a,m)=>a+m.n,0);
   const d=document.createElement("div"); d.className="ib-ov"; d.id="bpeMoveSumOv";
@@ -2704,7 +2803,7 @@ function bpeMoveSumClose(){ const d=$("#bpeMoveSumOv"); if(d) d.remove(); }
 function bpeMoveSumConfirm(){ bpeMoveSumClose(); bpeSaveApply(); }
 async function bpeSaveApply(){
   if(!_bpe) return;
-  const anyChange=_bpe.files.some(f=>f.pages.some(p=>p.del||p.rot||p.moveTo));
+  const anyChange=_bpe.files.some(f=>f.pages.some(p=>p.del||p.rot||p.crop||p.moveTo));
   if(!anyChange){ toast("변경된 내용이 없습니다"); return; }
   toast("저장 중…"); setSync("saving");
   const c=findClient(_bpe.cid);
