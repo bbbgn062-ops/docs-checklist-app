@@ -294,6 +294,21 @@
  $("#pvModal").addEventListener("click",e=>{if(e.target.id==="pvModal")closePreview();});
  document.addEventListener("keydown",e=>{if(e.key==="Escape")closePreview();});
 
+ /* ★★ 1,000줄 한계 (2026-07-13 취합앱 사고와 동일 원인)
+    Supabase(PostgREST)는 목록 조회 한 번에 최대 1,000줄만 주고, 넘는 줄은 오류 없이 버린다.
+    checklist_items가 1,000줄을 넘자 부족서류 목록(MISS)이 절반만 읽혀, 서류를 다 받은 것처럼 보였다.
+    → 모든 목록 조회는 이 함수로 1,000줄씩 끝까지 이어 받는다. db.from(X).select()를 그냥 쓰지 말 것. */
+ async function chSelectPaged(table, cols){
+   const PAGE=1000; let out=[];
+   for(let pg=0; pg<1000; pg++){
+     const r=await db.from(table).select(cols).order("id").range(pg*PAGE, pg*PAGE+PAGE-1);
+     if(r.error) return {data:null, error:r.error};
+     const rows=r.data||[];
+     out=out.concat(rows);
+     if(rows.length<PAGE) break;
+   }
+   return {data:out, error:null};
+ }
  async function load(){
    $("#loginView").classList.add("hidden");$("#appView").classList.remove("hidden");
    $("#detailWrap").classList.add("hidden");$("#listWrap").classList.remove("hidden");
@@ -305,10 +320,11 @@
    const _ab=$("#adminBtn");if(_ab)_ab.style.display=(MYROLE==="master")?"":"none";
    const [offRes,cliRes,progRes,itemRes]=await Promise.all([
      db.from("offices").select("id,name").order("name"),
-     db.from("clients").select("id,name,office_id,case_type,stage,amending,assignee,phone,income_type,asset_type,income_note,asset_note,court_deadline,deadline_kind,urgent,pinned,archived,is_public,collect_pct,case_no,created_at").order("name"),
+     chSelectPaged("clients","id,name,office_id,case_type,stage,amending,assignee,phone,income_type,asset_type,income_note,asset_note,court_deadline,deadline_kind,urgent,pinned,archived,is_public,collect_pct,case_no,created_at"),
      db.rpc("my_progress"),
-     db.from("checklist_items").select("client_id,doc_name,status")
+     chSelectPaged("checklist_items","id,client_id,doc_name,status")   // ★1,000줄 한계 — 반드시 페이징(안 그러면 부족서류 목록이 절반만 읽힘)
    ]);
+   if(cliRes.data) cliRes.data.sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"ko"));
    officeColor={};OFFNAME={};
    (offRes.data||[]).forEach((o,i)=>{ const ours=(o.type==="ours")||((o.name||"").includes("이준")); officeColor[o.id]= ours ? {bg:"#FDECEF",dash:"#f0c9d2",dot:"#9B1B33"} : PALETTE[i%PALETTE.length]; OFFNAME[o.id]=o.name;});
    try{if(!VIEWAS&&!sessionStorage.getItem("acc_logged")){sessionStorage.setItem("acc_logged","1");db.from("access_log").insert({user_name:MYNAME||"직원",role:MYROLE,office_name:OFFNAME[MYOFFICE]||null}).then(()=>{});}}catch(e){}
