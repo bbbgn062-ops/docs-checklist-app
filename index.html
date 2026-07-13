@@ -1038,17 +1038,39 @@ async function gwGet(params){
 /* 파일 저장소: 케이스허브 모드면 Supabase Storage(docs 버킷), 아니면 드라이브 문지기.
    업로드는 {id: 저장경로} 를 돌려주므로, 호출부는 기존처럼 file.driveId 에 저장경로를 담는다(코드 재사용). */
 function b64ToBytes(b64){ const bin=atob((b64||"").replace(/\n/g,"")); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return a; }
-async function gwUpload(folder,name,mime,b64){
+/* ★ 업로드 본문(payload)은 File/Blob/Uint8Array/ArrayBuffer/base64문자열 아무거나 받는다.
+   Supabase Storage는 Blob을 그대로 받으므로 base64 변환이 전혀 필요 없다.
+   (예전 구글드라이브 문지기 방식만 base64가 필요해서, 그 경로에서만 변환한다.) */
+function toBlobBody(payload, mime){
+  const type=mime||"application/octet-stream";
+  if(payload instanceof Blob) return payload;                                  // File 포함
+  if(payload instanceof Uint8Array) return new Blob([payload],{type});
+  if(payload instanceof ArrayBuffer) return new Blob([payload],{type});
+  if(typeof payload==="string") return new Blob([b64ToBytes(payload)],{type}); // 옛 호출부 호환
+  throw new Error("업로드할 파일 형식을 알 수 없습니다");
+}
+/* Blob → base64. FileReader가 브라우저 내부(백그라운드)에서 변환하므로 화면이 멈추지 않는다. */
+function blobToBase64(blob){
+  return new Promise((res,rej)=>{
+    const fr=new FileReader();
+    fr.onload=()=>{ const s=String(fr.result||""); const i=s.indexOf(","); res(i>=0?s.slice(i+1):""); };
+    fr.onerror=()=>rej(new Error("파일 읽기 실패"));
+    fr.readAsDataURL(blob);
+  });
+}
+async function gwUpload(folder,name,mime,payload){
   if(BACKEND==="supabase"){
     if(!sbInit()) throw new Error("저장소 미연결");
     // ★ 저장소 키는 영문만 허용(한글 불가). 실제 파일명은 documents.file_name에 한글 그대로 보관됨.
     const dir=String(folder||"").replace(/[^\w\-]/g,"")||"uploads";
     const ni=String(name||"").lastIndexOf("."); const ext=ni>0?String(name).slice(ni).replace(/[^.\w]/g,"").slice(0,10):"";
     const path="u/"+dir+"/"+Date.now()+"_"+Math.random().toString(36).slice(2,8)+ext;
-    const {error}=await sb.storage.from("docs").upload(path, b64ToBytes(b64), {contentType:mime||"application/octet-stream", upsert:false});
+    const body=toBlobBody(payload, mime);   // 변환 없이 파일 그대로 전송 → 화면 멈춤 없음
+    const {error}=await sb.storage.from("docs").upload(path, body, {contentType:mime||"application/octet-stream", upsert:false});
     if(error) throw error;
     return { id: path };
   }
+  const b64=(typeof payload==="string")?payload:await blobToBase64(toBlobBody(payload, mime));
   return gwPost({action:"upload",folder:folder,name:name,mime:mime,content:b64,user:deviceName||"미설정"});
 }
 async function gwDelete(id){
@@ -1784,10 +1806,110 @@ function setLink(cid,id){ const c=findClient(cid); const s=c.items[id];
   if(url===null) return; s.link=url.trim();
   touch(`[${c.name}] '${itemName(id,c)}' 링크 ${s.link?"등록":"삭제"}`); renderDetail(cid); }
 
+/* ---------- 6a-2. 진단 기록 (업로드 멈춤·실패 추적) ----------
+   왜: 업로드 중 화면이 멈춰 브라우저가 페이지를 죽이면 아무 흔적도 남지 않았다.
+   방식: (1) 일을 시작하기 "직전"에 브라우저(localStorage)에 먼저 적는다 → 튕겨도 남는다.
+        (2) 끝나면 걸린 시간·성공여부를 같은 기록에 덧쓴다.
+        (3) 다음 접속 때 아직 못 올린 기록만 Supabase(app_logs)로 조용히 올린다(실패해도 앱 동작에 지장 없음).
+   보기: ⚙️설정 → [진단 기록] */
+const DLOG_KEY="ycl_diag_v1", DLOG_MAX=200, DLOG_SLOW_MS=8000;
+function dlogRead(){ try{ const a=JSON.parse(localStorage.getItem(DLOG_KEY)||"[]"); return Array.isArray(a)?a:[]; }catch(_){ return []; } }
+function dlogWrite(a){ try{ localStorage.setItem(DLOG_KEY, JSON.stringify(a.slice(-DLOG_MAX))); }catch(_){ } }
+function dlogUA(){ const u=navigator.userAgent||"";
+  const dev=/iPhone|iPad|iPod/.test(u)?"iPhone/iPad":(/Android/.test(u)?"Android":"PC");
+  const br=/Edg\//.test(u)?"Edge":(/SamsungBrowser/.test(u)?"삼성":(/Chrome\//.test(u)?"Chrome":(/Safari\//.test(u)?"Safari":"기타")));
+  return dev+" "+br; }
+function dlog(kind, where, info){
+  const e=Object.assign({
+    log_id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+    ev_at:new Date().toISOString(),
+    device:(typeof deviceName!=="undefined"&&deviceName)||"미설정",
+    ua:dlogUA(), kind:kind, where_at:where||"", sent:0, t0:Date.now()
+  }, info||{});
+  const a=dlogRead(); a.push(e); dlogWrite(a);      // ★즉시 기록 — 바로 다음 줄에서 튕겨도 이건 남는다
+  return e.log_id;
+}
+function dlogEnd(id, patch){
+  const a=dlogRead(); const e=a.find(x=>x.log_id===id); if(!e) return;
+  const ms=e.t0?(Date.now()-e.t0):null;
+  Object.assign(e, {ms:ms}, patch||{}, {sent:0});   // sent=0 으로 되돌려 갱신본이 다시 올라가게 함
+  if(e.kind==="done" && ms!=null && ms>DLOG_SLOW_MS) e.kind="slow";
+  dlogWrite(a);
+}
+async function dlogFlush(){
+  try{
+    if(typeof BACKEND==="undefined" || BACKEND!=="supabase") return;
+    if(!sbInit() || !sbUser) return;
+    const todo=dlogRead().filter(x=>!x.sent).slice(0,50); if(!todo.length) return;
+    const rows=todo.map(x=>({ log_id:x.log_id, ev_at:x.ev_at, device:x.device, ua:x.ua, kind:x.kind,
+      where_at:x.where_at||null, client_name:x.client_name||null, slot:x.slot||null,
+      files:x.files||null, bytes:x.bytes||null, ms:(x.ms==null?null:x.ms), detail:x.detail||null }));
+    const {error}=await sb.from("app_logs").upsert(rows,{onConflict:"log_id"});
+    if(error) return;                                // 실패해도 조용히 — 다음 기회에 다시 시도
+    const ids=new Set(todo.map(x=>x.log_id));
+    const a=dlogRead(); a.forEach(x=>{ if(ids.has(x.log_id)) x.sent=1; }); dlogWrite(a);
+  }catch(_){ }
+}
+window.addEventListener("load", ()=>{ setTimeout(dlogFlush, 6000); });
+function dlogKindLabel(k){ return k==="start"?"시작(끝 기록 없음=튕김 의심)":k==="done"?"성공":k==="fail"?"실패":k==="slow"?"느림":k; }
+function openDiag(){
+  const a=dlogRead().slice().reverse();
+  const rows=a.length?a.map(e=>{
+    const bad=(e.kind==="start"||e.kind==="fail");
+    const mb=e.bytes?(e.bytes/1048576).toFixed(1)+"MB":"";
+    const sec=(e.ms!=null)?(e.ms/1000).toFixed(1)+"초":"";
+    return `<tr style="border-bottom:1px solid var(--line)${bad?";background:#fff5f5":""}">
+      <td style="padding:6px 8px;white-space:nowrap">${esc(String(e.ev_at||"").replace("T"," ").slice(5,16))}</td>
+      <td style="padding:6px 8px;white-space:nowrap;font-weight:${bad?"800":"400"};color:${bad?"#b3261e":"#333"}">${esc(dlogKindLabel(e.kind))}</td>
+      <td style="padding:6px 8px">${esc(e.where_at||"")}</td>
+      <td style="padding:6px 8px">${esc(e.client_name||"")}${e.slot?" · "+esc(e.slot):""}</td>
+      <td style="padding:6px 8px;white-space:nowrap">${e.files?e.files+"개":""} ${mb}</td>
+      <td style="padding:6px 8px;white-space:nowrap">${sec}</td>
+      <td style="padding:6px 8px;color:#b3261e">${esc(e.detail||"")}</td></tr>`;
+  }).join("") : `<tr><td colspan="7" style="padding:18px;text-align:center;color:var(--muted)">아직 기록이 없습니다.</td></tr>`;
+  modal(`
+    <h3 style="margin:0 0 6px">🩺 진단 기록</h3>
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.7;margin-bottom:10px">
+      이 기기에서 파일을 올린 이력입니다. <b style="color:#b3261e">빨간 줄</b>은 실패했거나, 시작만 하고 끝 기록이 없는 건(=화면이 멈춰 튕긴 것으로 의심)입니다.<br>
+      문제가 생기면 <b>[전체 복사]</b>를 눌러 그대로 붙여넣어 알려주세요. 최근 ${DLOG_MAX}건까지 보관됩니다.
+    </div>
+    <div style="max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:9px">
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+        <thead><tr style="background:var(--gray-soft);position:sticky;top:0">
+          <th style="padding:7px 8px;text-align:left">시각</th><th style="padding:7px 8px;text-align:left">결과</th>
+          <th style="padding:7px 8px;text-align:left">화면</th><th style="padding:7px 8px;text-align:left">의뢰인·서류</th>
+          <th style="padding:7px 8px;text-align:left">용량</th><th style="padding:7px 8px;text-align:left">시간</th>
+          <th style="padding:7px 8px;text-align:left">메시지</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="dlogClear()">기록 비우기</button>
+      <button class="btn" onclick="openSettings()">← 설정</button>
+      <button class="btn btn-primary" onclick="dlogCopy()">📋 전체 복사</button>
+    </div>`, 860);
+}
+function dlogCopy(){
+  const a=dlogRead().slice().reverse();
+  if(!a.length){ toast("복사할 기록이 없습니다"); return; }
+  const txt=["[서류취합앱 진단 기록] "+dlogUA()+" · "+a.length+"건"].concat(a.map(e=>
+    [String(e.ev_at||"").replace("T"," ").slice(0,19), dlogKindLabel(e.kind), e.where_at||"-",
+     (e.client_name||"-")+(e.slot?"/"+e.slot:""), (e.files||0)+"개",
+     e.bytes?(e.bytes/1048576).toFixed(1)+"MB":"-", (e.ms!=null)?(e.ms/1000).toFixed(1)+"초":"-",
+     e.detail||""].join(" | "))).join("\n");
+  const done=()=>toast("복사했습니다 — 붙여넣기 하세요 ✓");
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(()=>_dlogCopyFallback(txt,done)); }
+  else _dlogCopyFallback(txt,done);
+}
+function _dlogCopyFallback(txt,done){
+  const ta=document.createElement("textarea"); ta.value=txt; ta.style.cssText="position:fixed;left:-9999px";
+  document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); done(); }catch(_){ toast("복사 실패 — 화면을 캡처해 주세요"); }
+  ta.remove();
+}
+function dlogClear(){ if(!confirm("이 기기의 진단 기록을 모두 비울까요? (클라우드에 이미 올라간 기록은 남습니다)")) return; dlogWrite([]); toast("기록을 비웠습니다"); openDiag(); }
+
 /* ---------- 6b. 서류 파일 첨부 (깃헙 저장소 동기화) ---------- */
 function fileSizeStr(n){ return n<1024*1024 ? Math.max(1,Math.round(n/1024))+"KB" : (n/1048576).toFixed(1)+"MB"; }
-function arrayBufferToBase64(buf){ const bytes=new Uint8Array(buf); let bin=""; const chunk=0x8000;
-  for(let i=0;i<bytes.length;i+=chunk){ bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk)); } return btoa(bin); }
+/* (삭제) arrayBufferToBase64 — 파일을 통째로 글자로 바꾸느라 화면이 멈추던 원인.
+   이제 업로드는 파일(Blob)을 그대로 보낸다. 변환이 꼭 필요한 곳은 gwUpload 안의 blobToBase64가 처리. */
 function ghContentsUrl(path){ return `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}`; }
 /* 업로드 전 사진 자동압축: 큰 폰 사진을 화질 유지하며 용량↓ → 업로드 빨라짐.
    - 이미지(jpg/png)만 대상, 까다로운 포맷(heic/gif/webp)·작은 파일은 원본 그대로
@@ -1825,12 +1947,27 @@ function attachFiles(cid,id){
       valid.push(f);
     }
     if(!valid.length){ renderDetail(cid); return; }
-    setSync("saving"); toast(`${valid.length}개 업로드 중…`);
+    setSync("saving");
     const folder=clientFolder(c); const results=new Array(valid.length); let okN=0;
-    const up=async(f0,i)=>{ try{ const f=await compressImage(f0); const b64=arrayBufferToBase64(await f.arrayBuffer()); const j=await gwUpload(folder,f.name,f.type||"application/octet-stream",b64); results[i]={name:f.name,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()}; }catch(e){ console.error(e); toast(`${f0.name} 업로드 실패: ${e.message}`); setSync("error"); } };
-    await up(valid[0],0);                                       // 첫 파일이 폴더 생성
-    await Promise.all(valid.slice(1).map((f,k)=>up(f,k+1)));    // 나머지는 동시에(빠름) · 순서 유지
-    results.forEach(r=>{ if(r){ s.files.push(r); okN++; } });
+    const totalBytes=valid.reduce((n,f)=>n+(f.size||0),0);
+    const lid=dlog("start","서류칸 파일첨부",{client_name:c.name, slot:itemName(id,c), files:valid.length, bytes:totalBytes});
+    const up=async(f0,i)=>{ const f=await compressImage(f0);
+      const j=await gwUpload(folder,f.name,f.type||"application/octet-stream",f);   // ★파일 그대로 전송(base64 변환 없음)
+      const ent={name:f.name,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
+      s.files.push(ent);
+      try{ await sbSaveDocNow(c, id, ent); }                     // ★즉시 장부 기록 — 실패하면 되돌린다
+      catch(e){ await sbRollbackUpload(c, id, ent, e); throw new Error("서버 저장 실패: "+(e.message||e)); }
+      results[i]=ent; };
+    let failMsg="";
+    /* 한 개씩 순차 업로드 — 동시에 올리면 파일들이 한꺼번에 메모리에 올라가 화면이 멈춘다 */
+    for(let i=0;i<valid.length;i++){
+      toast(valid.length>1?`업로드 중… (${i+1}/${valid.length}) ${valid[i].name}`:"업로드 중…");
+      await new Promise(r=>setTimeout(r,0));    // 진행률을 화면에 그릴 틈을 준다
+      try{ await up(valid[i],i); }
+      catch(e){ console.error(e); failMsg=(failMsg?failMsg+" / ":"")+`${valid[i].name}: ${e.message||e}`; toast(`${valid[i].name} 업로드 실패: ${e.message||e}`); setSync("error"); }
+    }
+    okN=results.filter(Boolean).length;
+    dlogEnd(lid, failMsg?{kind:"fail",detail:failMsg.slice(0,300),files:okN}:{kind:"done",files:okN}); dlogFlush();
     if(okN){ s.manual=true; if(s.mode==="na") s.mode="self"; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; }
       applyTags(c); touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부·받음`); toast(`${okN}개 첨부 완료 · '받음' 처리 ✓`); }
     renderDetail(cid);
@@ -2065,9 +2202,8 @@ async function applyCrop(){
   cv.toBlob(async (blob)=>{
     if(!blob){ toast("편집 변환 실패"); return; }
     try{
-      const buf=await blob.arrayBuffer(); const b64=arrayBufferToBase64(buf);
       const base=(f.name||"image").replace(/\.[^.]+$/,""); const newName=base.replace(/_편집$/,"")+"_편집.jpg";
-      const j=await gwUpload(clientFolder(c), newName, "image/jpeg", b64);
+      const j=await gwUpload(clientFolder(c), newName, "image/jpeg", blob);
       const oldF=f;
       c.items[id].files[idx]={name:newName,size:blob.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
       try{ if(oldF.driveId) await gwDelete(oldF.driveId);
@@ -2177,13 +2313,12 @@ async function applyPdfEdit(){
       out.addPage(pg);
     });
     const outBytes=await out.save();
-    const buf=await new Blob([outBytes],{type:"application/pdf"}).arrayBuffer();
-    const b64=arrayBufferToBase64(buf);
+    const outBlob=new Blob([outBytes],{type:"application/pdf"});
     const c=findClient(E.cid); const f=(c.items[E.id].files||[])[E.idx]; if(!f){ closePdfEdit(); return; }
     const base=(f.name||"문서").replace(/\.[^.]+$/,""); const newName=base.replace(/_편집$/,"")+"_편집.pdf";
-    const j=await gwUpload(clientFolder(c), newName, "application/pdf", b64);
+    const j=await gwUpload(clientFolder(c), newName, "application/pdf", outBlob);
     const oldF=f;
-    c.items[E.id].files[E.idx]={name:newName,size:buf.byteLength,driveId:j.id,by:deviceName||"미설정",ts:now()};
+    c.items[E.id].files[E.idx]={name:newName,size:outBlob.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
     try{ if(oldF.driveId) await gwDelete(oldF.driveId);
          else if(githubReady() && oldF.path) await fetch(ghContentsUrl(oldF.path),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify({message:`delete original ${oldF.name}`,sha:oldF.sha,branch:cfg.branch})}); }catch(_){ }
     touch(`[${c.name}] '${itemName(E.id,c)}' PDF 페이지 편집본으로 교체`);
@@ -2512,8 +2647,7 @@ async function bpeSaveFile(f){
     newMime="image/jpeg";
     newName=(fileObj.name||"image").replace(/\.[^.]+$/,"").replace(/_편집$/,"")+"_편집.jpg";
   }
-  const b64=arrayBufferToBase64(newBytes);
-  const j=await gwUpload(clientFolder(c), newName, newMime, b64);
+  const j=await gwUpload(clientFolder(c), newName, newMime, newBytes);
   // ★안전장치1: 새 파일이 저장소에 실제로 올라갔는지 확인. 실패 시 원본을 전혀 건드리지 않고 중단
   if(!await gwVerify(j.id, newBytes.byteLength)) throw new Error("편집본 저장 검증 실패("+newName+") — 원본 그대로 유지");
   const oldDrive=fileObj.driveId, oldDoc=fileObj.docId;
@@ -2624,8 +2758,7 @@ async function bpeProcessMoves(c, touched){
       newMime="image/jpeg";
       newName=(f.name||"image").replace(/\.[^.]+$/,"").replace(/_(편집|이동)$/,"")+"_이동.jpg";
     }
-    const b64=arrayBufferToBase64(newBytes);
-    const j=await gwUpload(clientFolder(c), newName, newMime, b64);
+    const j=await gwUpload(clientFolder(c), newName, newMime, newBytes);
     if(!await gwVerify(j.id, newBytes.byteLength)) throw new Error("이동 파일 저장 검증 실패("+newName+") — 원본 그대로 유지");
     const nf={name:newName, size:(newBytes.byteLength||0), driveId:j.id, by:deviceName||"미설정", ts:now(), is_public:!!(f.fileRef&&f.fileRef.is_public)};
     if(supa){
@@ -3210,10 +3343,12 @@ function attachCertFiles(cid){
   inp.onchange=async()=>{ const files=[...inp.files]; if(!files.length) return; const c=findClient(cid); if(!c.cert)c.cert={files:[],pw:""};
     for(const f of files){ if(f.size>100*1024*1024){ toast(`${f.name}: 100MB 초과`); continue; }
       setSync("saving"); toast(`${f.name} 업로드 중…`);
-      try{ const buf=await f.arrayBuffer(); const b64=arrayBufferToBase64(buf);
-        const j=await gwUpload(clientFolder(c)+"_인증서", f.name, f.type||"application/octet-stream", b64);
+      const lid=dlog("start","공동인증서 첨부",{client_name:c.name, files:1, bytes:f.size});
+      try{ const j=await gwUpload(clientFolder(c)+"_인증서", f.name, f.type||"application/octet-stream", f);
         c.cert.files.push({name:f.name,size:f.size,driveId:j.id,ts:now()});
-      }catch(e){ toast(`${f.name} 실패: ${e.message}`); setSync("error"); } }
+        dlogEnd(lid,{kind:"done"});
+      }catch(e){ dlogEnd(lid,{kind:"fail",detail:String(e.message||e).slice(0,300)}); toast(`${f.name} 실패: ${e.message}`); setSync("error"); } }
+    dlogFlush();
     touch(`[${c.name}] 공동인증서 첨부`); openCert(cid);
   };
   inp.click();
@@ -3697,6 +3832,13 @@ function openSettings(){
         <button class="btn btn-sm" onclick="importData()">📤 백업 불러오기</button>
         <button class="btn btn-sm" onclick="openSnapshots()">🕘 스냅샷 되돌리기</button>
       </div></div>
+    <div class="field" style="margin-top:12px"><label>문제 진단</label>
+      <div style="font-size:12.5px;color:var(--muted);background:var(--gray-soft);border-radius:9px;padding:8px 11px;line-height:1.7">
+        파일 올리기가 멈추거나 실패한 이력이 이 기기에 기록됩니다. 문제가 생기면 여기서 확인하고 복사해 알려주세요.
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="openDiag()">🩺 진단 기록 보기</button>
+      </div></div>
     <div class="modal-actions" style="position:sticky;bottom:0;background:#fff;margin:18px -22px -22px;padding:13px 22px;border-top:1px solid var(--line)">
       <button class="btn" onclick="closeModal()">닫기</button>
       <button class="btn btn-primary" onclick="saveSettingsLite()">저장</button>
@@ -3708,8 +3850,9 @@ let _sscOrphans=[];
 async function _sscCollectRefs(){ // 참조되는 저장경로 모두 수집(문서+인증서+앱스냅샷). ★한 곳이라도 실패하면 예외를 던져 정리를 중단(참조 누락→오삭제 방지)
   const ref=new Set();
   { let pg=0; while(true){ const r=await sb.from("documents").select("storage_path").range(pg*1000,pg*1000+999); if(r.error) throw new Error("문서 목록 조회 실패: "+(r.error.message||r.error)); if(!r.data||!r.data.length) break; r.data.forEach(d=>{ if(d.storage_path) ref.add(d.storage_path); }); if(r.data.length<1000) break; pg++; } }
-  { const s=await sb.from("secrets").select("cert_files"); if(s.error) throw new Error("인증서 목록 조회 실패: "+(s.error.message||s.error)); (s.data||[]).forEach(row=>{ let arr=row.cert_files; if(typeof arr==="string"){ try{arr=JSON.parse(arr);}catch(_){arr=[];} } (arr||[]).forEach(f=>{ if(f&&f.driveId) ref.add(f.driveId); }); }); }
-  { const c=await sb.from("clients").select("app_json"); if(c.error) throw new Error("의뢰인 데이터 조회 실패: "+(c.error.message||c.error)); const rx=/u\/[^"'\\\s]+?\.[A-Za-z0-9]{1,10}/g; (c.data||[]).forEach(row=>{ let t=row.app_json; if(t&&typeof t!=="string") t=JSON.stringify(t); if(t){ const m=t.match(rx); if(m) m.forEach(p=>ref.add(p)); } }); }
+  /* ★1,000줄 한계 주의: 참조 목록을 덜 모으면 멀쩡한 파일을 '고아'로 오인해 지운다 → 반드시 끝까지 이어 받는다 */
+  { const s=await sbSelectPaged("secrets","id,cert_files"); if(s.error) throw new Error("인증서 목록 조회 실패: "+(s.error.message||s.error)); (s.data||[]).forEach(row=>{ let arr=row.cert_files; if(typeof arr==="string"){ try{arr=JSON.parse(arr);}catch(_){arr=[];} } (arr||[]).forEach(f=>{ if(f&&f.driveId) ref.add(f.driveId); }); }); }
+  { const c=await sbSelectPaged("clients","id,app_json"); if(c.error) throw new Error("의뢰인 데이터 조회 실패: "+(c.error.message||c.error)); const rx=/u\/[^"'\\\s]+?\.[A-Za-z0-9]{1,10}/g; (c.data||[]).forEach(row=>{ let t=row.app_json; if(t&&typeof t!=="string") t=JSON.stringify(t); if(t){ const m=t.match(rx); if(m) m.forEach(p=>ref.add(p)); } }); }
   return ref;
 }
 async function _sscListObjects(){ // 저장소 전체 객체 나열(폴더별 병렬 조회로 빠르게)
@@ -3860,6 +4003,7 @@ let _ibSel=new Set();       // 다중선택(미배정 → 배정용)
 let _ibSelF=new Set();      // 다중선택(배정됨 → 배정취소용)
 let _ibLast=null;           // 직전 배정 서류 id (한장씩 '계속 담기'용)
 let _ibUid=1, _ibCid=null, _ibBusy=false, _ibSolo=null, _ibPickCtx=null;
+let _ibLid=null;            // 진행 중인 업로드의 진단 기록 번호
 function _ibCli(){ return findClient(_ibCid) || (window.state&&state.clients&&state.clients.find(c=>String(c.id)===String(_ibCid))) || null; }
 let _ibSplitFid=null, _ibSplitSel=new Set(), _ibPgSize="M";
 let _ibPgPending=false,_ibPgActive=false,_ibPgSX=0,_ibPgSY=0,_ibPgBase=null,_ibPgBox=null,_ibPgDownCell=null,_ibPgDownType="";
@@ -4106,10 +4250,12 @@ function _ibClosePick(){ const d=$("#ibPickOv"); if(d) d.remove(); }
 
 async function _ibUploadFile(c, fobj, slot){
   const file=await compressImage(fobj.file);
-  const b64=arrayBufferToBase64(await file.arrayBuffer());
-  const j=await gwUpload(clientFolder(c), file.name, file.type||"application/octet-stream", b64);
+  const j=await gwUpload(clientFolder(c), file.name, file.type||"application/octet-stream", file);   // ★파일 그대로 전송
   const s=c.items[slot]; if(!s.files) s.files=[];
-  s.files.push({name:file.name,size:file.size,driveId:j.id,by:deviceName||"미설정",ts:now()});
+  const ent={name:file.name,size:file.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
+  s.files.push(ent);
+  try{ await sbSaveDocNow(c, slot, ent); }                       // ★즉시 장부 기록 — 실패하면 되돌린다
+  catch(e){ await sbRollbackUpload(c, slot, ent, e); throw new Error("서버 저장 실패("+file.name+"): "+(e.message||e)); }
   _ibTrackRef(fobj,slot,j.id);
   _ibMarkReceived(s); applyTags(c);
 }
@@ -4124,17 +4270,26 @@ async function _ibDoAssign(slot){
       if(!targets.length){ _ibClosePick(); _ibBusy=false; return; }
       toast(`${targets.length}개 업로드 중…`);
       const _nm=itemName(slot,c);
+      _ibLid=dlog("start","받은파일함 일괄배정",{client_name:c.name, slot:_nm, files:targets.length, bytes:targets.reduce((n,t)=>n+((t.file&&t.file.size)||0),0)});
       /* 한 개씩 순차 업로드 — 동시 업로드 시 파일 전체를 메모리에 함께 올려 튕김(브라우저 강제 종료) 유발하므로 순차 처리 */
-      for(let i=0;i<targets.length;i++){ const t=targets[i]; if(targets.length>1) toast(`업로드 중… (${i+1}/${targets.length})`); await _ibUploadFile(c,t,slot); _ibAddFiled(t, _nm, 1); }
+      for(let i=0;i<targets.length;i++){ const t=targets[i]; if(targets.length>1) toast(`업로드 중… (${i+1}/${targets.length})`);
+        await new Promise(r=>setTimeout(r,0));   // 진행률을 화면에 그릴 틈을 준다
+        await _ibUploadFile(c,t,slot); _ibAddFiled(t, _nm, 1); }
       _ibSel=new Set();
       touch(`[${c.name}] 받은 파일함 → '${itemName(slot,c)}' ${targets.length}개 배정`);
       _ibClosePick(); _ibRender(); toast(`'${_ibSlotName(slot)}'로 ${targets.length}개 배정 ✓`);
+      dlogEnd(_ibLid,{kind:"done"}); _ibLid=null; dlogFlush();
     } else { // one / solo
-      const f=_ib.find(x=>x.id===_ibPickCtx.id); if(f){ toast("업로드 중…"); await _ibUploadFile(c,f,slot); _ibAddFiled(f, itemName(slot,c), 1); touch(`[${c.name}] 받은 파일함 → '${itemName(slot,c)}' 1개 배정`); }
+      const f=_ib.find(x=>x.id===_ibPickCtx.id);
+      if(f){ toast("업로드 중…");
+        _ibLid=dlog("start","받은파일함 1개배정",{client_name:c.name, slot:itemName(slot,c), files:1, bytes:(f.file&&f.file.size)||0});
+        await _ibUploadFile(c,f,slot); _ibAddFiled(f, itemName(slot,c), 1); touch(`[${c.name}] 받은 파일함 → '${itemName(slot,c)}' 1개 배정`);
+        dlogEnd(_ibLid,{kind:"done"}); _ibLid=null; dlogFlush(); }
       _ibClosePick();
       if(mode==="solo"){ _ibRender(); _ibSoloNext(); } else { _ibRender(); toast("배정 완료 ✓"); }
     }
-  }catch(e){ console.error(e); toast("배정 실패: "+(e.message||e)); setSync("error"); }
+  }catch(e){ console.error(e); if(_ibLid){ dlogEnd(_ibLid,{kind:"fail",detail:String(e.message||e).slice(0,300)}); _ibLid=null; dlogFlush(); }
+    toast("배정 실패: "+(e.message||e)); setSync("error"); }
   finally{ _ibBusy=false; }
 }
 
@@ -4289,6 +4444,7 @@ async function _ibBuildSplit(slot){
   if(_ibBusy) return; const c=ensureItems(_ibCli()); const f=_ib.find(x=>x.id===_ibSplitFid); if(!c||!f) return;
   const pages=[..._ibSplitSel].sort((a,b)=>a-b); if(!pages.length) return;
   _ibBusy=true; toast("PDF 자르는 중…");
+  _ibLid=dlog("start","받은파일함 PDF분할",{client_name:c.name, slot:itemName(slot,c), files:1, bytes:(f.file&&f.file.size)||0, detail:pages.length+"p 추출"});
   try{
     const PDFLib=await loadPdfLib();
     const ab=await f.file.arrayBuffer();
@@ -4296,14 +4452,17 @@ async function _ibBuildSplit(slot){
     const out=await PDFLib.PDFDocument.create();
     const cp=await out.copyPages(src,pages.map(p=>p-1)); cp.forEach(p=>out.addPage(p));
     const bytes=await out.save();
-    const buf=await new Blob([bytes],{type:"application/pdf"}).arrayBuffer();
-    const b64=arrayBufferToBase64(buf);
+    const outBlob=new Blob([bytes],{type:"application/pdf"});
     const sName=safeName(itemName(slot,c))||"서류";
     const pieceName=`${sName}_p${_ibRangeLabel(pages)}.pdf`;
     toast("저장 중…");
-    const j=await gwUpload(clientFolder(c), pieceName, "application/pdf", b64);
+    await new Promise(r=>setTimeout(r,0));   // 진행 문구를 화면에 그릴 틈을 준다
+    const j=await gwUpload(clientFolder(c), pieceName, "application/pdf", outBlob);   // ★변환 없이 그대로 전송
     const s=c.items[slot]; if(!s.files) s.files=[];
-    s.files.push({name:pieceName,size:buf.byteLength,driveId:j.id,by:deviceName||"미설정",ts:now()});
+    const ent={name:pieceName,size:outBlob.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
+    s.files.push(ent);
+    try{ await sbSaveDocNow(c, slot, ent); }                     // ★즉시 장부 기록
+    catch(e){ await sbRollbackUpload(c, slot, ent, e); throw new Error("서버 저장 실패("+pieceName+"): "+(e.message||e)); }
     _ibTrackRef(f,slot,j.id,pages);
     _ibMarkReceived(s); applyTags(c);
     _ibAddFiled(f, itemName(slot,c), pages.length);
@@ -4319,22 +4478,29 @@ async function _ibBuildSplit(slot){
           cell.classList.remove("on"); cell.classList.add("done"); cell.dataset.set=j.id;
           let tg=cell.querySelector(".ib-pgtag"); if(!tg){ tg=document.createElement("div"); tg.className="ib-pgtag"; cell.appendChild(tg); } tg.textContent="✓ "+sName; });
         const sp=$("#ibSelPg"); if(sp) sp.textContent=_ibSplitSel.size; } }
-  }catch(e){ console.error(e); toast("분할 실패: "+(e.message||e)); }
+    dlogEnd(_ibLid,{kind:"done"}); _ibLid=null; dlogFlush();
+  }catch(e){ console.error(e); if(_ibLid){ dlogEnd(_ibLid,{kind:"fail",detail:String(e.message||e).slice(0,300)}); _ibLid=null; dlogFlush(); }
+    toast("분할 실패: "+(e.message||e)); }
   finally{ _ibBusy=false; }
 }
 async function _ibSaveOriginal(c,f){
+  const lid=dlog("start","받은파일함 원본보관",{client_name:c.name, files:1, bytes:(f.file&&f.file.size)||f.size||0});
   try{
-    const oid="b5-2"; const s=c.items[oid]; if(!s) return;
-    const b64=arrayBufferToBase64(await f.file.arrayBuffer());
+    const oid="b5-2"; const s=c.items[oid]; if(!s){ dlogEnd(lid,{kind:"fail",detail:"보관 칸(b5-2) 없음"}); return; }
     const oname="[원본]"+f.name.replace(/\.[^.]+$/,"")+".pdf";
-    const j=await gwUpload(clientFolder(c), oname, "application/pdf", b64);
+    const j=await gwUpload(clientFolder(c), oname, "application/pdf", f.file);   // ★변환 없이 그대로 전송
     if(!s.files) s.files=[];
-    s.files.push({name:oname,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()});
+    const ent={name:oname,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
+    s.files.push(ent);
+    try{ await sbSaveDocNow(c, oid, ent); }                      // ★즉시 장부 기록
+    catch(e){ await sbRollbackUpload(c, oid, ent, e); throw new Error("서버 저장 실패(원본 보관): "+(e.message||e)); }
     _ibTrackRef(f,oid,j.id);
     s.mode="self"; s.manual=true; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; }
     f.origSaved=true;
     _ibRender(); touch(`[${c.name}] 받은 파일함 PDF 원본 보관`);
-  }catch(e){ console.warn("원본 보관 실패",e); toast("원본 자동보관 실패(조각은 저장됨): "+(e.message||e)); }
+    dlogEnd(lid,{kind:"done"}); dlogFlush();
+  }catch(e){ console.warn("원본 보관 실패",e); dlogEnd(lid,{kind:"fail",detail:String(e.message||e).slice(0,300)}); dlogFlush();
+    toast("원본 자동보관 실패(조각은 저장됨): "+(e.message||e)); }
 }
 
 /* ---------- 11. 시작 ---------- */
@@ -4351,11 +4517,53 @@ function sbInit(){ try{ if(!sb && window.supabase) sb=window.supabase.createClie
 /* ── 첨부파일 순서(sort_order) 저장 지원 ── */
 let SB_HAS_SORT=false;   // documents.sort_order 칸 존재 여부(로드 때 자동 감지). 없으면 순서저장만 자동으로 꺼지고 앱은 정상 동작
 let SB_HAS_PCT=false;    // clients.collect_pct 칸 존재 여부. 없으면 취합률 기록만 자동으로 꺼지고 앱은 정상 동작
+/* ★★ 1,000줄 한계 (2026-07-13 사고의 진짜 원인)
+   Supabase(PostgREST)는 목록 조회 한 번에 최대 1,000줄만 돌려주고, 넘는 줄은 말없이 버린다.
+   documents(첨부파일 장부)가 1,000줄을 넘자, 넘어간 만큼(=최근에 올린 파일)이 화면에서 통째로 사라졌다.
+   저장은 정상이었고 읽기가 잘린 것. 인증서(secrets, 작은 표)는 멀쩡히 보였던 이유도 이것.
+   → 앞으로 모든 목록 조회는 1,000줄씩 끝까지 이어 받는다. */
+async function sbSelectPaged(table, cols){
+  const PAGE=1000; let out=[];
+  for(let pg=0; pg<1000; pg++){                       // 최대 100만 줄까지 안전하게
+    const r=await sb.from(table).select(cols).order("id").range(pg*PAGE, pg*PAGE+PAGE-1);
+    if(r.error) return {data:null, error:r.error};
+    const rows=r.data||[];
+    out=out.concat(rows);
+    if(rows.length<PAGE) break;                       // 마지막 장
+  }
+  return {data:out, error:null};
+}
 async function sbSelectDocuments(){
-  let r=await sb.from("documents").select("id,client_id,doc_key,file_name,storage_path,uploaded_by,is_public,created_at,kind,sort_order");
-  if(r.error){ SB_HAS_SORT=false; r=await sb.from("documents").select("id,client_id,doc_key,file_name,storage_path,uploaded_by,is_public,created_at,kind"); }
+  let r=await sbSelectPaged("documents","id,client_id,doc_key,file_name,storage_path,uploaded_by,is_public,created_at,kind,sort_order");
+  if(r.error){ SB_HAS_SORT=false; r=await sbSelectPaged("documents","id,client_id,doc_key,file_name,storage_path,uploaded_by,is_public,created_at,kind"); }
   else { SB_HAS_SORT=true; }
   return r;
+}
+/* ★첨부파일 장부(documents) 즉시 기록.
+   왜: 예전에는 파일을 창고(Storage)에 올린 뒤 1.5초 뒤 자동저장이 돌 때에야 장부를 썼다.
+       그 사이 화면이 멈춰 페이지가 죽거나 새로고침하면 "파일은 창고에 있는데 목록은 0건"이 됐다.
+   이제: 올린 즉시 장부에 쓰고, 그게 성공해야 화면에 남긴다. 실패하면 올린 파일을 지우고 오류를 알린다.
+   → "화면에 보이면 서버에 저장된 것" 이 보장된다. */
+async function sbSaveDocNow(c, slot, ent){
+  if(typeof BACKEND==="undefined" || BACKEND!=="supabase") return;   // 드라이브(문지기) 모드는 기존 방식 유지
+  if(!sbInit() || !sbUser) return;
+  if(!isUuid(c.id)) return;              // 아직 서버에 없는 새 의뢰인 → 자동저장이 의뢰인부터 만든 뒤 기록
+  const s=c.items[slot]||{};
+  const dkey=(typeof ITEM_BY_ID!=="undefined" && ITEM_BY_ID[slot]) ? slot : (s.doc_key||slot);
+  const doc={ client_id:c.id, doc_key:dkey, file_name:ent.name, storage_path:ent.driveId,
+              uploaded_by:ent.by||deviceName||"직원", is_public:!!ent.is_public, kind:"취합" };
+  if(SB_HAS_SORT) doc.sort_order=Math.max(0,((s.files||[]).length-1));
+  const r=await sb.from("documents").insert(doc).select("id").single();
+  if(r.error) throw r.error;
+  if(!r.data || !r.data.id) throw new Error("저장 권한이 없어 파일 기록이 서버에 남지 않았습니다");
+  ent.docId=r.data.id;
+}
+/* 장부 기록이 실패했을 때: 창고에 올라간 파일과 화면 목록을 되돌린다(유령 파일 방지) */
+async function sbRollbackUpload(c, slot, ent, err){
+  try{ if(ent && ent.driveId) await gwDelete(ent.driveId); }catch(_){ }
+  try{ const arr=(c.items[slot]&&c.items[slot].files)||[]; const i=arr.indexOf(ent); if(i>=0) arr.splice(i,1); }catch(_){ }
+  dlog("fail","파일 장부기록",{client_name:c.name, slot:(function(){ try{ return itemName(slot,c); }catch(_){ return slot; } })(), detail:String((err&&err.message)||err||"").slice(0,300)});
+  dlogFlush();
 }
 async function sbSaveFileOrder(cid,id){
   if(BACKEND!=="supabase" || !SB_HAS_SORT || !sbInit() || !sbUser) return;
@@ -4438,18 +4646,21 @@ async function pullFromSupabase(silent){
   setSync("saving");
   try{
     const BASE="id,name,office_id,case_type,assignee,stage,phone,income_type,asset_type,court_deadline,deadline_kind,urgent,pinned,archived,amending,correcting,case_no,updated_at,created_at";
-    let cRes=await sb.from("clients").select(BASE+",is_public,app_json,collect_pct").order("name"); SB_HAS_PCT=!cRes.error;
-    if(cRes.error) cRes=await sb.from("clients").select(BASE+",is_public,app_json").order("name"); // collect_pct 칸 없을 때
-    if(cRes.error) cRes=await sb.from("clients").select(BASE+",app_json").order("name"); // is_public 칸 없을 때
-    if(cRes.error) cRes=await sb.from("clients").select(BASE).order("name");            // app_json 칸도 없을 때
+    /* 모든 목록은 1,000줄씩 끝까지 이어 받는다(한 번에 받으면 1,000줄에서 잘림) */
+    let cRes=await sbSelectPaged("clients",BASE+",is_public,app_json,collect_pct"); SB_HAS_PCT=!cRes.error;
+    if(cRes.error) cRes=await sbSelectPaged("clients",BASE+",is_public,app_json"); // collect_pct 칸 없을 때
+    if(cRes.error) cRes=await sbSelectPaged("clients",BASE+",app_json");           // is_public 칸 없을 때
+    if(cRes.error) cRes=await sbSelectPaged("clients",BASE);                       // app_json 칸도 없을 때
+    if(cRes.data) cRes.data.sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"ko"));
     const [ciRes, dRes, mRes, sRes, oRes, pRes] = await Promise.all([
-      sb.from("checklist_items").select("id,client_id,doc_key,doc_name,bundle,status,reject_reason,memo"),
+      sbSelectPaged("checklist_items","id,client_id,doc_key,doc_name,bundle,status,reject_reason,memo"),
       sbSelectDocuments(),
-      sb.from("memos").select("id,client_id,body,created_at,kind").order("created_at"),
-      sb.from("secrets").select("id,client_id,cert_files,password"),
+      sbSelectPaged("memos","id,client_id,body,created_at,kind"),
+      sbSelectPaged("secrets","id,client_id,cert_files,password"),
       sb.from("offices").select("id,name"),
       sb.rpc("my_progress")
     ]);
+    if(mRes&&mRes.data) mRes.data.sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
     if(cRes.error) throw cRes.error;
     if(ciRes.error) throw ciRes.error;
     SB_OFFICES=(oRes&&oRes.data)||[];   // 사무소(이준/블루) 매핑용
@@ -4571,15 +4782,18 @@ async function sbSyncClient(c){
       jobs.push(sb.from("checklist_items").insert({client_id:c.id,doc_key:dkey,doc_name:meta.name,bundle:meta.bundle,status,reject_reason:s.rejectReason||null,memo:s.memo||null}).select("id").single().then(r=>{ if(r.error) throw r.error; s._sbRow=r.data.id; s._sbSig=isig; }));
     }
   });
-  if(jobs.length) await Promise.all(jobs);
-  // 첨부파일 메타(documents): 아직 기록 안 된 새 파일만 insert
+  /* ★체크리스트 저장이 실패해도 아래 첨부파일 장부 기록은 반드시 시도한다.
+     (예전에는 여기서 예외가 나면 documents insert가 통째로 건너뛰어져 파일 기록이 사라졌다.) */
+  let _syncErr=null;
+  if(jobs.length){ try{ await Promise.all(jobs); }catch(e){ _syncErr=_syncErr||e; } }
+  // 첨부파일 메타(documents): 아직 기록 안 된 새 파일만 insert (즉시 기록이 실패했거나 옛 데이터인 경우의 안전망)
   const docJobs=[];
   Object.keys(c.items).forEach(id=>{
     const s=c.items[id]; if(!s.files||!s.files.length) return;
     const dkey=ITEM_BY_ID[id]?id:(s.doc_key||id);
     s.files.forEach((f,fidx)=>{ if(f.driveId && !f.docId){ const _doc={client_id:c.id,doc_key:dkey,file_name:f.name,storage_path:f.driveId,uploaded_by:f.by||deviceName||"직원",is_public:!!f.is_public,kind:"취합"}; if(SB_HAS_SORT) _doc.sort_order=fidx; docJobs.push(sb.from("documents").insert(_doc).select("id").single().then(r=>{ if(r.error) throw r.error; f.docId=r.data.id; })); } });
   });
-  if(docJobs.length) await Promise.all(docJobs);
+  if(docJobs.length){ try{ await Promise.all(docJobs); }catch(e){ _syncErr=_syncErr||e; } }
   // 의뢰인 메모(한 줄로 유지)
   if((c.memo||"")!==(c._sbMemo||"")){
     if(c._sbMemoId){ const {error}=await sb.from("memos").update({body:c.memo||""}).eq("id",c._sbMemoId); if(error) throw error; }
@@ -4594,6 +4808,7 @@ async function sbSyncClient(c){
     else if(hasCert){ const {data,error}=await sb.from("secrets").insert({client_id:c.id,cert_files:(c.cert.files)||[],password:c.cert.pw||null,staff_only:true}).select("id").single(); if(error) throw error; c._sbSecretId=data.id; }
     c._sbCertSig=certSig;
   }
+  if(_syncErr) throw _syncErr;      // 저장 못 한 게 있으면 '저장됨' 표시를 남기지 않는다(다음 저장 때 다시 시도)
   c._sbSig=sbClientSig(c);
 }
 
@@ -4606,7 +4821,21 @@ async function pushToSupabase(silent){
       if(_role!=="master" && _role!=="staff"){ setSync("error"); showBanner("⚠️ 이 계정은 저장 권한이 없습니다(현재 권한: "+(_role||"없음")+"). 입력이 서버에 저장되지 않습니다. 관리자에게 권한(staff/master) 변경을 요청하세요.","err"); return false; } }catch(_e){}
     const delUuids=(state.deleted||[]).filter(isUuid);
     if(delUuids.length){ try{ await sb.from("clients").delete().in("id",delUuids); }catch(_){} }
-    for(const c of (state.clients||[])){ await sbSyncClient(c); }
+    /* ★한 의뢰인에서 오류가 나도 나머지는 계속 저장한다.
+       (예전에는 for 루프가 통째로 중단돼, 뒤에 있는 의뢰인의 저장이 시도조차 되지 않았다.) */
+    const failed=[];
+    for(const c of (state.clients||[])){
+      try{ await sbSyncClient(c); }
+      catch(e){ console.error("저장 실패:", c&&c.name, e);
+        failed.push((c&&c.name||"이름없음")+" — "+(e.message||e));
+        dlog("fail","케이스허브 저장",{client_name:(c&&c.name)||"", detail:String(e.message||e).slice(0,300)}); }
+    }
+    if(failed.length){
+      setSync("error");
+      showBanner("⚠️ 저장 실패 "+failed.length+"건 — "+esc(failed.slice(0,2).join(" / "))+(failed.length>2?" 외":"")+". 새로고침하면 저장 안 된 내용이 사라집니다. 캡처해서 알려주세요.","err");
+      dlogFlush();
+      return false;
+    }
     setSync("ok");
     if(!silent) toast("케이스허브에 저장됨 ✓");
     return true;
