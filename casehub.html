@@ -461,9 +461,17 @@
  async function logAct(cid,action){ try{ await db.from("activity_log").insert({client_id:cid,actor:MYNAME||"직원",action}); }catch(e){} }
  async function nextStage(cid,cur){const i=STAGES.indexOf(cur);if(i<0||i>=STAGES.length-1){toast("이미 마지막 단계입니다.");return;}const next=STAGES[i+1];const {error}=await db.from("clients").update({stage:next}).eq("id",cid);if(error){toast("권한이 없습니다.");return;}logAct(cid,`단계를 '${next}'로 변경`);toast(`단계를 '${next}'로 변경했습니다.`);load();}
 
+ /* ★모바일 뒤로가기 대응 — 상세를 열 때 브라우저 기록에 발자국을 남긴다.
+    안 그러면 한 페이지짜리 앱이라 뒤로가기가 목록이 아니라 탭 종료로 간다. */
+ function goList(){ if(history.state && history.state.v==="ch-detail"){ history.back(); return; } load(); }
+ window.addEventListener("popstate",function(){
+   const dw=document.getElementById("detailWrap");
+   if(dw && !dw.classList.contains("hidden")) load();   // 상세 → 목록
+ });
  async function openDetail(cid){
    const c=CLIENTS.find(x=>x.id===cid); if(!c) return;
    $("#listWrap").classList.add("hidden");$("#detailWrap").classList.remove("hidden");window.scrollTo(0,0);
+   try{ if(!(history.state && history.state.v==="ch-detail")) history.pushState({v:"ch-detail",id:cid},""); }catch(_){}
    const col=officeColor[c.office_id]||PALETTE[0];
    const tasks=[ db.from("documents").select("id,file_name,storage_path,is_public,created_at,kind").eq("client_id",cid).eq("kind","접수").order("created_at"),
                  db.from("memos").select("id,body,author,is_public,created_at,kind").eq("client_id",cid).eq("kind","접수").order("created_at") ];
@@ -477,7 +485,7 @@
    const pct=PCT[cid]||0;
    const ringc=pct>=100?"var(--green)":"var(--kakao)";const dd=dday(c.court_deadline);
 
-   let html=`<button class="back" onclick="load()">목록으로</button>`;
+   let html=`<button class="back" onclick="goList()">목록으로</button>`;
    html+=`<div class="dhead"><div><div class="dn">${esc(c.name)} <span class="ctype">${esc(c.case_type||"개인회생")}</span></div>`+
      `<div class="dmeta"><span class="ofchip" style="background:${col.bg};border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${c.case_no?`<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:12px;font-weight:800;border:1px solid #cfd8ef;margin-left:4px">사건 ${esc(c.case_no)}</span>`:""}`+
      (c.amending?`<span class="amend">보정중</span>`:"")+

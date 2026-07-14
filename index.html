@@ -1285,7 +1285,25 @@ function rerender(){
   if(currentClientId && findClient(currentClientId)) renderDetail(currentClientId);
   else { currentClientId=null; renderDashboard(); }
 }
-function showDashboard(){ currentClientId=null; $("#view-detail").classList.add("hidden"); $("#view-dashboard").classList.remove("hidden"); renderDashboard(); }
+/* ★모바일 뒤로가기 대응
+   이 앱은 한 페이지짜리라서, 상세로 들어가도 브라우저는 "이동한 적 없음"으로 안다.
+   그래서 뒤로가기를 누르면 목록으로 가는 게 아니라 탭이 닫혔다.
+   → 상세를 열 때 브라우저 기록에 발자국(pushState)을 남기고,
+     뒤로가기(popstate)가 오면 목록으로 돌린다. 모달이 열려 있으면 모달부터 닫는다. */
+function _showDashboardNow(){ currentClientId=null; $("#view-detail").classList.add("hidden"); $("#view-dashboard").classList.remove("hidden"); renderDashboard(); }
+function showDashboard(){
+  if(history.state && history.state.v==="detail"){ history.back(); return; }  // 발자국을 지우면서 목록으로(popstate가 화면을 바꾼다)
+  _showDashboardNow();
+}
+window.addEventListener("popstate",function(){
+  const mr=document.getElementById("modalRoot");
+  if(mr && mr.innerHTML.trim()){                       // 팝업이 열려 있으면 뒤로가기는 '팝업 닫기'로 쓴다
+    closeModal();
+    if(currentClientId){ try{ history.pushState({v:"detail",id:currentClientId},""); }catch(_){} }
+    return;
+  }
+  if(currentClientId){ _showDashboardNow(); }          // 상세 → 목록
+});
 
 function isRemindNeeded(c){
   let need=false;
@@ -1523,7 +1541,9 @@ function renderDashboard(){
   }).join("");
 }
 
-function openDetail(id){ currentClientId=id; expandedItems.clear(); detailPanel=""; renderDetail(id); window.scrollTo(0,0); }
+function openDetail(id){ currentClientId=id; expandedItems.clear(); detailPanel=""; renderDetail(id); window.scrollTo(0,0);
+  try{ if(!(history.state && history.state.v==="detail")) history.pushState({v:"detail",id:id},""); }catch(_){}  // 뒤로가기용 발자국
+}
 function renderDetail(id){
   const c=ensureItems(findClient(id)); if(!c) return showDashboard();
   $("#view-dashboard").classList.add("hidden");
