@@ -500,10 +500,9 @@
        `<label class="fl">담당자<input class="in" id="f_as" value="${esc(c.assignee||"")}"></label>`+
        `<label class="fl">연락처<input class="in" id="f_ph" value="${esc(c.phone||"")}"></label>`+
        (canRrn()?`<label class="fl">주민등록번호 <span style="font-weight:400;color:var(--muted)">(이준 내부만 보임)</span>`
-         +`<div style="display:flex;align-items:center;gap:8px;margin:4px 0 6px">`
-         +`<span id="rrnView" style="font-size:14px;font-weight:800">${c.rrn?esc(maskRrn(c.rrn)):'<span style="font-weight:400;color:var(--muted)">등록 안 됨</span>'}</span>`
-         +(c.rrn?`<button class="get" type="button" id="rrnBtn" onclick="toggleRrnView('${cid}')">보기</button>`:``)
-         +`</div>`
+         +(c.rrn?`<div style="display:flex;align-items:center;gap:8px;margin:4px 0 6px">`
+           +`<span id="rrnView" style="font-size:14px;font-weight:800">${esc(maskRrn(c.rrn))}</span>`
+           +`<button class="get" type="button" id="rrnBtn" onclick="toggleRrnView('${cid}')">보기</button></div>`:``)
          +`<input class="in" id="f_rrn" value="" placeholder="${c.rrn?'바꿀 때만 입력':'000000-0000000'}" inputmode="numeric" oninput="this.value=formatRrn(this.value)"></label>`:``)+
        `<label class="fl">소득유형<select class="in" id="f_in" onchange="toggleEtc()">${opts(INCOME,c.income_type)}</select></label>`+
        `<label class="fl" id="f_in_etc_wrap" style="${c.income_type==='기타'?'':'display:none'}">기타 소득 상세<input class="in" id="f_in_etc" value="${esc(c.income_note||"")}" placeholder="기타 소득 내용"></label>`+

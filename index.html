@@ -3623,10 +3623,10 @@ function openClientModal(id){
     <div class="field"><label>사건번호 (선택)</label><input id="m_caseno" value="${c?esc(c.caseNo||''):""}" placeholder="2026개회12345"/></div>
     <div class="field"><label>연락처 (선택)</label><input id="m_phone" value="${c?esc(c.phone||''):""}" placeholder="010-0000-0000" oninput="this.value=formatPhone(this.value)"/></div>
     <div class="field"><label>주민등록번호 (선택 · 송달앱·케이스허브와 함께 쓰임)</label>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span id="m_rrnview" style="font-size:13.5px;font-weight:600;color:var(--ink)">${(c&&c.rrn)?esc(maskRrn(c.rrn)):'<span style="color:var(--muted);font-weight:400">등록 안 됨</span>'}</span>
-        ${(c&&c.rrn)?`<button class="btn btn-sm" type="button" id="m_rrnbtn" onclick="toggleRrnModal('${c.id}')">보기</button>`:""}
-      </div>
+      ${(c&&c.rrn)?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span id="m_rrnview" style="font-size:13.5px;font-weight:600;color:var(--ink)">${esc(maskRrn(c.rrn))}</span>
+        <button class="btn btn-sm" type="button" id="m_rrnbtn" onclick="toggleRrnModal('${c.id}')">보기</button>
+      </div>`:""}
       <input id="m_rrn" value="" placeholder="${(c&&c.rrn)?'바꿀 때만 입력':'000000-0000000'}" inputmode="numeric" oninput="this.value=formatRrn(this.value)"/>
     </div>
     <div class="modal-actions">
