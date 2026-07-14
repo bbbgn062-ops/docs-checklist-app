@@ -2036,7 +2036,7 @@ async function openPreview(cid,id,idx){
       <div id="pvBody" style="max-height:72vh;overflow:auto;background:#33373d;border-radius:10px;padding:8px;text-align:center"><div style="color:#fff;padding:24px">불러오는 중…</div></div>
       <div class="modal-actions" style="gap:8px;margin-top:12px;flex-wrap:wrap">
         ${isImg?`<button class="btn" id="pvA4Btn" onclick="pvShowA4(!_pvA4)">📄 A4 미리보기</button>`:""}
-        ${(isImg||isPdf)?`<button class="btn" onclick="closeModal();openBundlePageEditor('${cid}',null,'${id}')" title="자르기(A4 비율)·회전·삭제·순서변경·다른 서류로 페이지 이동">✏ 편집</button>`:""}
+        ${(isImg||isPdf)?`<button class="btn" onclick="openPageEditorSafe('${cid}','${id}')" title="자르기(A4 비율)·회전·삭제·순서변경·다른 서류로 페이지 이동">✏ 편집</button>`:""}
         <button class="btn btn-primary" onclick="dlPreview()">📥 다운로드</button>
         <button class="btn" onclick="closeModal()">닫기</button>
       </div>`,820);
@@ -2161,7 +2161,7 @@ function loadCropper(){ return new Promise((res,rej)=>{ if(window.Cropper) retur
   const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"; s.onload=()=>res(window.Cropper); s.onerror=()=>rej(new Error("편집기 로드 실패(인터넷 필요)")); document.head.appendChild(s);
 }); }
 async function openImgEditor(cid,id,idx){
-  return openBundlePageEditor(cid,null,id); /* 구 이미지 편집기 → 새 페이지 편집기(사진1)로 통합 */
+  return openPageEditorSafe(cid,id); /* 구 이미지 편집기 → 새 페이지 편집기(자르기·회전·삭제)로 통합 */
   if(!filesReady()){ toast("드라이브 연결 후 편집 가능합니다"); return; }
   const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
   const ext=extOf(f.name).toLowerCase(); if(![".jpg",".jpeg",".png",".gif",".webp"].includes(ext)){ toast("이미지 파일만 편집할 수 있어요"); return; }
@@ -2220,7 +2220,7 @@ async function applyCrop(){
 /* ---------- 6b-4. PDF 페이지 편집(삭제·순서변경·회전) — 적용 시 원본을 편집본으로 교체 ---------- */
 let _pdfEdit=null; // {cid,id,idx,name,srcBytes, pages:[{i,rot,del,thumb}]}
 async function openPdfEditor(cid,id,idx){
-  return openBundlePageEditor(cid,null,id); /* 구 PDF 편집기(사진2) → 새 페이지 편집기(사진1)로 통합 */
+  return openPageEditorSafe(cid,id); /* 구 PDF 편집기 → 새 페이지 편집기로 통합 */
   if(!filesReady()){ toast("드라이브 연결 후 편집 가능합니다"); return; }
   const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
   if(extOf(f.name).toLowerCase()!==".pdf"){ toast("PDF 파일만 편집할 수 있어요"); return; }
@@ -2334,18 +2334,41 @@ async function applyPdfEdit(){
    저장은 검증된 applyPdfEdit와 동일 방식(새 PDF/이미지 업로드 성공 후 원본 교체). 자체 오버레이라 나가기 경고를 완전히 제어. */
 let _bpe=null;
 function _bpeLoadImg(url){ return new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=url; }); }
+/* ★모바일에서는 콘솔을 볼 수 없다. 편집기가 열리지 않으면 반드시 '이유'를 화면에 띄운다(조용한 실패 금지). */
+async function openPageEditorSafe(cid,id){
+  try{ closeModal(); await openBundlePageEditor(cid,null,id); }
+  catch(e){ console.error(e); bpeNotice("편집기를 열지 못했습니다", (e&&e.message)||String(e)); }
+}
+function bpeNotice(title,msg){
+  try{
+    const d=document.createElement("div"); d.id="bpeNoticeOv";
+    d.style.cssText="position:fixed;inset:0;background:rgba(20,18,16,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:100002";
+    d.innerHTML=`<div style="max-width:400px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.35);overflow:hidden">
+      <div style="padding:20px 18px 8px;text-align:center">
+        <div style="width:48px;height:48px;border-radius:50%;background:#fdecec;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:26px;color:#b3261e">⚠</div>
+        <div style="font-size:17px;font-weight:800;color:#b3261e">${esc(title||"편집기를 열지 못했습니다")}</div>
+        <div style="font-size:12.5px;color:#444;background:#fbf4e6;border:1px solid #f0dca6;border-radius:8px;padding:9px 11px;margin:12px 2px 0;word-break:break-all;text-align:left;line-height:1.6">${esc(msg||"알 수 없는 오류")}</div>
+      </div>
+      <div style="padding:10px 16px 16px"><button onclick="(function(){var x=document.getElementById('bpeNoticeOv');if(x)x.remove();})()" style="width:100%;background:var(--brand,#9B1B33);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:800;font-size:14px;cursor:pointer">확인</button></div>
+    </div>`;
+    document.body.appendChild(d);
+    d.addEventListener("click",e=>{ if(e.target===d) d.remove(); });
+  }catch(_){ alert((title||"오류")+"\n"+(msg||"")); }
+}
 async function openBundlePageEditor(cid,bid,onlyId){
-  if(!filesReady()){ toast("드라이브 연결 후 편집 가능합니다"); return; }
+  if(!filesReady()){ bpeNotice("편집기를 열지 못했습니다","파일 저장소 연결이 아직 안 됐습니다. 새로고침 후 다시 시도해 주세요."); return; }
   const c=ensureItems(findClient(cid));
   let g;
   if(onlyId){ // 개별 서류 모드: 그 서류가 속한 묶음을 찾아 그 서류만 편집
     const base=fileGroups(c).find(x=>x.items.some(it=>String(it.id)===String(onlyId)));
     if(base){ const it=base.items.find(x=>String(x.id)===String(onlyId)); g={...base, items:[it], btitle:(it&&it.name)||base.btitle}; }
   } else { g=fileGroups(c).find(x=>x.bid===bid); }
-  if(!g){ toast(onlyId?"이 서류에 편집할 파일이 없습니다":"이 묶음에 편집할 파일이 없습니다"); return; }
+  if(!g){ bpeNotice("편집기를 열지 못했습니다", onlyId?"이 서류에서 편집할 파일을 찾지 못했습니다.":"이 묶음에 편집할 파일이 없습니다."); return; }
   toast("페이지 편집기 여는 중…");
-  let pdfjsLib; try{ pdfjsLib=await loadPdfJs(); }catch(e){ toast("뷰어 로드 실패(인터넷 필요)"); return; }
-  const files=[];
+  let pdfjsLib;
+  try{ pdfjsLib=await Promise.race([ loadPdfJs(), new Promise((_,rj)=>setTimeout(()=>rj(new Error("뷰어(pdf.js) 불러오기 시간 초과 — 인터넷이 느리거나 차단된 상태일 수 있습니다")),25000)) ]); }
+  catch(e){ bpeNotice("편집기를 열지 못했습니다","뷰어 로드 실패: "+((e&&e.message)||e)); return; }
+  const files=[]; const errs=[];
   for(const it of g.items){ for(const fo of it.files){
     const ext=extOf(fo.f.name).toLowerCase();
     const isImg=[".jpg",".jpeg",".png",".gif",".webp"].includes(ext);
@@ -2358,9 +2381,9 @@ async function openBundlePageEditor(cid,bid,onlyId){
       else { ent.imgUrl=URL.createObjectURL(new Blob([bytes])); ent.imgEl=await _bpeLoadImg(ent.imgUrl); }
       ent.pages=Array.from({length:ent.npages},(_,k)=>({i:k,rot:0,del:false}));
       files.push(ent);
-    }catch(e){ console.warn("편집기 파일 로드 실패",fo.f.name,e); }
+    }catch(e){ console.warn("편집기 파일 로드 실패",fo.f.name,e); errs.push(fo.f.name+" → "+((e&&e.message)||e)); }
   } }
-  if(!files.length){ toast("편집할 수 있는 파일(PDF·이미지)이 없습니다"); return; }
+  if(!files.length){ bpeNotice("편집기를 열지 못했습니다", errs.length?("파일을 불러오지 못했습니다.\n"+errs.join("\n")):"편집할 수 있는 파일(PDF·이미지)이 없습니다."); return; }
   files.forEach((f,fi)=>f.pages.forEach(p=>{ p.uid=fi+"_"+p.i; })); // 페이지 고유 식별자(순서 바뀌어도 DOM 추적용)
   const flat=[]; files.forEach((f,fi)=>f.pages.forEach((p,pi)=>flat.push({fi,pi})));
   _bpe={cid,bid:(g.bid||bid),btitle:g.btitle,files,flat,cur:0,dirty:false,selected:new Set(),thumbMode:"reorder"};
