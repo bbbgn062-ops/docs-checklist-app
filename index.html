@@ -849,6 +849,26 @@ function formatPhone(v){ const d=(v||"").replace(/\D/g,"").slice(0,11);
   if(d.length<8) return d.replace(/(\d{3})(\d+)/,"$1-$2");
   if(d.length<11) return d.replace(/(\d{3})(\d{3,4})(\d+)/,"$1-$2-$3");
   return d.replace(/(\d{3})(\d{4})(\d{4})/,"$1-$2-$3"); }
+/* ── 주민등록번호(rrn) — 취합앱·케이스허브·송달앱 공용 규칙 ──
+   저장은 숫자 13자리 기준(하이픈 포함 문자열), 화면 기본 표시는 마스킹(뒤 6자리 가림).
+   전체 노출은 [보기] 버튼을 눌렀을 때만. 엑셀 내보내기는 마스킹본만 나간다. */
+function rrnDigits(v){ return String(v||"").replace(/\D/g,""); }
+function formatRrn(v){ const d=rrnDigits(v).slice(0,13); if(d.length<7) return d; return d.slice(0,6)+"-"+d.slice(6); }
+function maskRrn(v){ const d=rrnDigits(v); if(!d) return ""; if(d.length<7) return d; return d.slice(0,6)+"-"+d.slice(6,7)+"******"; }
+function toggleRrnView(id){
+  const c=findClient(id); if(!c||!c.rrn) return;
+  const view=document.getElementById("rrnview_"+id), btn=document.getElementById("rrnbtn_"+id);
+  if(!view||!btn) return;
+  if(btn.textContent==="보기"){ view.textContent=formatRrn(c.rrn); btn.textContent="가리기"; }
+  else{ view.textContent=maskRrn(c.rrn); btn.textContent="보기"; }
+}
+function toggleRrnModal(id){
+  const c=findClient(id); if(!c||!c.rrn) return;
+  const view=document.getElementById("m_rrnview"), btn=document.getElementById("m_rrnbtn");
+  if(!view||!btn) return;
+  if(btn.textContent==="보기"){ view.textContent=formatRrn(c.rrn); btn.textContent="가리기"; }
+  else{ view.textContent=maskRrn(c.rrn); btn.textContent="보기"; }
+}
 
 /* 소득유형에 따라 수입·지출(b4) 묶음 자동 맞춤 */
 /* 상황태그 → 관련 서류 묶음 자동 표시 엔진 */
@@ -1531,7 +1551,7 @@ function renderDetail(id){
         <span style="flex:1"></span>
         <button class="badge" style="background:${stgColor}1a;color:${stgColor};border:none;cursor:pointer;font-weight:600;font-size:12.5px" onclick="toggleDetailPanel('stage')">${stg} ▾</button>
       </div>
-      <div class="meta" style="margin-top:7px">${(c.incomeType&&c.incomeType!=="미정")?esc(c.incomeType)+" · ":""}${(c.housing&&c.housing!=="미정")?esc(c.housing)+" · ":""}${(c.assets||[]).map(esc).join(" · ")}${(c.assets||[]).length?" · ":""}${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?(esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}수정 ${fmt(c.updatedAt)}</div>
+      <div class="meta" style="margin-top:7px">${(c.incomeType&&c.incomeType!=="미정")?esc(c.incomeType)+" · ":""}${(c.housing&&c.housing!=="미정")?esc(c.housing)+" · ":""}${(c.assets||[]).map(esc).join(" · ")}${(c.assets||[]).length?" · ":""}${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?(esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}${c.rrn?(`🪪 <span id="rrnview_${c.id}">${esc(maskRrn(c.rrn))}</span> <button id="rrnbtn_${c.id}" onclick="toggleRrnView('${c.id}')" style="font-size:11.5px;color:var(--muted);font-weight:600;background:none;border:1px solid var(--line);border-radius:6px;padding:1px 6px;cursor:pointer">보기</button> · `):""}수정 ${fmt(c.updatedAt)}</div>
       <div style="display:flex;align-items:center;gap:11px;margin-top:14px">
         <div class="bar" style="flex:1;height:6px"><i style="width:${p.pct}%;background:${p.rejected>0?'linear-gradient(90deg,#f87171,#dc2626)':(p.pct===100?'#059669':'linear-gradient(90deg,#e14b6f,#9B1B33)')}"></i></div>
         <span style="font-size:13px;color:var(--muted);white-space:nowrap">${p.done}/${p.total} · <b style="color:${p.pct===100?'var(--green)':'var(--ink)'};font-weight:600">${p.pct}%</b></span>
@@ -1729,7 +1749,7 @@ function itemRow(c,it,isExtra,bid){
   return `<div class="lrow ${s.done&&!s.rejected?'done':''} ${stClass}">
     ${selMode?`<button class="chk" style="border-radius:50%;${selSet.has(it.id)?'background:var(--brand);border-color:var(--brand)':''}" onclick="toggleSel('${it.id}')">${selSet.has(it.id)?CHECK:''}</button>`:""}
     <button class="chk" onclick="toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?CHECK:''}</button>
-    <span class="lname">${esc(it.name)}${(s.files&&s.files.length)?` <span style="color:var(--brand)">📎${s.files.length}</span>`:""}${s.memo?` <span style="color:var(--muted)">📝</span>`:""}</span>
+    <span class="lname">${esc(it.name)}${s._bj?` <span style="font-size:10px;font-weight:800;color:#9B1B33;background:#F7E7EB;border-radius:999px;padding:1px 7px">보정</span>`:""}${(s.files&&s.files.length)?` <span style="color:var(--brand)">📎${s.files.length}</span>`:""}${s.memo?` <span style="color:var(--muted)">📝</span>`:""}</span>
     <span class="lstat" style="color:${col}">${label}</span>
   </div>`;
 }
@@ -1754,7 +1774,7 @@ function itemHtml(c,it,isExtra,bid){
       ${selMode?`<button class="chk" style="border-radius:50%;${selSet.has(it.id)?'background:var(--brand);border-color:var(--brand)':''}" onclick="event.stopPropagation();toggleSel('${it.id}')" title="선택">${selSet.has(it.id)?CHECK:''}</button>`:""}
       <button class="chk" onclick="event.stopPropagation();toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?CHECK:''}</button>
       <div class="item-name">
-        <span class="nm">${esc(it.name)}</span>${fc?` <span style="color:var(--brand);font-size:12px">📎${fc}</span>`:""}${s.memo?` <span style="color:var(--muted);font-size:12px">📝</span>`:""}
+        <span class="nm">${esc(it.name)}</span>${s._bj?` <span style="font-size:10.5px;font-weight:800;color:#9B1B33;background:#F7E7EB;border-radius:999px;padding:2px 8px;vertical-align:1px">보정</span>`:""}${fc?` <span style="color:var(--brand);font-size:12px">📎${fc}</span>`:""}${s.memo?` <span style="color:var(--muted);font-size:12px">📝</span>`:""}
         ${s.rejected?`<div class="item-src" style="color:var(--red);font-weight:700">⚠ 보완필요${s.rejectReason?` — ${esc(s.rejectReason)}`:""}</div>`:(src?`<div class="item-src">${esc(src)}</div>`:"")}
       </div>
       <span class="status-pill" style="color:${pcol};background:${pbg}">${plabel}</span>
@@ -3529,10 +3549,17 @@ function openCert(cid){ const c=ensureItems(findClient(cid)); if(!c.cert) c.cert
       <div style="display:flex;gap:8px">
         <input id="cert_pw" type="password" value="${esc(c.cert.pw||'')}" placeholder="비밀번호" oninput="onCertPw('${c.id}')" style="flex:1"/>
         <button class="btn btn-sm" onclick="(function(){const e=document.getElementById('cert_pw');e.type=e.type==='password'?'text':'password';})()">보기</button>
+        <button class="btn btn-sm" onclick="copyCertPw()">복사</button>
       </div></div>
     <div class="modal-actions" style="margin-top:16px"><button class="btn btn-primary" style="width:100%;padding:12px;font-size:14.5px" onclick="closeModal();renderDetail('${c.id}')">완료</button></div>`,460);
 }
 function onCertPw(cid){ const c=findClient(cid); if(!c.cert)c.cert={files:[],pw:""}; c.cert.pw=event.target.value; state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
+/* 인증서 비밀번호 복사 — 은행 사이트에 붙여넣기 쉽게. 복사 성공/실패를 토스트로 알린다. */
+function copyCertPw(){
+  const e=document.getElementById("cert_pw"); const v=e?e.value:"";
+  if(!v){ toast("복사할 비밀번호가 없습니다"); return; }
+  Promise.resolve(copyText(v)).then(ok=>toast(ok?"비밀번호를 복사했습니다":"복사 실패 — 직접 선택해 복사해 주세요"));
+}
 function attachCertFiles(cid){
   if(!filesReady()){ toast("인증서 파일 첨부는 드라이브 연결 후 가능합니다"); return; }
   const inp=document.createElement("input"); inp.type="file"; inp.multiple=true;
@@ -3595,6 +3622,13 @@ function openClientModal(id){
       </div></div>
     <div class="field"><label>사건번호 (선택)</label><input id="m_caseno" value="${c?esc(c.caseNo||''):""}" placeholder="2026개회12345"/></div>
     <div class="field"><label>연락처 (선택)</label><input id="m_phone" value="${c?esc(c.phone||''):""}" placeholder="010-0000-0000" oninput="this.value=formatPhone(this.value)"/></div>
+    <div class="field"><label>주민등록번호 (선택 · 송달앱·케이스허브와 함께 쓰임)</label>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span id="m_rrnview" style="font-size:13.5px;font-weight:600;color:var(--ink)">${(c&&c.rrn)?esc(maskRrn(c.rrn)):'<span style="color:var(--muted);font-weight:400">등록 안 됨</span>'}</span>
+        ${(c&&c.rrn)?`<button class="btn btn-sm" type="button" id="m_rrnbtn" onclick="toggleRrnModal('${c.id}')">보기</button>`:""}
+      </div>
+      <input id="m_rrn" value="" placeholder="${(c&&c.rrn)?'바꿀 때만 입력':'000000-0000000'}" inputmode="numeric" oninput="this.value=formatRrn(this.value)"/>
+    </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">취소</button>
       <button class="btn btn-primary" onclick="saveClient(${c?`'${c.id}'`:"null"})">저장</button>
@@ -3605,9 +3639,14 @@ function saveClient(id){
   const name=$("#m_name").value.trim(); if(!name){ alert("이름을 입력하세요"); return; }
   const dl=$("#m_deadline").value;
   const assets=[...document.querySelectorAll(".m_asset:checked")].map(x=>x.value);
+  /* 주민등록번호: 비워두면 기존 값을 그대로 둔다(실수로 지워지지 않게). 입력했으면 13자리인지 확인 후 교체. */
+  const rrnIn=rrnDigits($("#m_rrn")?$("#m_rrn").value:"");
+  if(rrnIn && rrnIn.length!==13){ alert("주민등록번호는 숫자 13자리로 입력하세요."); return; }
+  const prevRrn=id ? ((findClient(id)||{}).rrn||"") : "";
+  const rrn = rrnIn ? formatRrn(rrnIn) : prevRrn;
   const data={ name, firm:$("#m_firm").value, caseType:$("#m_type").value, stage:$("#m_stage").value, assignee:$("#m_assignee").value.trim(),
     incomeType:$("#m_income").value, housing:$("#m_housing").value, assets,
-    deadlineLabel:$("#m_dlabel").value.trim()||"보정기한", deadline:dl?dl:null, caseNo:$("#m_caseno").value.trim(), phone:formatPhone($("#m_phone").value) };
+    deadlineLabel:$("#m_dlabel").value.trim()||"보정기한", deadline:dl?dl:null, caseNo:$("#m_caseno").value.trim(), phone:formatPhone($("#m_phone").value), rrn };
   if(id){ const c=findClient(id); Object.assign(c,data); applyTags(c); touch(`[${name}] 정보 수정`); }
   else{ const c=ensureItems({id:uid(),...data,memo:"",createdAt:now(),updatedAt:now()}); applyTags(c); state.clients.push(c); touch(`의뢰인 추가 '${name}'`); }
   closeModal();
@@ -3682,7 +3721,7 @@ function exportExcel(firm){
   if(firm) list=list.filter(c=>firmShort(c.firm)===firmShort(firm));
   if(list.length===0){ toast("내보낼 의뢰인이 없습니다"); return; }
   const rows=list.map(c=>{ const p=progress(c); const d=dDay(c); const mm=_missingByMode(c);
-    return {이름:c.name||"",사무소:firmShort(c.firm),단계:clientStage(c),완료율:p.pct+"%","미확보(회사 직접발급)":mm.self.join(", "),"미확보(의뢰인 발급)":mm.req.join(", "),확보:p.done,전체:p.total,요청중:p.requesting,미요청:p.notReq,보완필요:p.rejected,사건종류:c.caseType||"개인회생",소득유형:c.incomeType||"미정",담당자:c.assignee||"",마감구분:c.deadlineLabel||"",마감일:c.deadline?fmtD(c.deadline):"",DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),사건번호:c.caseNo||"",연락처:c.phone||"",메모:(c.memo||"").replace(/[\r\n]+/g," ")}; });
+    return {이름:c.name||"",사무소:firmShort(c.firm),단계:clientStage(c),완료율:p.pct+"%","미확보(회사 직접발급)":mm.self.join(", "),"미확보(의뢰인 발급)":mm.req.join(", "),확보:p.done,전체:p.total,요청중:p.requesting,미요청:p.notReq,보완필요:p.rejected,사건종류:c.caseType||"개인회생",소득유형:c.incomeType||"미정",담당자:c.assignee||"",마감구분:c.deadlineLabel||"",마감일:c.deadline?fmtD(c.deadline):"",DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),사건번호:c.caseNo||"",연락처:c.phone||"","주민번호(앞자리)":maskRrn(c.rrn),메모:(c.memo||"").replace(/[\r\n]+/g," ")}; });
   const cols=Object.keys(rows[0]);
   let table=`<table border="1"><tr>${cols.map(h=>`<th>${h}</th>`).join("")}</tr>`;
   rows.forEach(r=>{ table+=`<tr>${cols.map(h=>`<td>${esc(String(r[h]))}</td>`).join("")}</tr>`; });
@@ -4713,6 +4752,7 @@ function sbInit(){ try{ if(!sb && window.supabase) sb=window.supabase.createClie
 /* ── 첨부파일 순서(sort_order) 저장 지원 ── */
 let SB_HAS_SORT=false;   // documents.sort_order 칸 존재 여부(로드 때 자동 감지). 없으면 순서저장만 자동으로 꺼지고 앱은 정상 동작
 let SB_HAS_PCT=false;    // clients.collect_pct 칸 존재 여부. 없으면 취합률 기록만 자동으로 꺼지고 앱은 정상 동작
+let SB_HAS_RRN=false;    // clients.rrn(주민등록번호) 칸 존재 여부. 없으면 주민번호 저장만 꺼지고 앱은 정상 동작
 /* ★★ 1,000줄 한계 (2026-07-13 사고의 진짜 원인)
    Supabase(PostgREST)는 목록 조회 한 번에 최대 1,000줄만 돌려주고, 넘는 줄은 말없이 버린다.
    documents(첨부파일 장부)가 1,000줄을 넘자, 넘어간 만큼(=최근에 올린 파일)이 화면에서 통째로 사라졌다.
@@ -4793,7 +4833,7 @@ function sbApplyStatus(s, status, reason){
 function sbBuildClient(row, rows, docs, memos, secret){
   let aj={}; try{ aj=(typeof row.app_json==="string")?JSON.parse(row.app_json):(row.app_json||{}); }catch(_){ aj={}; }
   const c={ id:row.id, name:row.name, caseType:row.case_type||"개인회생", assignee:row.assignee||"",
-    caseNo:row.case_no||"", phone:row.phone||"", incomeType:row.income_type||"", housing:aj.housing||"미정",
+    caseNo:row.case_no||"", phone:row.phone||"", rrn:row.rrn||"", incomeType:row.income_type||"", housing:aj.housing||"미정",
     assets: row.asset_type ? String(row.asset_type).split(",").map(x=>x.trim()).filter(Boolean) : [],
     pinned:!!row.pinned, urgent:!!row.urgent, archived:!!row.archived,
     stage: SB_STAGE_BACK[row.stage]||"서류수집", deadline: row.court_deadline||null,
@@ -4806,12 +4846,13 @@ function sbBuildClient(row, rows, docs, memos, secret){
     let id = (r.doc_key && ITEM_BY_ID[r.doc_key]) ? r.doc_key : SB_NAME2ID[sbNorm(r.doc_name)];
     if(id && c.items[id]){
       sbApplyStatus(c.items[id], r.status, r.reject_reason);
+      if(r.doc_key&&r.doc_key.indexOf("bj_")===0) c.items[id]._bj=true; // 보정처리(송달앱)에서 넣은 서류 표시
       if(r.status==="해당없음" && ITEM_BY_ID[id] && ITEM_BY_ID[id].mode!=="na") c.items[id].manual=true; // 원래 보이는 서류를 손으로 '해당없음' 처리한 것 → 수동으로 표시해 새로고침해도 유지
       if(r.memo) c.items[id].memo=r.memo;
       c.items[id]._sbRow=r.id;
     } else {                       // 템플릿에 없는 서류 → 추가서류(extra)로
       const bid=SB_BUNDLE_BID[r.bundle]||"b5", xid="sb_"+r.id;
-      c.items[xid]={ mode:"request", reqTag:"none", done:false, memo:r.memo||"", reqDate:null, recvDate:null, link:"", rejected:false, rejectReason:"", files:[], manual:true, _sbRow:r.id };
+      c.items[xid]={ mode:"request", reqTag:"none", done:false, memo:r.memo||"", reqDate:null, recvDate:null, link:"", rejected:false, rejectReason:"", files:[], manual:true, _sbRow:r.id, _bj:(r.doc_key&&r.doc_key.indexOf("bj_")===0) };
       sbApplyStatus(c.items[xid], r.status, r.reject_reason);
       (c.extra[bid]=c.extra[bid]||[]).push({ id:xid, name:r.doc_name||"서류", mode:c.items[xid].mode });
     }
@@ -4841,12 +4882,19 @@ async function pullFromSupabase(silent){
   if(!sbInit()) return false;
   setSync("saving");
   try{
-    const BASE="id,name,office_id,case_type,assignee,stage,phone,income_type,asset_type,court_deadline,deadline_kind,urgent,pinned,archived,amending,correcting,case_no,updated_at,created_at";
+    const BASE_CORE="id,name,office_id,case_type,assignee,stage,phone,income_type,asset_type,court_deadline,deadline_kind,urgent,pinned,archived,amending,correcting,case_no,updated_at,created_at";
     /* 모든 목록은 1,000줄씩 끝까지 이어 받는다(한 번에 받으면 1,000줄에서 잘림) */
-    let cRes=await sbSelectPaged("clients",BASE+",is_public,app_json,collect_pct"); SB_HAS_PCT=!cRes.error;
-    if(cRes.error) cRes=await sbSelectPaged("clients",BASE+",is_public,app_json"); // collect_pct 칸 없을 때
-    if(cRes.error) cRes=await sbSelectPaged("clients",BASE+",app_json");           // is_public 칸 없을 때
-    if(cRes.error) cRes=await sbSelectPaged("clients",BASE);                       // app_json 칸도 없을 때
+    /* rrn(주민등록번호) 칸이 아직 없는 DB에서도 앱이 죽지 않도록: rrn 포함본 먼저 → 실패하면 rrn 빼고 다시 */
+    let cRes=null;
+    for(const withRrn of [true,false]){
+      const BASE = BASE_CORE + (withRrn?",rrn":"");
+      cRes=await sbSelectPaged("clients",BASE+",is_public,app_json,collect_pct"); SB_HAS_PCT=!cRes.error;
+      if(cRes.error) cRes=await sbSelectPaged("clients",BASE+",is_public,app_json"); // collect_pct 칸 없을 때
+      if(cRes.error) cRes=await sbSelectPaged("clients",BASE+",app_json");           // is_public 칸 없을 때
+      if(cRes.error) cRes=await sbSelectPaged("clients",BASE);                       // app_json 칸도 없을 때
+      SB_HAS_RRN = withRrn && !cRes.error;
+      if(!cRes.error) break;
+    }
     if(cRes.data) cRes.data.sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"ko"));
     const [ciRes, dRes, mRes, sRes, oRes, pRes] = await Promise.all([
       sbSelectPaged("checklist_items","id,client_id,doc_key,doc_name,bundle,status,reject_reason,memo"),
@@ -4949,6 +4997,7 @@ function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:
   urgent:!!c.urgent, pinned:!!c.pinned, archived:!!c.archived, amending:!!c.amending, case_no:c.caseNo||null,
   is_public:!!c.isPublic, app_json: sbAppJson(c) };
   if(SB_HAS_PCT){ try{ __p.collect_pct = progress(c).pct; }catch(_){} }
+  if(SB_HAS_RRN){ __p.rrn = c.rrn || null; }   // 주민등록번호 — 케이스허브·송달앱과 같은 칸(clients.rrn)을 쓴다
   return __p; }
 /* office_id는 의뢰인 저장 페이로드에서 제외 — 수정 시 관리자가 정한 사무소를 덮어쓰지 않도록. 신규 생성 때만 아래에서 지정. */
 function sbClientSig(c){ return JSON.stringify(sbClientPayload(c)); }

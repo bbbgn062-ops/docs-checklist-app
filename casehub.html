@@ -276,6 +276,17 @@
  const fmtDt=(s)=>{if(!s)return"";const d=new Date(s);const M=d.getMonth()+1,D=d.getDate(),h=String(d.getHours()).padStart(2,"0"),m=String(d.getMinutes()).padStart(2,"0");return `${M}/${D} ${h}:${m}`;};
  function togglePw(){const p=$("#pw"),b=$("#pweye");if(!p)return;if(p.type==="password"){p.type="text";if(b)b.textContent="숨기기";}else{p.type="password";if(b)b.textContent="보기";}}
  const opts=(list,cur)=>list.map(o=>`<option ${o===(cur||"")?"selected":""}>${o||"선택"}</option>`).join("");
+ /* ── 주민등록번호(rrn) — 서류취합앱·송달앱과 같은 칸(clients.rrn)을 쓴다 ──
+    이준 내부(master/staff)에게만 보인다. 원사무소 계정은 아래 canRrn()이 false라 조회 자체를 하지 않는다.
+    화면 기본 표시는 마스킹, [보기]를 눌러야 전체가 나온다. */
+ const canRrn=()=>MYROLE==="master"||MYROLE==="staff";
+ const rrnDigits=(v)=>String(v||"").replace(/\D/g,"");
+ const formatRrn=(v)=>{const d=rrnDigits(v).slice(0,13);return d.length<7?d:d.slice(0,6)+"-"+d.slice(6);};
+ const maskRrn=(v)=>{const d=rrnDigits(v);if(!d)return"";return d.length<7?d:d.slice(0,6)+"-"+d.slice(6,7)+"******";};
+ function toggleRrnView(cid){const c=CLIENTS.find(x=>x.id===cid);if(!c||!c.rrn)return;
+   const view=$("#rrnView"),btn=$("#rrnBtn");if(!view||!btn)return;
+   if(btn.textContent==="보기"){view.textContent=formatRrn(c.rrn);btn.textContent="가리기";}
+   else{view.textContent=maskRrn(c.rrn);btn.textContent="보기";}}
  function dday(ds){ if(!ds) return null; const today=new Date(new Date().toDateString()); const d=Math.ceil((new Date(ds+"T00:00:00")-today)/86400000);
    return {d,cls:d<=3?"soon":(d<=7?"warn":"norm"),txt:d>=0?("D-"+d):("D+"+(-d))}; }
 
@@ -318,12 +329,15 @@
    MYROLE=prof?.role||"office"; MYNAME=prof?.name||""; MYOFFICE=prof?.office_id||null; USERID=session.user.id; try{SORTMODE=localStorage.getItem("ch_sort_"+USERID)||SORTMODE;}catch(e){}
    $("#who").textContent=MYROLE==="office"?(MYNAME||""):((MYNAME?MYNAME+" · ":"")+(ROLE_KO[MYROLE]||MYROLE));
    const _ab=$("#adminBtn");if(_ab)_ab.style.display=(MYROLE==="master")?"":"none";
-   const [offRes,cliRes,progRes,itemRes]=await Promise.all([
+   const CLI_COLS="id,name,office_id,case_type,stage,amending,assignee,phone,income_type,asset_type,income_note,asset_note,court_deadline,deadline_kind,urgent,pinned,archived,is_public,collect_pct,case_no,created_at";
+   const CLI_SEL=CLI_COLS+(canRrn()?",rrn":"");   // 주민번호는 이준 내부 계정일 때만 아예 받아온다(원사무소엔 전송 자체를 안 함)
+   let [offRes,cliRes,progRes,itemRes]=await Promise.all([
      db.from("offices").select("id,name").order("name"),
-     chSelectPaged("clients","id,name,office_id,case_type,stage,amending,assignee,phone,income_type,asset_type,income_note,asset_note,court_deadline,deadline_kind,urgent,pinned,archived,is_public,collect_pct,case_no,created_at"),
+     chSelectPaged("clients",CLI_SEL),
      db.rpc("my_progress"),
      chSelectPaged("checklist_items","id,client_id,doc_name,status")   // ★1,000줄 한계 — 반드시 페이징(안 그러면 부족서류 목록이 절반만 읽힘)
    ]);
+   if(cliRes.error&&canRrn()) cliRes=await chSelectPaged("clients",CLI_COLS);   // rrn 칸이 아직 없는 DB에서도 화면이 비지 않게
    if(cliRes.data) cliRes.data.sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"ko"));
    officeColor={};OFFNAME={};
    (offRes.data||[]).forEach((o,i)=>{ const ours=(o.type==="ours")||((o.name||"").includes("이준")); officeColor[o.id]= ours ? {bg:"#FDECEF",dash:"#f0c9d2",dot:"#9B1B33"} : PALETTE[i%PALETTE.length]; OFFNAME[o.id]=o.name;});
@@ -428,7 +442,10 @@
  // ===== 엑셀 / 요약 =====
  function exportXlsx(){
    const arr=CLIENTS.filter(c=>!c.archived).slice().sort((a,b)=>a.name.localeCompare(b.name,"ko"));
-   const rows=arr.map(c=>({"이름":c.name,"원사무소":OFFNAME[c.office_id]||"",사건종류:c.case_type||"",단계:c.stage,보정중:c.amending?"O":"",완료율:(PCT[c.id]||0)+"%",담당자:c.assignee||"",연락처:c.phone||"",법원기한:c.court_deadline||"",기한종류:c.deadline_kind||""}));
+   /* 주민번호는 이준 내부 계정에서만, 그것도 마스킹(앞 7자리)으로만 나간다 */
+   const rows=arr.map(c=>{const r={"이름":c.name,"원사무소":OFFNAME[c.office_id]||"",사건종류:c.case_type||"",단계:c.stage,보정중:c.amending?"O":"",완료율:(PCT[c.id]||0)+"%",담당자:c.assignee||"",연락처:c.phone||""};
+     if(canRrn()) r["주민번호(앞자리)"]=maskRrn(c.rrn);
+     r["법원기한"]=c.court_deadline||""; r["기한종류"]=c.deadline_kind||""; return r;});
    if(!rows.length){toast("내보낼 의뢰인이 없습니다");return;}
    const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"의뢰인현황");
    XLSX.writeFile(wb,"케이스허브_의뢰인현황.xlsx");toast("엑셀로 내보냈습니다.");
@@ -482,6 +499,12 @@
      html+=`<div class="section"><h3>의뢰인 정보</h3><div class="grid2">`+
        `<label class="fl">담당자<input class="in" id="f_as" value="${esc(c.assignee||"")}"></label>`+
        `<label class="fl">연락처<input class="in" id="f_ph" value="${esc(c.phone||"")}"></label>`+
+       (canRrn()?`<label class="fl">주민등록번호 <span style="font-weight:400;color:var(--muted)">(이준 내부만 보임)</span>`
+         +`<div style="display:flex;align-items:center;gap:8px;margin:4px 0 6px">`
+         +`<span id="rrnView" style="font-size:14px;font-weight:800">${c.rrn?esc(maskRrn(c.rrn)):'<span style="font-weight:400;color:var(--muted)">등록 안 됨</span>'}</span>`
+         +(c.rrn?`<button class="get" type="button" id="rrnBtn" onclick="toggleRrnView('${cid}')">보기</button>`:``)
+         +`</div>`
+         +`<input class="in" id="f_rrn" value="" placeholder="${c.rrn?'바꿀 때만 입력':'000000-0000000'}" inputmode="numeric" oninput="this.value=formatRrn(this.value)"></label>`:``)+
        `<label class="fl">소득유형<select class="in" id="f_in" onchange="toggleEtc()">${opts(INCOME,c.income_type)}</select></label>`+
        `<label class="fl" id="f_in_etc_wrap" style="${c.income_type==='기타'?'':'display:none'}">기타 소득 상세<input class="in" id="f_in_etc" value="${esc(c.income_note||"")}" placeholder="기타 소득 내용"></label>`+
        `<label class="fl">법원 기한<input class="in" type="date" id="f_dl" value="${c.court_deadline||""}"></label>`+
@@ -629,6 +652,11 @@
    const inNote=(incV==="기타"&&$("#f_in_etc"))?($("#f_in_etc").value.trim()||null):null;
    const asNote=(assets.split(/,\s*/).includes("기타")&&$("#f_asset_etc"))?($("#f_asset_etc").value.trim()||null):null;
    const payload={assignee:$("#f_as").value.trim()||null,phone:$("#f_ph").value.trim()||null,income_type:incV,asset_type:assets||null,income_note:inNote,asset_note:asNote,court_deadline:$("#f_dl").value||null,deadline_kind:$("#f_dk").value.trim()||null};
+   /* 주민등록번호: 비워두면 기존 값 유지(실수로 지워지지 않게), 입력했으면 13자리 확인 후 교체 */
+   if(canRrn()&&$("#f_rrn")){
+     const rIn=rrnDigits($("#f_rrn").value);
+     if(rIn){ if(rIn.length!==13){toast("주민등록번호는 숫자 13자리로 입력하세요.");return;} payload.rrn=formatRrn(rIn); }
+   }
    const {error}=await db.from("clients").update(payload).eq("id",cid);if(error){toast("저장 권한이 없습니다.");return;}
    const c=CLIENTS.find(x=>x.id===cid);if(c)Object.assign(c,payload);logAct(cid,"의뢰인 정보 수정");toast("의뢰인 정보를 저장했습니다.");openDetail(cid);
  }
