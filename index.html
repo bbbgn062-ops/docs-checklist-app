@@ -849,26 +849,34 @@ function formatPhone(v){ const d=(v||"").replace(/\D/g,"").slice(0,11);
   if(d.length<8) return d.replace(/(\d{3})(\d+)/,"$1-$2");
   if(d.length<11) return d.replace(/(\d{3})(\d{3,4})(\d+)/,"$1-$2-$3");
   return d.replace(/(\d{3})(\d{4})(\d{4})/,"$1-$2-$3"); }
-/* ── 주민등록번호(rrn) — 취합앱·케이스허브·송달앱 공용 규칙 ──
-   저장은 숫자 13자리 기준(하이픈 포함 문자열), 화면 기본 표시는 마스킹(뒤 6자리 가림).
-   전체 노출은 [보기] 버튼을 눌렀을 때만. 엑셀 내보내기는 마스킹본만 나간다. */
+/* ── 주민등록번호 — 취합앱·케이스허브·송달앱 공용 규칙 ──
+   ★전체 13자리는 앱이 들고 있지 않다. DB에 암호로 잠겨 있고(client_rrn),
+     [보기]를 누를 때만 서버 함수 rrn_get으로 그때그때 풀어서 보여준다.
+     화면·엑셀에 평소 보이는 것은 앞 7자리(clients.rrn_front)를 가린 형태뿐이다.
+   저장도 마찬가지로 서버 함수 rrn_set에 맡긴다(권한 확인 + 암호화를 서버가 한다). */
 function rrnDigits(v){ return String(v||"").replace(/\D/g,""); }
 function formatRrn(v){ const d=rrnDigits(v).slice(0,13); if(d.length<7) return d; return d.slice(0,6)+"-"+d.slice(6); }
 function maskRrn(v){ const d=rrnDigits(v); if(!d) return ""; if(d.length<7) return d; return d.slice(0,6)+"-"+d.slice(6,7)+"******"; }
-function toggleRrnView(id){
-  const c=findClient(id); if(!c||!c.rrn) return;
-  const view=document.getElementById("rrnview_"+id), btn=document.getElementById("rrnbtn_"+id);
-  if(!view||!btn) return;
-  if(btn.textContent==="보기"){ view.textContent=formatRrn(c.rrn); btn.textContent="가리기"; }
-  else{ view.textContent=maskRrn(c.rrn); btn.textContent="보기"; }
+async function rrnFetch(id){                                  // 서버에서 전체 번호 풀어 받기
+  if(!sbInit()) throw new Error("서버 연결 안 됨");
+  const {data,error}=await sb.rpc("rrn_get",{p_cid:id});
+  if(error) throw error;
+  return data||"";
 }
-function toggleRrnModal(id){
-  const c=findClient(id); if(!c||!c.rrn) return;
-  const view=document.getElementById("m_rrnview"), btn=document.getElementById("m_rrnbtn");
-  if(!view||!btn) return;
-  if(btn.textContent==="보기"){ view.textContent=formatRrn(c.rrn); btn.textContent="가리기"; }
-  else{ view.textContent=maskRrn(c.rrn); btn.textContent="보기"; }
+async function _rrnToggle(id, viewEl, btnEl){
+  if(!viewEl||!btnEl) return;
+  const c=findClient(id);
+  if(btnEl.textContent==="보기"){
+    btnEl.disabled=true;
+    try{ const full=await rrnFetch(id); viewEl.textContent=full||"등록된 번호 없음"; btnEl.textContent="가리기"; }
+    catch(e){ toast("주민번호를 불러오지 못했습니다: "+((e&&e.message)||e)); }
+    finally{ btnEl.disabled=false; }
+  }else{
+    viewEl.textContent=maskRrn(c&&c.rrnFront); btnEl.textContent="보기";
+  }
 }
+function toggleRrnView(id){ _rrnToggle(id, document.getElementById("rrnview_"+id), document.getElementById("rrnbtn_"+id)); }
+function toggleRrnModal(id){ _rrnToggle(id, document.getElementById("m_rrnview"), document.getElementById("m_rrnbtn")); }
 
 /* 소득유형에 따라 수입·지출(b4) 묶음 자동 맞춤 */
 /* 상황태그 → 관련 서류 묶음 자동 표시 엔진 */
@@ -1571,7 +1579,7 @@ function renderDetail(id){
         <span style="flex:1"></span>
         <button class="badge" style="background:${stgColor}1a;color:${stgColor};border:none;cursor:pointer;font-weight:600;font-size:12.5px" onclick="toggleDetailPanel('stage')">${stg} ▾</button>
       </div>
-      <div class="meta" style="margin-top:7px">${(c.incomeType&&c.incomeType!=="미정")?esc(c.incomeType)+" · ":""}${(c.housing&&c.housing!=="미정")?esc(c.housing)+" · ":""}${(c.assets||[]).map(esc).join(" · ")}${(c.assets||[]).length?" · ":""}${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?(esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}${c.rrn?(`🪪 <span id="rrnview_${c.id}">${esc(maskRrn(c.rrn))}</span> <button id="rrnbtn_${c.id}" onclick="toggleRrnView('${c.id}')" style="font-size:11.5px;color:var(--muted);font-weight:600;background:none;border:1px solid var(--line);border-radius:6px;padding:1px 6px;cursor:pointer">보기</button> · `):""}수정 ${fmt(c.updatedAt)}</div>
+      <div class="meta" style="margin-top:7px">${(c.incomeType&&c.incomeType!=="미정")?esc(c.incomeType)+" · ":""}${(c.housing&&c.housing!=="미정")?esc(c.housing)+" · ":""}${(c.assets||[]).map(esc).join(" · ")}${(c.assets||[]).length?" · ":""}${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?(esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}${c.rrnFront?(`🪪 <span id="rrnview_${c.id}">${esc(maskRrn(c.rrnFront))}</span> <button id="rrnbtn_${c.id}" onclick="toggleRrnView('${c.id}')" style="font-size:11.5px;color:var(--muted);font-weight:600;background:none;border:1px solid var(--line);border-radius:6px;padding:1px 6px;cursor:pointer">보기</button> · `):""}수정 ${fmt(c.updatedAt)}</div>
       <div style="display:flex;align-items:center;gap:11px;margin-top:14px">
         <div class="bar" style="flex:1;height:6px"><i style="width:${p.pct}%;background:${p.rejected>0?'linear-gradient(90deg,#f87171,#dc2626)':(p.pct===100?'#059669':'linear-gradient(90deg,#e14b6f,#9B1B33)')}"></i></div>
         <span style="font-size:13px;color:var(--muted);white-space:nowrap">${p.done}/${p.total} · <b style="color:${p.pct===100?'var(--green)':'var(--ink)'};font-weight:600">${p.pct}%</b></span>
@@ -3643,11 +3651,11 @@ function openClientModal(id){
     <div class="field"><label>사건번호 (선택)</label><input id="m_caseno" value="${c?esc(c.caseNo||''):""}" placeholder="2026개회12345"/></div>
     <div class="field"><label>연락처 (선택)</label><input id="m_phone" value="${c?esc(c.phone||''):""}" placeholder="010-0000-0000" oninput="this.value=formatPhone(this.value)"/></div>
     <div class="field"><label>주민등록번호 (선택 · 송달앱·케이스허브와 함께 쓰임)</label>
-      ${(c&&c.rrn)?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span id="m_rrnview" style="font-size:13.5px;font-weight:600;color:var(--ink)">${esc(maskRrn(c.rrn))}</span>
+      ${(c&&c.rrnFront)?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span id="m_rrnview" style="font-size:13.5px;font-weight:600;color:var(--ink)">${esc(maskRrn(c.rrnFront))}</span>
         <button class="btn btn-sm" type="button" id="m_rrnbtn" onclick="toggleRrnModal('${c.id}')">보기</button>
       </div>`:""}
-      <input id="m_rrn" value="" placeholder="${(c&&c.rrn)?'바꿀 때만 입력':'000000-0000000'}" inputmode="numeric" oninput="this.value=formatRrn(this.value)"/>
+      <input id="m_rrn" value="" placeholder="${(c&&c.rrnFront)?'바꿀 때만 입력':'000000-0000000'}" inputmode="numeric" oninput="this.value=formatRrn(this.value)"/>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">취소</button>
@@ -3659,14 +3667,15 @@ function saveClient(id){
   const name=$("#m_name").value.trim(); if(!name){ alert("이름을 입력하세요"); return; }
   const dl=$("#m_deadline").value;
   const assets=[...document.querySelectorAll(".m_asset:checked")].map(x=>x.value);
-  /* 주민등록번호: 비워두면 기존 값을 그대로 둔다(실수로 지워지지 않게). 입력했으면 13자리인지 확인 후 교체. */
+  /* 주민등록번호: 비워두면 기존 값을 그대로 둔다(실수로 지워지지 않게).
+     입력했으면 13자리 확인 후 _rrnPending에 담아두고, 서버 저장은 sbSyncClient가 rrn_set 함수로 한다.
+     (앱은 전체 번호를 보관하지 않는다 — 저장 후 화면엔 앞 7자리만 남는다) */
   const rrnIn=rrnDigits($("#m_rrn")?$("#m_rrn").value:"");
   if(rrnIn && rrnIn.length!==13){ alert("주민등록번호는 숫자 13자리로 입력하세요."); return; }
-  const prevRrn=id ? ((findClient(id)||{}).rrn||"") : "";
-  const rrn = rrnIn ? formatRrn(rrnIn) : prevRrn;
   const data={ name, firm:$("#m_firm").value, caseType:$("#m_type").value, stage:$("#m_stage").value, assignee:$("#m_assignee").value.trim(),
     incomeType:$("#m_income").value, housing:$("#m_housing").value, assets,
-    deadlineLabel:$("#m_dlabel").value.trim()||"보정기한", deadline:dl?dl:null, caseNo:$("#m_caseno").value.trim(), phone:formatPhone($("#m_phone").value), rrn };
+    deadlineLabel:$("#m_dlabel").value.trim()||"보정기한", deadline:dl?dl:null, caseNo:$("#m_caseno").value.trim(), phone:formatPhone($("#m_phone").value) };
+  if(rrnIn) data._rrnPending=rrnIn;
   if(id){ const c=findClient(id); Object.assign(c,data); applyTags(c); touch(`[${name}] 정보 수정`); }
   else{ const c=ensureItems({id:uid(),...data,memo:"",createdAt:now(),updatedAt:now()}); applyTags(c); state.clients.push(c); touch(`의뢰인 추가 '${name}'`); }
   closeModal();
@@ -3741,7 +3750,7 @@ function exportExcel(firm){
   if(firm) list=list.filter(c=>firmShort(c.firm)===firmShort(firm));
   if(list.length===0){ toast("내보낼 의뢰인이 없습니다"); return; }
   const rows=list.map(c=>{ const p=progress(c); const d=dDay(c); const mm=_missingByMode(c);
-    return {이름:c.name||"",사무소:firmShort(c.firm),단계:clientStage(c),완료율:p.pct+"%","미확보(회사 직접발급)":mm.self.join(", "),"미확보(의뢰인 발급)":mm.req.join(", "),확보:p.done,전체:p.total,요청중:p.requesting,미요청:p.notReq,보완필요:p.rejected,사건종류:c.caseType||"개인회생",소득유형:c.incomeType||"미정",담당자:c.assignee||"",마감구분:c.deadlineLabel||"",마감일:c.deadline?fmtD(c.deadline):"",DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),사건번호:c.caseNo||"",연락처:c.phone||"","주민번호(앞자리)":maskRrn(c.rrn),메모:(c.memo||"").replace(/[\r\n]+/g," ")}; });
+    return {이름:c.name||"",사무소:firmShort(c.firm),단계:clientStage(c),완료율:p.pct+"%","미확보(회사 직접발급)":mm.self.join(", "),"미확보(의뢰인 발급)":mm.req.join(", "),확보:p.done,전체:p.total,요청중:p.requesting,미요청:p.notReq,보완필요:p.rejected,사건종류:c.caseType||"개인회생",소득유형:c.incomeType||"미정",담당자:c.assignee||"",마감구분:c.deadlineLabel||"",마감일:c.deadline?fmtD(c.deadline):"",DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),사건번호:c.caseNo||"",연락처:c.phone||"","주민번호(앞자리)":maskRrn(c.rrnFront),메모:(c.memo||"").replace(/[\r\n]+/g," ")}; });
   const cols=Object.keys(rows[0]);
   let table=`<table border="1"><tr>${cols.map(h=>`<th>${h}</th>`).join("")}</tr>`;
   rows.forEach(r=>{ table+=`<tr>${cols.map(h=>`<td>${esc(String(r[h]))}</td>`).join("")}</tr>`; });
@@ -4772,7 +4781,7 @@ function sbInit(){ try{ if(!sb && window.supabase) sb=window.supabase.createClie
 /* ── 첨부파일 순서(sort_order) 저장 지원 ── */
 let SB_HAS_SORT=false;   // documents.sort_order 칸 존재 여부(로드 때 자동 감지). 없으면 순서저장만 자동으로 꺼지고 앱은 정상 동작
 let SB_HAS_PCT=false;    // clients.collect_pct 칸 존재 여부. 없으면 취합률 기록만 자동으로 꺼지고 앱은 정상 동작
-let SB_HAS_RRN=false;    // clients.rrn(주민등록번호) 칸 존재 여부. 없으면 주민번호 저장만 꺼지고 앱은 정상 동작
+let SB_HAS_RRN=false;    // clients.rrn_front(주민번호 앞자리) 칸 존재 여부. 없으면 주민번호 기능만 꺼지고 앱은 정상 동작
 /* ★★ 1,000줄 한계 (2026-07-13 사고의 진짜 원인)
    Supabase(PostgREST)는 목록 조회 한 번에 최대 1,000줄만 돌려주고, 넘는 줄은 말없이 버린다.
    documents(첨부파일 장부)가 1,000줄을 넘자, 넘어간 만큼(=최근에 올린 파일)이 화면에서 통째로 사라졌다.
@@ -4853,7 +4862,7 @@ function sbApplyStatus(s, status, reason){
 function sbBuildClient(row, rows, docs, memos, secret){
   let aj={}; try{ aj=(typeof row.app_json==="string")?JSON.parse(row.app_json):(row.app_json||{}); }catch(_){ aj={}; }
   const c={ id:row.id, name:row.name, caseType:row.case_type||"개인회생", assignee:row.assignee||"",
-    caseNo:row.case_no||"", phone:row.phone||"", rrn:row.rrn||"", incomeType:row.income_type||"", housing:aj.housing||"미정",
+    caseNo:row.case_no||"", phone:row.phone||"", rrnFront:row.rrn_front||"", incomeType:row.income_type||"", housing:aj.housing||"미정",
     assets: row.asset_type ? String(row.asset_type).split(",").map(x=>x.trim()).filter(Boolean) : [],
     pinned:!!row.pinned, urgent:!!row.urgent, archived:!!row.archived,
     stage: SB_STAGE_BACK[row.stage]||"서류수집", deadline: row.court_deadline||null,
@@ -4904,10 +4913,10 @@ async function pullFromSupabase(silent){
   try{
     const BASE_CORE="id,name,office_id,case_type,assignee,stage,phone,income_type,asset_type,court_deadline,deadline_kind,urgent,pinned,archived,amending,correcting,case_no,updated_at,created_at";
     /* 모든 목록은 1,000줄씩 끝까지 이어 받는다(한 번에 받으면 1,000줄에서 잘림) */
-    /* rrn(주민등록번호) 칸이 아직 없는 DB에서도 앱이 죽지 않도록: rrn 포함본 먼저 → 실패하면 rrn 빼고 다시 */
+    /* rrn_front(주민번호 앞 7자리) 칸이 아직 없는 DB에서도 앱이 죽지 않도록: 포함본 먼저 → 실패하면 빼고 다시 */
     let cRes=null;
     for(const withRrn of [true,false]){
-      const BASE = BASE_CORE + (withRrn?",rrn":"");
+      const BASE = BASE_CORE + (withRrn?",rrn_front":"");
       cRes=await sbSelectPaged("clients",BASE+",is_public,app_json,collect_pct"); SB_HAS_PCT=!cRes.error;
       if(cRes.error) cRes=await sbSelectPaged("clients",BASE+",is_public,app_json"); // collect_pct 칸 없을 때
       if(cRes.error) cRes=await sbSelectPaged("clients",BASE+",app_json");           // is_public 칸 없을 때
@@ -5017,7 +5026,8 @@ function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:
   urgent:!!c.urgent, pinned:!!c.pinned, archived:!!c.archived, amending:!!c.amending, case_no:c.caseNo||null,
   is_public:!!c.isPublic, app_json: sbAppJson(c) };
   if(SB_HAS_PCT){ try{ __p.collect_pct = progress(c).pct; }catch(_){} }
-  if(SB_HAS_RRN){ __p.rrn = c.rrn || null; }   // 주민등록번호 — 케이스허브·송달앱과 같은 칸(clients.rrn)을 쓴다
+  /* ★주민번호는 이 페이로드에 넣지 않는다. 앱이 직접 clients에 쓰지 않고 서버 함수(rrn_set)로만 저장한다.
+     (전체 번호는 암호화 표 client_rrn에, 앞 7자리는 서버가 clients.rrn_front에 적는다) */
   return __p; }
 /* office_id는 의뢰인 저장 페이로드에서 제외 — 수정 시 관리자가 정한 사무소를 덮어쓰지 않도록. 신규 생성 때만 아래에서 지정. */
 function sbClientSig(c){ return JSON.stringify(sbClientPayload(c)); }
@@ -5062,6 +5072,16 @@ async function sbSyncClient(c){
     const {data:_ud,error}=await sb.from("clients").update(payload).eq("id",c.id).select("id");
     if(error) throw error;
     if(!_ud || _ud.length===0) throw new Error("저장 권한이 없어 서버에 반영되지 않았습니다. 계정 권한을 확인하세요.");
+  }
+  /* ★주민등록번호 — 서버 함수(rrn_set)로만 저장한다.
+     서버가 권한을 확인하고, 전체 13자리는 암호화해 client_rrn에, 앞 7자리는 clients.rrn_front에 넣는다.
+     의뢰인이 방금 만들어진 경우에도 위에서 uuid를 받은 뒤라 안전하다. */
+  if(c._rrnPending && isUuid(c.id)){
+    const {error:_re}=await sb.rpc("rrn_set",{p_cid:c.id, p_rrn:c._rrnPending});
+    if(_re) throw new Error("주민등록번호 저장 실패: "+(_re.message||_re));
+    c.rrnFront = c._rrnPending.slice(0,6)+"-"+c._rrnPending.slice(6,7);
+    delete c._rrnPending;
+    if(currentClientId===c.id) renderDetail(c.id);
   }
   // 체크리스트: 바뀐 줄만
   const jobs=[];
