@@ -471,6 +471,7 @@ const TEMPLATE = [
     { id:"b3g1", title:"자동차 재산 (차량 보유 시)", items:[
       { id:"b3-1", name:"자동차 보험증서", note:"환가예상액 확인", mode:"na" },
       { id:"b3-2", name:"자동차등록원부", note:"", mode:"self" },
+      { id:"b3-15", name:"이륜자동차등록원부", note:"오토바이 보유 시 — 중고시세가 없어 견적서 필요", mode:"request" },
       { id:"b3-3", name:"자동차 중고시세", note:"엔카 시세 확인 (없으면 보험증권 요청)", mode:"self" },
     ]},
     { id:"b3g6", title:"사업용 재산 (사업자인 경우)", items:[
@@ -541,6 +542,7 @@ const WHERE = {
   "b2-7":"한국신용정보원 크레딧포유(credit4u.or.kr)에서 채권자변동정보조회서 발급 — 신용정보조회서와 함께",
   "b3-1":"가입 보험사 앱·고객센터에서 자동차 보험증서 발급",
   "b3-2":"정부24(gov.kr) 또는 자동차민원 대국민포털(ecar.go.kr)에서 자동차등록원부 발급",
+  "b3-15":"의뢰인이 직접 발급 — 가까운 오토바이 거래소에서 견적서 받기",
   "b3-3":"엔카(encar.com)에서 중고시세 확인 — 시세가 안 나오면 자동차 보험증권 서류 요청",
   "b3-4":"보관 중인 임대차계약서 사본 제출",
   "b3-5":"인터넷등기소(iros.go.kr)에서 등기사항전부증명서(말소사항 포함) 발급",
@@ -1872,39 +1874,48 @@ function setTag(cid,id,tag){ const c=findClient(cid); const s=c.items[id]; s.req
   touch(`[${c.name}] '${itemName(id,c)}' 요청태그→${tag==='none'?'미요청':tag==='requesting'?'요청중':'받음'}`); renderDetail(cid); }
 function toggleMemo(id){ const el=$("#memo-"+id); if(el) el.classList.toggle("hidden"); }
 
-/* ---------- 메시지 템플릿 (문구=공용 / 채권사명=의뢰인별·전 기기 동기화) ----------
+/* ---------- 메시지 템플릿 (문구=공용 / 입력값=의뢰인별·전 기기 동기화) ----------
    문구: 아래 MSG_TEMPLATES에 코드로 고정된 공용 문구(모든 의뢰인·모든 기기 동일). 문구를 바꾸려면 이 부분 수정 후 재배포.
-   채권사명: 의뢰인별로 c.msgTpl[tplId].name 에 저장 → app_json 에 실려 Supabase 로 모든 기기 동기화. 다른 의뢰인엔 영향 없음.
-   본문의 [채권사명] 자리는 채권사명 값으로 자동 치환. 다른 서류용을 추가하려면 해당 id 키에 {id,title,name,body}만 넣으면 버튼이 자동 생성된다. */
+   입력칸: varLabel이 있으면 그 이름의 입력칸이 생기고, 본문의 [varLabel] 자리가 입력값으로 치환된다.
+          입력값은 의뢰인별로 c.msgTpl[tplId].name 에 저장 → app_json 에 실려 Supabase 로 모든 기기 동기화(다른 의뢰인엔 영향 없음).
+          varLabel이 없으면 입력칸 없이 공용 문구만 복사한다(예: 이륜자동차 견적서 요청).
+   추가: 다른 서류용을 넣으려면 그 서류 id 키에 {id,title,body[,varLabel,name]}만 추가하면 버튼이 자동 생성된다. */
 const MSG_TEMPLATES = {
   "b2-1": [
-    { id:"b2-1-1", title:"부채증명서 직접 발급 요청",
-      name:"소상공인진흥공단",
+    { id:"b2-1-1", title:"부채증명서 직접 발급 요청", varLabel:"채권사명", name:"소상공인진흥공단",
       body:`[채권사명] 부채증명서가 확인되지 않아 안내드립니다.
 이 채권사는 본인만 발급이 가능해, [채권사명]에 전화하셔서 "현재 남은 빚이 얼마인지 정리·확인하려고 하니 부채증명서를 발급해달라"고 요청 부탁드립니다.
 ※ 전화하실 때 '개인회생' 이야기는 하지 마시고 위 내용으로만 말씀해주세요.
 받으신 서류는 저희에게 보내주시면 됩니다.` }
+  ],
+  "b3-15": [
+    { id:"b3-15-1", title:"이륜자동차 견적서 요청",
+      body:`오토바이는 저희측에서 중고시세를 조회하기 어려워서, 값을 확인할 자료가 필요합니다.
+가까운 오토바이 거래소에 "이 오토바이 팔면 얼마쯤 받을 수 있는지 견적서를 써달라"고 요청해 주세요.
+받으신 견적서는 사진으로 찍어 보내주시면 됩니다.` }
   ]
 };
 function msgTplDefault(tplId){ for(const k in MSG_TEMPLATES){ const f=MSG_TEMPLATES[k].find(t=>t.id===tplId); if(f) return f; } return null; }
+function msgTplToken(d){ return (d&&d.varLabel)?("["+d.varLabel+"]"):""; }
 function msgTplName(c,tplId){ const d=msgTplDefault(tplId)||{}; const saved=(c&&c.msgTpl&&c.msgTpl[tplId]&&c.msgTpl[tplId].name); return (saved!=null)?saved:(d.name||""); }
-function msgTplFill(body,name){ const nm=(name||"").trim()||"[채권사명]"; return String(body||"").split("[채권사명]").join(nm); }
+function msgTplFill(tplId,body,name){ const tk=msgTplToken(msgTplDefault(tplId)); if(!tk) return String(body||""); const nm=(name||"").trim()||tk; return String(body||"").split(tk).join(nm); }
 function msgTplBoxHtml(c,itemId){
   const list=MSG_TEMPLATES[itemId]; if(!list||!list.length) return "";
   const cards=list.map(t=>{
     const d=msgTplDefault(t.id)||{title:"",body:""};
-    const nm=msgTplName(c,t.id);
-    const savedName=!!(c&&c.msgTpl&&c.msgTpl[t.id]&&c.msgTpl[t.id].name!=null);
+    const hasVar=!!d.varLabel;
+    const nm=hasVar?msgTplName(c,t.id):"";
+    const savedName=!!(hasVar&&c&&c.msgTpl&&c.msgTpl[t.id]&&c.msgTpl[t.id].name!=null);
     return `<div class="mtpl-card">
       <div class="mtpl-title">📨 ${esc(d.title||"메시지 템플릿")}${savedName?`<span class="mtpl-edited">이 의뢰인 저장됨</span>`:""}</div>
-      <label class="mtpl-lab">채권사명 <span class="mtpl-hint">(이 의뢰인에만 저장 · 모든 기기 동기화)</span></label>
-      <input class="mtpl-name" id="mtpl-name-${t.id}" value="${esc(nm)}" placeholder="예: 소상공인진흥공단" oninput="msgTplPreview('${t.id}')">
-      <label class="mtpl-lab">메시지 내용 <span class="mtpl-hint">(공용 문구 · [채권사명] 자리는 위 입력값으로 자동 치환)</span></label>
+      ${hasVar?`<label class="mtpl-lab">${esc(d.varLabel)} <span class="mtpl-hint">(이 의뢰인에만 저장 · 모든 기기 동기화)</span></label>
+      <input class="mtpl-name" id="mtpl-name-${t.id}" value="${esc(nm)}" placeholder="예: ${esc(d.name||"")}" oninput="msgTplPreview('${t.id}')">`:""}
+      <label class="mtpl-lab">메시지 내용 <span class="mtpl-hint">(공용 문구${hasVar?` · [${esc(d.varLabel)}] 자리는 위 입력값으로 자동 치환`:""})</span></label>
       <textarea class="mtpl-body" id="mtpl-body-${t.id}" rows="4" oninput="msgTplPreview('${t.id}')">${esc(d.body||"")}</textarea>
-      <div class="mtpl-prev-wrap"><div class="mtpl-prev-lab">미리보기 — 실제 복사되는 내용</div><div class="mtpl-prev" id="mtpl-prev-${t.id}">${esc(msgTplFill(d.body, nm))}</div></div>
+      <div class="mtpl-prev-wrap"><div class="mtpl-prev-lab">미리보기 — 실제 복사되는 내용</div><div class="mtpl-prev" id="mtpl-prev-${t.id}">${esc(msgTplFill(t.id, d.body, nm))}</div></div>
       <div class="mtpl-actions">
         <button class="btn btn-primary btn-sm" onclick="msgTplCopy('${t.id}')">복사</button>
-        <button class="btn btn-sm" onclick="msgTplSaveName('${c.id}','${t.id}')">채권사명 저장</button>
+        ${hasVar?`<button class="btn btn-sm" onclick="msgTplSaveName('${c.id}','${t.id}')">${esc(d.varLabel)} 저장</button>`:""}
         <button class="btn-ghost btn-sm" onclick="msgTplReset('${c.id}','${t.id}')">기본값으로</button>
       </div>
     </div>`;
@@ -1915,23 +1926,24 @@ function toggleMsgTpl(itemId){ const el=document.getElementById("mtpl-box-"+item
 function msgTplPreview(tplId){
   const nameEl=document.getElementById("mtpl-name-"+tplId), bodyEl=document.getElementById("mtpl-body-"+tplId), prev=document.getElementById("mtpl-prev-"+tplId);
   if(!bodyEl||!prev) return;
-  prev.textContent=msgTplFill(bodyEl.value, nameEl?nameEl.value:"");
+  prev.textContent=msgTplFill(tplId, bodyEl.value, nameEl?nameEl.value:"");
 }
 function msgTplCopy(tplId){
   const nameEl=document.getElementById("mtpl-name-"+tplId), bodyEl=document.getElementById("mtpl-body-"+tplId);
   if(!bodyEl) return;
-  copyText(msgTplFill(bodyEl.value, nameEl?nameEl.value:"")).then(ok=>toast(ok?"메시지를 복사했습니다 ✓":"복사 실패 — 미리보기를 직접 선택해 복사하세요"));
+  copyText(msgTplFill(tplId, bodyEl.value, nameEl?nameEl.value:"")).then(ok=>toast(ok?"메시지를 복사했습니다 ✓":"복사 실패 — 미리보기를 직접 선택해 복사하세요"));
 }
 function msgTplSaveName(cid,tplId){
   const c=findClient(cid); if(!c) return;
+  const d=msgTplDefault(tplId)||{}; const lab=d.varLabel||"입력값";
   const nameEl=document.getElementById("mtpl-name-"+tplId); if(!nameEl) return;
   const v=(nameEl.value||"").trim();
   if(!c.msgTpl||typeof c.msgTpl!=="object") c.msgTpl={};
   if(v) c.msgTpl[tplId]={name:v}; else delete c.msgTpl[tplId];
-  touch(`[${c.name}] 부채증명서 채권사명 저장${v?" ("+v+")":" 해제"}`);
+  touch(`[${c.name}] ${d.title||"메시지"} ${lab} 저장${v?" ("+v+")":" 해제"}`);
   const card=nameEl.closest(".mtpl-card"), title=card?card.querySelector(".mtpl-title"):null;
   if(title){ let b=title.querySelector(".mtpl-edited"); if(v){ if(!b){ b=document.createElement("span"); b.className="mtpl-edited"; title.appendChild(b); } b.textContent="이 의뢰인 저장됨"; } else if(b){ b.remove(); } }
-  toast(v?"이 의뢰인에 저장했습니다 ✓ (모든 기기 동기화)":"채권사명을 비웠습니다");
+  toast(v?"이 의뢰인에 저장했습니다 ✓ (모든 기기 동기화)":(lab+"을 비웠습니다"));
 }
 function msgTplReset(cid,tplId){
   const c=findClient(cid); if(!c) return;
@@ -1940,14 +1952,10 @@ function msgTplReset(cid,tplId){
   const nameEl=document.getElementById("mtpl-name-"+tplId), bodyEl=document.getElementById("mtpl-body-"+tplId);
   if(nameEl) nameEl.value=d.name||""; if(bodyEl) bodyEl.value=d.body||"";
   msgTplPreview(tplId);
-  const card=nameEl?nameEl.closest(".mtpl-card"):null, badge=card?card.querySelector(".mtpl-edited"):null; if(badge) badge.remove();
-  touch(`[${c.name}] 부채증명서 채권사명 기본값 복원`);
+  const card=bodyEl?bodyEl.closest(".mtpl-card"):null, badge=card?card.querySelector(".mtpl-edited"):null; if(badge) badge.remove();
+  touch(`[${c.name}] ${d.title||"메시지"} 기본값 복원`);
   toast("기본값으로 되돌렸습니다");
 }
-function setLink(cid,id){ const c=findClient(cid); const s=c.items[id];
-  const url=prompt("스캔본/파일 링크를 붙여넣으세요 (구글드라이브·노션 등). 비우면 삭제됩니다.", s.link||"");
-  if(url===null) return; s.link=url.trim();
-  touch(`[${c.name}] '${itemName(id,c)}' 링크 ${s.link?"등록":"삭제"}`); renderDetail(cid); }
 
 /* ---------- 6a-2. 진단 기록 (업로드 멈춤·실패 추적) ----------
    왜: 업로드 중 화면이 멈춰 브라우저가 페이지를 죽이면 아무 흔적도 남지 않았다.
@@ -4960,8 +4968,7 @@ function sbBuildClient(row, rows, docs, memos, secret){
     stage: SB_STAGE_BACK[row.stage]||"서류수집", deadline: row.court_deadline||null,
     deadlineLabel: row.deadline_kind||"보정기한", amending:!!(row.amending||row.correcting),
     memo:"", items:{}, extra:{}, cert:{files:[],pw:""}, timeline:Array.isArray(aj.timeline)?aj.timeline:[], msgLog:Array.isArray(aj.msgLog)?aj.msgLog:[], msgTpl:(aj.msgTpl&&typeof aj.msgTpl==="object"&&!Array.isArray(aj.msgTpl))?aj.msgTpl:{},
-    firm: aj.firm || sbFirmFromOffice(row.office_id) || cfg.firmName, isPublic:!!row.is_public, createdAt: row.created_at, updatedAt: row.updated_at, _sbId: row.id, office_id: row.office_id,
-    _srvPct: (typeof row.collect_pct==="number") ? row.collect_pct : null };  /* ★서버에 실제 적혀 있던 취합률(자가치유 비교용) */
+    firm: aj.firm || sbFirmFromOffice(row.office_id) || cfg.firmName, isPublic:!!row.is_public, createdAt: row.created_at, updatedAt: row.updated_at, _sbId: row.id, office_id: row.office_id };
   ensureItems(c);   // 화면 기본 서류목록(템플릿) 깔기
   applyTags(c);     // 소득유형·주거·재산에 따른 기본 표시여부(해당없음 자동 숨김 등) — 원래 앱과 동일
   (rows||[]).forEach(r=>{
@@ -4996,18 +5003,6 @@ function sbBuildClient(row, rows, docs, memos, secret){
   /* ②쓰기 기준선: 지금 서버에 있는 값을 기록(이후 바뀐 것만 저장) */
   Object.keys(c.items).forEach(id=>{ try{ c.items[id]._sbSig=sbItemSig(c,id,c.items[id]); }catch(_){} });
   c._sbSig=sbClientSig(c); c._sbMemo=c.memo||""; c._sbCertSig=JSON.stringify({f:(c.cert&&c.cert.files)||[],p:(c.cert&&c.cert.pw)||""});
-  /* ★줄 자가치유 대상 수집: 서버에 '이미 있는' 줄의 기록과 방금 계산된 실제 상태(파일 있으면 받음,
-     해당없음 숨김 등 반영 후)가 다르면 담아둔다. 새 줄 생성(insert)은 절대 하지 않는다 —
-     무더기 insert 사고(07-03, 4,940줄)의 원천 배제. 실제 처리는 pullFromSupabase 끝에서 순차 실행. */
-  c._healRows=[];
-  try{
-    const _rb={}; (rows||[]).forEach(r=>{ _rb[r.id]=r; });
-    Object.keys(c.items).forEach(id=>{
-      const s=c.items[id]; if(!s||!s._sbRow) return; const r=_rb[s._sbRow]; if(!r) return;
-      const st=sbStatusFwd(s), rr=(s.rejectReason||null);
-      if(st!==(r.status||null) || rr!==(r.reject_reason||null)) c._healRows.push({rowId:s._sbRow, status:st, reject_reason:rr, prev:(r.status||null)});
-    });
-  }catch(_){ c._healRows=[]; }
   return c;
 }
 
@@ -5029,9 +5024,6 @@ async function pullFromSupabase(silent){
       SB_HAS_RRN = withRrn && !cRes.error;
       if(!cRes.error) break;
     }
-    /* ★SB_HAS_PCT 확정: 추측(첫 조회 성공 여부)이 아니라 실제 받은 데이터에 collect_pct 칸이 있는지로 판정.
-       일시 오류로 첫 조회만 실패했을 때 취합률 기록이 세션 내내 꺼져 있던 틈을 막는다. */
-    if(!cRes.error && cRes.data && cRes.data.length) SB_HAS_PCT = Object.prototype.hasOwnProperty.call(cRes.data[0], "collect_pct");
     if(cRes.data) cRes.data.sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"ko"));
     const [ciRes, dRes, mRes, sRes, oRes, pRes] = await Promise.all([
       sbSelectPaged("checklist_items","id,client_id,doc_key,doc_name,bundle,status,reject_reason,memo"),
@@ -5063,41 +5055,6 @@ async function pullFromSupabase(silent){
       clients.forEach(c=>{ const mine=progress(c), srv=pg[c._sbId]||{};
         console.log("  "+c.name+" | 화면 "+mine.done+"/"+mine.total+"("+mine.pct+"%)  서버 "+(srv.done)+"/"+(srv.total)+"("+srv.pct+"%)"); });
     }catch(_){}
-    /* ★취합률 자가치유: 서버에 적힌 collect_pct(케이스허브가 보여주는 값)가 방금 계산한 화면 값과
-       다르면 그 칸 하나만 바로잡는다. 왜: 저장이 한 번 누락되면(튕김·통신오류) 옛 값이 얼어붙는데,
-       앱은 켤 때 기준선을 "이미 저장됨"으로 잡아 다시는 안 고쳤다(07-16 전 의뢰인 18명 불일치 사건).
-       이제 앱을 켤 때마다 어긋난 사람만 자동으로 맞춘다. 한 명씩 순차 처리(동시 요청 금지 원칙),
-       실패해도 조용히 넘어가며 다음 실행 때 다시 시도된다. 화면 표시를 막지 않도록 배경에서 돈다. */
-    (async()=>{
-      let fixed=0, rowsFixed=0;
-      for(const c of clients){
-        if(!isUuid(c.id)) continue;
-        /* ①취합률(collect_pct) 한 칸 */
-        if(SB_HAS_PCT){
-          try{
-            const want=progress(c).pct;
-            if(c._srvPct!==want){
-              const r=await sb.from("clients").update({collect_pct:want}).eq("id",c.id).select("id");
-              if(!r.error && r.data && r.data.length){ c._srvPct=want; fixed++; }
-            }
-          }catch(_){}
-        }
-        /* ②체크리스트 줄 — 서버에 이미 있는 줄만 UPDATE. 안전핀: .eq("status",읽은값) 조건을 걸어
-           읽은 뒤 그 사이 다른 기기가 그 줄을 고쳤으면 건드리지 않는다(0줄 갱신으로 조용히 통과,
-           다음 켤 때 다시 판단). 새 줄 insert 없음, 삭제 없음. */
-        for(const h of (c._healRows||[])){
-          try{
-            let q=sb.from("checklist_items").update({status:h.status, reject_reason:h.reject_reason}).eq("id",h.rowId);
-            q=(h.prev===null)? q.is("status",null) : q.eq("status",h.prev);
-            const r=await q.select("id");
-            if(!r.error && r.data && r.data.length) rowsFixed++;
-          }catch(_){}
-        }
-        c._healRows=null;
-      }
-      if(fixed) console.log("[취합률 자가치유] "+fixed+"명 서버값을 화면 값으로 맞춤");
-      if(rowsFixed) console.log("[서류줄 자가치유] "+rowsFixed+"줄 서버 기록을 화면 상태로 맞춤");
-    })();
     return true;
   }catch(e){ console.error(e); setSync("error"); showBanner("케이스허브 읽기 오류: "+(e.message||e),"err"); return false; }
 }
