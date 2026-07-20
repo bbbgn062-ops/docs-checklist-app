@@ -4996,6 +4996,18 @@ function sbBuildClient(row, rows, docs, memos, secret){
   /* ②쓰기 기준선: 지금 서버에 있는 값을 기록(이후 바뀐 것만 저장) */
   Object.keys(c.items).forEach(id=>{ try{ c.items[id]._sbSig=sbItemSig(c,id,c.items[id]); }catch(_){} });
   c._sbSig=sbClientSig(c); c._sbMemo=c.memo||""; c._sbCertSig=JSON.stringify({f:(c.cert&&c.cert.files)||[],p:(c.cert&&c.cert.pw)||""});
+  /* ★줄 자가치유 대상 수집: 서버에 '이미 있는' 줄의 기록과 방금 계산된 실제 상태(파일 있으면 받음,
+     해당없음 숨김 등 반영 후)가 다르면 담아둔다. 새 줄 생성(insert)은 절대 하지 않는다 —
+     무더기 insert 사고(07-03, 4,940줄)의 원천 배제. 실제 처리는 pullFromSupabase 끝에서 순차 실행. */
+  c._healRows=[];
+  try{
+    const _rb={}; (rows||[]).forEach(r=>{ _rb[r.id]=r; });
+    Object.keys(c.items).forEach(id=>{
+      const s=c.items[id]; if(!s||!s._sbRow) return; const r=_rb[s._sbRow]; if(!r) return;
+      const st=sbStatusFwd(s), rr=(s.rejectReason||null);
+      if(st!==(r.status||null) || rr!==(r.reject_reason||null)) c._healRows.push({rowId:s._sbRow, status:st, reject_reason:rr, prev:(r.status||null)});
+    });
+  }catch(_){ c._healRows=[]; }
   return c;
 }
 
@@ -5056,21 +5068,36 @@ async function pullFromSupabase(silent){
        앱은 켤 때 기준선을 "이미 저장됨"으로 잡아 다시는 안 고쳤다(07-16 전 의뢰인 18명 불일치 사건).
        이제 앱을 켤 때마다 어긋난 사람만 자동으로 맞춘다. 한 명씩 순차 처리(동시 요청 금지 원칙),
        실패해도 조용히 넘어가며 다음 실행 때 다시 시도된다. 화면 표시를 막지 않도록 배경에서 돈다. */
-    if(SB_HAS_PCT){
-      (async()=>{
-        let fixed=0;
-        for(const c of clients){
+    (async()=>{
+      let fixed=0, rowsFixed=0;
+      for(const c of clients){
+        if(!isUuid(c.id)) continue;
+        /* ①취합률(collect_pct) 한 칸 */
+        if(SB_HAS_PCT){
           try{
-            if(!isUuid(c.id)) continue;
             const want=progress(c).pct;
-            if(c._srvPct===want) continue;
-            const r=await sb.from("clients").update({collect_pct:want}).eq("id",c.id).select("id");
-            if(!r.error && r.data && r.data.length){ c._srvPct=want; fixed++; }
+            if(c._srvPct!==want){
+              const r=await sb.from("clients").update({collect_pct:want}).eq("id",c.id).select("id");
+              if(!r.error && r.data && r.data.length){ c._srvPct=want; fixed++; }
+            }
           }catch(_){}
         }
-        if(fixed) console.log("[취합률 자가치유] "+fixed+"명 서버값을 화면 값으로 맞춤");
-      })();
-    }
+        /* ②체크리스트 줄 — 서버에 이미 있는 줄만 UPDATE. 안전핀: .eq("status",읽은값) 조건을 걸어
+           읽은 뒤 그 사이 다른 기기가 그 줄을 고쳤으면 건드리지 않는다(0줄 갱신으로 조용히 통과,
+           다음 켤 때 다시 판단). 새 줄 insert 없음, 삭제 없음. */
+        for(const h of (c._healRows||[])){
+          try{
+            let q=sb.from("checklist_items").update({status:h.status, reject_reason:h.reject_reason}).eq("id",h.rowId);
+            q=(h.prev===null)? q.is("status",null) : q.eq("status",h.prev);
+            const r=await q.select("id");
+            if(!r.error && r.data && r.data.length) rowsFixed++;
+          }catch(_){}
+        }
+        c._healRows=null;
+      }
+      if(fixed) console.log("[취합률 자가치유] "+fixed+"명 서버값을 화면 값으로 맞춤");
+      if(rowsFixed) console.log("[서류줄 자가치유] "+rowsFixed+"줄 서버 기록을 화면 상태로 맞춤");
+    })();
     return true;
   }catch(e){ console.error(e); setSync("error"); showBanner("케이스허브 읽기 오류: "+(e.message||e),"err"); return false; }
 }
