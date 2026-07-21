@@ -409,7 +409,7 @@
       </select>
       <select id="incomeSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
         <option value="">소득 전체</option>
-        <option>직장인</option><option>자영업자</option><option>이중소득</option><option>미정</option>
+        <option>직장인</option><option>자영업자</option><option>연금수령</option><option>이중소득</option><option>미정</option>
       </select>
     </div>
     <div id="firmChips" class="firmchips"></div>
@@ -493,6 +493,10 @@ const TEMPLATE = [
       { id:"b4-6", name:"매입·매출 내역", note:"", mode:"na" },
       { id:"b4-7", name:"부가가치세 과세표준증명", note:"", mode:"self" },
     ]},
+    { id:"b4g4", title:"연금 수령 자료", items:[
+      { id:"b4-18", name:"연금 수급자증명서", note:"연금을 받고 있다는 것을 증명", mode:"request" },
+      { id:"b4-19", name:"연금 수급내역 통장 거래내역서", note:"연금이 입금되는 통장 거래내역", mode:"request" },
+    ]},
     { id:"b4g3", title:"기타 소득·납세 자료 (공통 필수)", items:[
       { id:"b4-8", name:"월평균 소득산정표", note:"있다면", mode:"request" },
       { id:"b4-14", name:"소득금액증명", note:"", mode:"self" },
@@ -571,6 +575,8 @@ const WHERE = {
   "b4-16":"정부24(gov.kr)에서 납부내역증명 발급",
   "b4-15":"정부24(gov.kr)에서 사실증명(사업자등록사실여부) 발급",
   "b4-17":"정부24(gov.kr)에서 폐업사실증명원 발급 (폐업한 경우)",
+  "b4-18":"연금 수급처(민간=금융사·보험사 / 공무원·군인·사학=관할기관 / 국민연금=국민연금공단·정부24)에서 '연금 수급자증명서' 발급 — 의뢰인 본인 발급",
+  "b4-19":"연금이 입금되는 통장의 은행 앱·창구에서 거래내역서 발급 (엑셀 xlsx 권장)",
   "b6-1":"거래은행 앱·창구에서 거래내역서 발급",
   "b6-2":"카드사 앱·고객센터에서 카드 거래내역서 발급",
   "b6-3":"급여가 입금되는 통장의 거래은행 앱·창구에서 급여 거래내역서 발급",
@@ -595,6 +601,7 @@ const WHERE_MSG = {
   "b4-2":"회사에서 주는 급여명세서, 또는 월급이 들어온 통장의 입금내역을 보내주세요",
   "b4-6":"홈택스(hometax.go.kr)에서 부가세 신고자료(매입·매출 내역)를 발급받아 주세요",
   "b4-8":"해당되시면 월평균 소득산정표를 작성해 주세요(없으면 생략 가능)",
+  "b4-19":"연금이 입금되는 통장의 은행 앱·고객센터에서 거래내역서를 받으실 수 있어요. 가급적 PDF보다 엑셀(xlsx) 파일로 보내주시면 감사하겠습니다.",
   "b5-2":"담당자가 추가로 요청드린 기타 서류",
   "b6-1":"은행 고객센터에 연락하시거나 은행 앱에서 거래내역서를 받으실 수 있어요. 가급적 PDF보다 엑셀(xlsx) 파일로 보내주시면 감사하겠습니다",
   "b6-2":"카드사 고객센터에 연락하시거나 카드사 앱에서 카드 거래내역서를 받으실 수 있어요. 가급적 PDF보다 엑셀(xlsx) 파일로 보내주시면 감사하겠습니다",
@@ -602,7 +609,15 @@ const WHERE_MSG = {
   "b7-1":"판사님께 편지 쓴다고 생각하시고, 빚이 늘어나게 된 사정을 순서대로 정리해 주세요(양식 참고)",
   "b7-2":"현재 거주 중인 집에 대해 '무상거주 사실확인서' 양식에 맞게 작성 부탁드립니다",
 };
-function msgWhere(id){ return WHERE_MSG[id] || WHERE[id] || ""; }
+function msgWhere(id, c){
+  if(id==="b4-18"){ var pk=c&&c.pensionKind;
+    if(pk==="민간퇴직연금") return "받고 계신 퇴직연금을 지급하는 각 금융사 또는 보험사에서 '연금 수급자증명서'를 의뢰인 본인 명의로 직접 발급받아 주세요.";
+    if(pk==="공무원·군인·사학연금") return "연금을 관리하는 관할 기관에서 '연금 수급자증명서'를 의뢰인 본인 명의로 발급받아 주세요. (공무원연금은 공무원연금공단, 군인연금은 국군재정관리단, 사학연금은 사학연금공단)";
+    if(pk==="국민연금") return "국민연금공단(nps.or.kr) 또는 정부24(gov.kr)에서 '연금 수급(지급) 증명서'를 의뢰인 본인 명의로 발급받아 주세요.";
+    return "연금을 받는 곳(민간은 금융사·보험사, 공무원·군인·사학은 관할기관, 국민연금은 국민연금공단·정부24)에서 '연금 수급자증명서'를 의뢰인 본인 명의로 발급받아 주세요.";
+  }
+  return WHERE_MSG[id] || WHERE[id] || "";
+}
 
 /* ---------- 1-2b. 발급처별 묶음 (같은 사이트끼리 그룹) ---------- */
 const ITEM_BY_ID={}; TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{ITEM_BY_ID[it.id]=it;})));
@@ -623,7 +638,7 @@ const SITES=[
   { key:"payinfo",    name:"어카운트인포(계좌통합관리)",     url:"https://www.payinfo.or.kr", icon:"계", color:"#2563eb", ids:["b3-8"] },
   { key:"pension",    name:"통합연금포털(금감원)",           url:"https://www.fss.or.kr/fss/lifeplan/lifeplanIndex/index.do", icon:"퇴", color:"#9B1B33", ids:["b3-14"] },
   { key:"creditor",   name:"채권사·금융기관 직접 요청",      url:"", icon:"금", color:"#857D76", ids:["b2-1","b3-1","b3-7"] },
-  { key:"client",     name:"의뢰인·회사 직접 제출",          url:"", icon:"제", color:"#857D76", ids:["b1-5","b6-1","b6-2","b6-3","b3-4","b4-1","b4-2","b4-8","b3-12","b3-13","b7-1","b7-2","b5-1","b5-2"] },
+  { key:"client",     name:"의뢰인·회사 직접 제출",          url:"", icon:"제", color:"#857D76", ids:["b1-5","b6-1","b6-2","b6-3","b3-4","b4-1","b4-2","b4-8","b4-18","b4-19","b3-12","b3-13","b7-1","b7-2","b5-1","b5-2"] },
   { key:"etc",        name:"발급처 확인 필요",               url:"", icon:"?", color:"#d97706", ids:["b2-6"] },
 ];
 /* ---------- 1-3. 서류 양식·샘플 자료 (id별, 이미지 내장) ---------- */
@@ -900,11 +915,11 @@ function toggleRrnModal(id){ _rrnToggle(id, document.getElementById("m_rrnview")
 /* 소득유형에 따라 수입·지출(b4) 묶음 자동 맞춤 */
 /* 상황태그 → 관련 서류 묶음 자동 표시 엔진 */
 const TAG_GROUPS={
-  income:{ "직장인":["b4g1","b3g5"], "자영업자":["b4g2","b3g6"], "이중소득":["b4g1","b4g2","b3g5","b3g6"] },
+  income:{ "직장인":["b4g1","b3g5"], "자영업자":["b4g2","b3g6"], "연금수령":["b4g4"], "이중소득":["b4g1","b4g2","b3g5","b3g6"] },
   housing:{ "임차":["b3g2"], "자가":["b3g4"] },
   assets:{ "자가":["b3g4"], "임차보증금":["b3g2"], "차량":["b3g1"], "토지":["b3g4"], "사업용재산":["b3g6"] }
 };
-const TAG_CONTROLLED=["b4g1","b4g2","b3g5","b3g6","b3g1","b3g2","b3g4"];
+const TAG_CONTROLLED=["b4g1","b4g2","b4g4","b3g5","b3g6","b3g1","b3g2","b3g4"];
 const ASSET_GROUPS=["b3g5","b3g6","b3g1","b3g2","b3g4"]; // 재산(자산) 묶음 — 자동 '해당없음' 숨김 금지(놓침 방지)
 const NA_DEFAULT=["b3-7","b3-12","b3-1","b3-15","b3-13","b3-14","b4-6","b4-8","b4-17","b6-1","b6-2","b6-3","b2-6","b2-7"]; // 세트 부활 예외 — 항상 기본 '해당없음'(파일·받음·수동변경 시엔 살림): 보험해약환급금·비품시가표·자동차보험증서·이륜자동차·퇴직금세트·매입매출·월평균소득산정표·폐업사실증명·은행/카드거래내역·신용인증송부서·채권자변동조회서
 const ASSET_OPTS=["자가","임차보증금","차량","토지","사업용재산","기타재산"];
@@ -3732,8 +3747,13 @@ function openClientModal(id){
       </select></div>
     <div class="field"><label>담당자 (사무장·상담자)</label><input id="m_assignee" value="${c?esc(c.assignee||''):""}" placeholder="예: 김사무장"/></div>
     <div class="field"><label>소득 유형 (선택 시 관련 서류만 자동 표시)</label>
-      <select id="m_income">
-        ${["미정","직장인","자영업자","이중소득"].map(t=>`<option ${(c&&c.incomeType===t)?"selected":""}>${t}</option>`).join("")}
+      <select id="m_income" onchange="var _pr=document.getElementById('m_pensionRow'); if(_pr) _pr.style.display=(this.value==='연금수령')?'':'none';">
+        ${["미정","직장인","자영업자","연금수령","이중소득"].map(t=>`<option ${(c&&c.incomeType===t)?"selected":""}>${t}</option>`).join("")}
+      </select></div>
+    <div class="field" id="m_pensionRow" style="${(c&&c.incomeType==='연금수령')?'':'display:none'}">
+      <label>연금 종류 (모르면 비워두고 넘어가도 됩니다)</label>
+      <select id="m_pension">
+        ${["","민간퇴직연금","공무원·군인·사학연금","국민연금"].map(t=>`<option value="${t}" ${((c&&c.pensionKind)||"")===t?"selected":""}>${t||"아직 모름 (미선택)"}</option>`).join("")}
       </select></div>
     <div class="field"><label>주거 유형</label>
       <select id="m_housing">
@@ -3773,7 +3793,7 @@ function saveClient(id){
   const rrnIn=rrnDigits($("#m_rrn")?$("#m_rrn").value:"");
   if(rrnIn && rrnIn.length!==13){ alert("주민등록번호는 숫자 13자리로 입력하세요."); return; }
   const data={ name, firm:$("#m_firm").value, caseType:$("#m_type").value, stage:$("#m_stage").value, assignee:$("#m_assignee").value.trim(),
-    incomeType:$("#m_income").value, housing:$("#m_housing").value, assets,
+    incomeType:$("#m_income").value, pensionKind:(($("#m_income").value==="연금수령"&&$("#m_pension"))?$("#m_pension").value:""), housing:$("#m_housing").value, assets,
     deadlineLabel:$("#m_dlabel").value.trim()||"보정기한", deadline:dl?dl:null, caseNo:$("#m_caseno").value.trim(), phone:formatPhone($("#m_phone").value) };
   if(rrnIn) data._rrnPending=rrnIn;
   if(id){ const c=findClient(id); Object.assign(c,data); applyTags(c); touch(`[${name}] 정보 수정`); }
@@ -3963,15 +3983,15 @@ function buildRequestText(){
     t+= remind
       ? `[${firm}] 안녕하세요, ${name}님.\n지난번에 요청드린 아래 서류가 아직 도착하지 않아 다시 안내드립니다. 번거로우시겠지만 준비되는 대로 보내주시면 감사하겠습니다.\n\n`
       : `[${firm}] 안녕하세요, ${name}님.\n개인회생 사건 진행을 위해 아래 서류가 필요합니다. 준비되는 대로 보내주시면 감사하겠습니다.\n\n`;
-    items.forEach((x,i)=>{ t+=`${i+1}. ${cleanMsgName(x.name)}\n`; if(how && msgWhere(x.id)) t+=`   ↳ ${msgWhere(x.id)}\n`; });
+    items.forEach((x,i)=>{ t+=`${i+1}. ${cleanMsgName(x.name)}\n`; if(how && msgWhere(x.id,c)) t+=`   ↳ ${msgWhere(x.id,c)}\n`; });
     t+=`\n사진 또는 파일(PDF)로 보내주시면 됩니다. 문의사항은 편하게 연락 주세요.\n감사합니다.`;
   } else if(_msgCtx.tone==="simple"){
     t+= remind ? `${name}님, 지난번 요청드린 서류 중 아직 못 받은 항목입니다.\n\n` : `${name}님, 개인회생 진행에 필요한 서류입니다.\n\n`;
-    items.forEach(x=>{ t+=`- ${cleanMsgName(x.name)}`; if(how && msgWhere(x.id)) t+=` (${msgWhere(x.id)})`; t+=`\n`; });
+    items.forEach(x=>{ t+=`- ${cleanMsgName(x.name)}`; if(how && msgWhere(x.id,c)) t+=` (${msgWhere(x.id,c)})`; t+=`\n`; });
     t+=`\n준비되는 대로 보내주세요. 감사합니다. - ${firm}`;
   } else { // kakao
     t+= remind ? `${name}님 안녕하세요 😊\n지난번에 부탁드린 서류 중 아직 안 온 것들이에요! 확인 부탁드려요 🙏\n\n` : `${name}님 안녕하세요 😊\n개인회생 준비로 아래 서류가 필요해요!\n\n`;
-    items.forEach(x=>{ t+=`✅ ${cleanMsgName(x.name)}`; if(how && msgWhere(x.id)) t+=`\n   → ${msgWhere(x.id)}`; t+=`\n`; });
+    items.forEach(x=>{ t+=`✅ ${cleanMsgName(x.name)}`; if(how && msgWhere(x.id,c)) t+=`\n   → ${msgWhere(x.id,c)}`; t+=`\n`; });
     t+=`\n준비되면 사진이나 파일로 보내주시면 됩니다 🙏\n- ${firm}`;
   }
   if(items.some(x=>RESOURCES[x.id])) t+=`\n\n※ 작성 양식(채무증대경위서·무상거주 사실확인서 등)을 함께 보내드립니다.`;
@@ -4962,7 +4982,7 @@ function sbApplyStatus(s, status, reason){
 function sbBuildClient(row, rows, docs, memos, secret){
   let aj={}; try{ aj=(typeof row.app_json==="string")?JSON.parse(row.app_json):(row.app_json||{}); }catch(_){ aj={}; }
   const c={ id:row.id, name:row.name, caseType:row.case_type||"개인회생", assignee:row.assignee||"",
-    caseNo:row.case_no||"", phone:row.phone||"", rrnFront:row.rrn_front||"", incomeType:row.income_type||"", housing:aj.housing||"미정",
+    caseNo:row.case_no||"", phone:row.phone||"", rrnFront:row.rrn_front||"", incomeType:row.income_type||"", pensionKind:aj.pensionKind||"", housing:aj.housing||"미정",
     assets: row.asset_type ? String(row.asset_type).split(",").map(x=>x.trim()).filter(Boolean) : [],
     pinned:!!row.pinned, urgent:!!row.urgent, archived:!!row.archived,
     stage: SB_STAGE_BACK[row.stage]||"서류수집", deadline: row.court_deadline||null,
@@ -5172,7 +5192,7 @@ let SB_OFFICES=[];
 function sbFirmFromOffice(oid){ const o=SB_OFFICES.find(x=>x.id===oid); if(!o) return null; const n=o.name||""; if(n.includes("블루")) return "법률사무소 블루"; if(n.includes("이준")) return "법무법인 이준 서초 분사무소"; return n; }
 function sbOfficeFromFirm(firm){ const blue=(firm||"").includes("블루"); const o=SB_OFFICES.find(x=> blue ? (x.name||"").includes("블루") : (x.name||"").includes("이준")); return o? o.id : OURS_OFFICE_ID; }
 /* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
-function sbAppJson(c){ return { firm:c.firm||null, housing:c.housing||"미정", msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: NA_DEFAULT.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
+function sbAppJson(c){ return { firm:c.firm||null, housing:c.housing||"미정", pensionKind:c.pensionKind||null, msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: NA_DEFAULT.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
 function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
   stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
