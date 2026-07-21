@@ -5181,8 +5181,14 @@ function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:
   if(SB_HAS_PCT){ try{ __p.collect_pct = progress(c).pct; }catch(_){} }
   /* ★주민번호는 이 페이로드에 넣지 않는다. 앱이 직접 clients에 쓰지 않고 서버 함수(rrn_set)로만 저장한다.
      (전체 번호는 암호화 표 client_rrn에, 앞 7자리는 서버가 clients.rrn_front에 적는다) */
+  /* ★사무소 동기화(2026-07-20): firm(블루/이준 토글)이 정해져 있으면 office_id도 그 사무소로 맞춰 저장한다.
+     예전엔 office_id를 '수정 시 제외'해, 토글만 블루로 바꿔도 office_id는 이준에 남는 어긋남이 생겼다(최혁진 사건 — 케이스허브·원사무실에서 안 보임).
+     단, SB_OFFICES에서 실제 매칭 사무소를 찾았을 때만 동기화한다(로딩 전 등 못 찾으면 기존 office_id 보존 → 잘못 덮어씀 방지). */
+  if(c.firm){ const _blue=c.firm.indexOf("블루")>=0, _jun=c.firm.indexOf("이준")>=0;
+    if(_blue||_jun){ const _o=(SB_OFFICES||[]).find(x=> _blue ? String(x.name||"").indexOf("블루")>=0 : String(x.name||"").indexOf("이준")>=0);
+      if(_o && _o.id) __p.office_id=_o.id; } }
   return __p; }
-/* office_id는 의뢰인 저장 페이로드에서 제외 — 수정 시 관리자가 정한 사무소를 덮어쓰지 않도록. 신규 생성 때만 아래에서 지정. */
+/* office_id 동기화는 위 sbClientPayload에서 firm 기준으로 처리(수정·생성 공통). 신규 생성 경로에서도 아래에서 한 번 더 보정한다. */
 function sbClientSig(c){ return JSON.stringify(sbClientPayload(c)); }
 
 /* ★서류 칸(checklist_items) 저장 — "없으면 만들고, 있으면 고쳐 쓴다"
