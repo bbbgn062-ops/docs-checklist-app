@@ -2338,7 +2338,7 @@ function loadCropper(){ return new Promise((res,rej)=>{ if(window.Cropper) retur
   const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"; s.onload=()=>res(window.Cropper); s.onerror=()=>rej(new Error("편집기 로드 실패(인터넷 필요)")); document.head.appendChild(s);
 }); }
 async function openImgEditor(cid,id,idx){
-  return openPageEditorSafe(cid,id); /* 구 이미지 편집기 → 새 페이지 편집기(자르기·회전·삭제)로 통합 */
+  return openPageEditorSafe(cid,id,idx); /* 구 이미지 편집기 → 새 페이지 편집기로 통합. idx=클릭한 그 파일 하나만 편집 */
   if(!filesReady()){ toast("드라이브 연결 후 편집 가능합니다"); return; }
   const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
   const ext=extOf(f.name).toLowerCase(); if(![".jpg",".jpeg",".png",".gif",".webp"].includes(ext)){ toast("이미지 파일만 편집할 수 있어요"); return; }
@@ -2397,7 +2397,7 @@ async function applyCrop(){
 /* ---------- 6b-4. PDF 페이지 편집(삭제·순서변경·회전) — 적용 시 원본을 편집본으로 교체 ---------- */
 let _pdfEdit=null; // {cid,id,idx,name,srcBytes, pages:[{i,rot,del,thumb}]}
 async function openPdfEditor(cid,id,idx){
-  return openPageEditorSafe(cid,id); /* 구 PDF 편집기 → 새 페이지 편집기로 통합 */
+  return openPageEditorSafe(cid,id,idx); /* 구 PDF 편집기 → 새 페이지 편집기로 통합. idx=클릭한 그 파일 하나만 편집 */
   if(!filesReady()){ toast("드라이브 연결 후 편집 가능합니다"); return; }
   const c=findClient(cid); const f=(c.items[id].files||[])[idx]; if(!f) return;
   if(extOf(f.name).toLowerCase()!==".pdf"){ toast("PDF 파일만 편집할 수 있어요"); return; }
@@ -2512,8 +2512,8 @@ async function applyPdfEdit(){
 let _bpe=null;
 function _bpeLoadImg(url){ return new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=url; }); }
 /* ★모바일에서는 콘솔을 볼 수 없다. 편집기가 열리지 않으면 반드시 '이유'를 화면에 띄운다(조용한 실패 금지). */
-async function openPageEditorSafe(cid,id){
-  try{ closeModal(); await openBundlePageEditor(cid,null,id); }
+async function openPageEditorSafe(cid,id,fileIdx){
+  try{ closeModal(); await openBundlePageEditor(cid,null,id,fileIdx); }
   catch(e){ console.error(e); bpeNotice("편집기를 열지 못했습니다", (e&&e.message)||String(e)); }
 }
 function bpeNotice(title,msg){
@@ -2532,13 +2532,15 @@ function bpeNotice(title,msg){
     d.addEventListener("click",e=>{ if(e.target===d) d.remove(); });
   }catch(_){ alert((title||"오류")+"\n"+(msg||"")); }
 }
-async function openBundlePageEditor(cid,bid,onlyId){
+async function openBundlePageEditor(cid,bid,onlyId,onlyFileIdx){
   if(!filesReady()){ bpeNotice("편집기를 열지 못했습니다","파일 저장소 연결이 아직 안 됐습니다. 새로고침 후 다시 시도해 주세요."); return; }
   const c=ensureItems(findClient(cid));
   let g;
   if(onlyId){ // 개별 서류 모드: 그 서류가 속한 묶음을 찾아 그 서류만 편집
     const base=fileGroups(c).find(x=>x.items.some(it=>String(it.id)===String(onlyId)));
-    if(base){ const it=base.items.find(x=>String(x.id)===String(onlyId)); g={...base, items:[it], btitle:(it&&it.name)||base.btitle}; }
+    if(base){ let it=base.items.find(x=>String(x.id)===String(onlyId)); let title=(it&&it.name)||base.btitle;
+      if(it && onlyFileIdx!=null && it.files && it.files[onlyFileIdx]){ const fo=it.files[onlyFileIdx]; it={...it, files:[fo]}; title=(fo&&fo.f&&fo.f.name)||title; } // ★개별 파일 모드: 클릭한 그 파일 하나만 편집기에 표시
+      g={...base, items:[it], btitle:title}; }
   } else { g=fileGroups(c).find(x=>x.bid===bid); }
   if(!g){ bpeNotice("편집기를 열지 못했습니다", onlyId?"이 서류에서 편집할 파일을 찾지 못했습니다.":"이 묶음에 편집할 파일이 없습니다."); return; }
   toast("페이지 편집기 여는 중…");
@@ -2814,7 +2816,7 @@ async function bpeCanvas(f,pi,rot,maxw,crop){
     cx.save(); cx.translate(cv.width/2,cv.height/2); cx.rotate(rot*Math.PI/180); cx.scale(scale,scale); cx.drawImage(img,-w/2,-h/2); cx.restore(); return bpeCutCanvas(cv,crop); }
   const page=await f.pdfDoc.getPage(pi+1);
   const total=(((page.rotate||0)+rot)%360+360)%360; // ★ 페이지 원래 회전값 + 사용자가 준 회전을 더함(원래 회전을 덮어쓰지 않도록)
-  const base=page.getViewport({scale:1,rotation:total}); const s=Math.min(maxw/base.width,2); const vp=page.getViewport({scale:s,rotation:total});
+  const base=page.getViewport({scale:1,rotation:total}); const s=Math.min(maxw/base.width,3); const vp=page.getViewport({scale:s,rotation:total});
   const cv=document.createElement("canvas"); cv.width=vp.width; cv.height=vp.height; await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise; return bpeCutCanvas(cv,crop);
 }
 /* ---- 자르기 편집기 (사진·PDF 페이지 공용) ----
@@ -2934,6 +2936,7 @@ function bpeSetThumbMode(m){ if(!_bpe) return; _bpe.thumbMode=m;
 async function bpeRenderView(){
   const v=document.getElementById("bpeView"); if(!v||!_bpe) return; v.innerHTML="";
   const maxw=Math.min(560,(v.clientWidth||600)-40);
+  const dpr=Math.min(Math.max(window.devicePixelRatio||1,1),3); // 화면 픽셀밀도만큼 더 크게 그려 미리보기를 선명하게(표시 크기는 CSS가 100%로 줄여줌)
   for(let k=0;k<_bpe.flat.length;k++){
     const {f,p,fp}=bpePageMeta(k);
     const wrap=document.createElement("div"); wrap.className="bpe-pgwrap"+(p.del?" del":""); wrap.id="bpe-pg-"+k; wrap.dataset.uid=p.uid;
@@ -2941,7 +2944,7 @@ async function bpeRenderView(){
     ov.innerHTML=`<span class="bpe-pgtag">📄 ${esc(f.name)} · ${k+1}p</span><button onclick="bpeRotAt(${k},-90)" title="왼쪽 회전">↺</button><button onclick="bpeRotAt(${k},90)" title="오른쪽 회전">↻</button><button onclick="bpeCropAt(${k})" title="자르기(A4 비율)">✂</button><button class="del" onclick="bpeDelAt(${k})" title="삭제/취소">🗑</button>`;
     wrap.appendChild(ov);
     const inner=document.createElement("div"); inner.className="bpe-pgc";
-    try{ inner.appendChild(await bpeCanvas(f,fp.pi,p.rot,maxw,p.crop)); }catch(_){ }
+    try{ inner.appendChild(await bpeCanvas(f,fp.pi,p.rot,Math.round(maxw*dpr),p.crop)); }catch(_){ }
     wrap.appendChild(inner);
     if(p.del){ const dn=document.createElement("div"); dn.className="bpe-delflag"; dn.textContent="삭제 예정 (🗑 다시 눌러 취소)"; wrap.appendChild(dn); }
     v.appendChild(wrap);
@@ -2954,7 +2957,7 @@ async function bpeRefreshPage(k){
   if(!_bpe) return; const {f,p,fp}=bpePageMeta(k);
   const w=document.getElementById("bpe-pg-"+k);
   if(w){ w.classList.toggle("del",p.del);
-    const inner=w.querySelector(".bpe-pgc"); if(inner){ inner.innerHTML=""; try{ inner.appendChild(await bpeCanvas(f,fp.pi,p.rot,Math.min(560,((document.getElementById("bpeView")||{}).clientWidth||600)-40),p.crop)); }catch(_){ } }
+    const inner=w.querySelector(".bpe-pgc"); if(inner){ inner.innerHTML=""; const _dpr=Math.min(Math.max(window.devicePixelRatio||1,1),3); try{ inner.appendChild(await bpeCanvas(f,fp.pi,p.rot,Math.round(Math.min(560,((document.getElementById("bpeView")||{}).clientWidth||600)-40)*_dpr),p.crop)); }catch(_){ } }
     let dn=w.querySelector(".bpe-delflag"); if(p.del&&!dn){ dn=document.createElement("div"); dn.className="bpe-delflag"; dn.textContent="삭제 예정 (🗑 다시 눌러 취소)"; w.appendChild(dn); } else if(!p.del&&dn){ dn.remove(); }
   }
   const th=document.querySelectorAll('.bpe-th')[k];
