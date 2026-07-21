@@ -951,6 +951,8 @@ function applyTags(c){
   TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!_groupActive(c,g)) return; g.items.forEach(it=>{ if(NA_DEFAULT.includes(it.id)) return; const s=c.items[it.id]; if(!s||s.manual) return; if(s.mode==="na") s.mode="self"; }); }));
   // 무상거주 사실확인서(b7-2): 무상거주일 때만 표시 (단, 수동 변경했으면 유지)
   const s2=c.items["b7-2"]; if(s2 && !s2.manual){ if(c.housing==="무상거주"){ if(s2.mode==="na") s2.mode="request"; } else if(c.housing && c.housing!=="미정") s2.mode="na"; }
+  // ★파일 없이 '받음'만 남은 서류가 숨겨질(해당없음) 때 받음도 함께 해제 — 유형 바꿔 숨겼다 다시 켜면 옛 '받음'이 되살아나던 버그 방지. 파일 있으면 그대로 둔다.
+  Object.keys(c.items).forEach(id=>{ const s=c.items[id]; if(s && s.mode==="na" && s.done && !(s.files&&s.files.length)){ s.done=false; s.recvDate=null; s.rejected=false; if(s.reqTag==="received") s.reqTag="none"; } });
 }
 function applyIncomeType(c){ applyTags(c); } // 하위호환
 /* 기존 데이터 복원 (한 번만): 공통 묶음이 과거 소득로직으로 '해당없음'에 갇힌 것 되살림 + 옛 소득유형 명칭 변환 */
@@ -2269,7 +2271,9 @@ async function removeFile(cid,id,idx){
     if(BACKEND==="supabase" && f.docId){ try{ await sb.from("documents").delete().eq("id",f.docId); }catch(_){} } }
   else if(githubReady() && f.path){ try{ await fetch(ghContentsUrl(f.path),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),
     body:JSON.stringify({message:`delete ${f.name}`,sha:f.sha,branch:cfg.branch})}); }catch(e){ console.warn(e); } }
-  c.items[id].files.splice(idx,1); touch(`[${c.name}] 첨부 삭제`); renderDetail(cid);
+  c.items[id].files.splice(idx,1);
+  { const s=c.items[id]; if(s && !(s.files&&s.files.length) && s.done){ s.done=false; s.recvDate=null; if(s.reqTag==="received") s.reqTag=(s.mode==="request"?"requesting":"none"); } } // ★파일 0개 되면 '받음' 자동 해제(파일 없는데 받음 남던 버그 방지)
+  touch(`[${c.name}] 첨부 삭제`); renderDetail(cid);
 }
 /* ---------- 6b-3. 파일 순서변경(업·다운 / 드래그) + 순서대로 이어보기 ---------- */
 function filesHtml(cid,id){
