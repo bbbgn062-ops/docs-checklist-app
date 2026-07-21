@@ -919,6 +919,8 @@ const TAG_GROUPS={
   housing:{ "임차":["b3g2"], "자가":["b3g4"] },
   assets:{ "자가":["b3g4"], "임차보증금":["b3g2"], "차량":["b3g1"], "토지":["b3g4"], "사업용재산":["b3g6"] }
 };
+/* 이중소득 소득 구성(직장/자영업/연금 중 2개)별 서류 묶음 */
+const DUAL_PART_GROUPS={ job:["b4g1","b3g5"], biz:["b4g2","b3g6"], pen:["b4g4"] };
 const TAG_CONTROLLED=["b4g1","b4g2","b4g4","b3g5","b3g6","b3g1","b3g2","b3g4"];
 const ASSET_GROUPS=["b3g5","b3g6","b3g1","b3g2","b3g4"]; // 재산(자산) 묶음 — 자동 '해당없음' 숨김 금지(놓침 방지)
 const NA_DEFAULT=["b3-7","b3-12","b3-1","b3-15","b3-13","b3-14","b4-6","b4-8","b4-17","b6-1","b6-2","b6-3","b2-6","b2-7"]; // 세트 부활 예외 — 항상 기본 '해당없음'(파일·받음·수동변경 시엔 살림): 보험해약환급금·비품시가표·자동차보험증서·이륜자동차·퇴직금세트·매입매출·월평균소득산정표·폐업사실증명·은행/카드거래내역·신용인증송부서·채권자변동조회서
@@ -928,7 +930,11 @@ function firmShort(f){ if(!f) return "사무소"; if(f.includes("블루")) retur
 function firmColor(f){ return (f&&f.includes("블루"))?"#2563EB":"#9B1B33"; }
 function firmChip(c){ const f=(c&&c.firm)||""; return `<span class="tagchip" style="background:${firmColor(f)};color:#fff;font-weight:800">🏛 ${esc(firmShort(f))}</span>`; }
 function activeGroups(c){ const set=new Set();
-  (TAG_GROUPS.income[c.incomeType]||[]).forEach(g=>set.add(g));
+  if(c.incomeType==="이중소득" && Array.isArray(c.dualParts) && c.dualParts.length){
+    c.dualParts.forEach(p=>(DUAL_PART_GROUPS[p]||[]).forEach(g=>set.add(g)));
+  } else {
+    (TAG_GROUPS.income[c.incomeType]||[]).forEach(g=>set.add(g));
+  }
   (TAG_GROUPS.housing[c.housing]||[]).forEach(g=>set.add(g));
   (c.assets||[]).forEach(a=>(TAG_GROUPS.assets[a]||[]).forEach(g=>set.add(g)));
   return set; }
@@ -3730,59 +3736,148 @@ async function downloadBlobBySha(f){ toast("파일 여는 중…"); try{ const b
 /* ---------- 7. 의뢰인 추가/수정/삭제 ---------- */
 function openClientModal(id){
   const c=id?findClient(id):null;
+  const dparts=(c&&Array.isArray(c.dualParts))?c.dualParts.slice():[];
+  const inc=(c&&c.incomeType)||"미정";
+  const pk=(c&&c.pensionKind)||"";
+  const hs=(c&&c.housing)||"미정";
+  const showPen=(inc==="연금수령")||(inc==="이중소득"&&dparts.indexOf("pen")>=0);
+  const showDual=(inc==="이중소득");
+  const seg=(cur,v,label,sub)=>`<button type="button" class="b${cur===v?' on':''}" data-v="${v}" onclick="efIncome('${v}')">${label}${sub?`<small>${sub}</small>`:""}</button>`;
+  const hseg=(v)=>`<button type="button" class="b${hs===v?' on':''}" data-v="${v}" onclick="efHousing('${v}')">${v}</button>`;
   modal(`
-    <h3>${c?"의뢰인 정보 수정":"새 의뢰인 추가"}</h3>
-    <div class="field"><label>이름 *</label><input id="m_name" value="${c?esc(c.name):""}" placeholder="홍길동"/></div>
-    <div class="field"><label>소속 사무소 (요청 메시지·태그에 표시)</label>
-      <select id="m_firm">
-        ${FIRMS.map(f=>`<option ${((c&&c.firm)||cfg.firmName||FIRMS[0])===f?"selected":""}>${f}</option>`).join("")}
-      </select></div>
-    <div class="field"><label>사건 종류</label>
-      <select id="m_type">
-        ${["개인회생","회복","개인파산"].map(t=>`<option ${(c&&c.caseType===t)?"selected":""}>${t}</option>`).join("")}
-      </select></div>
-    <div class="field"><label>사건 단계</label>
-      <select id="m_stage">
-        ${STAGES.map(t=>`<option ${((c&&clientStage(c))||"서류수집")===t?"selected":""}>${t}</option>`).join("")}
-      </select></div>
-    <div class="field"><label>담당자 (사무장·상담자)</label><input id="m_assignee" value="${c?esc(c.assignee||''):""}" placeholder="예: 김사무장"/></div>
-    <div class="field"><label>소득 유형 (선택 시 관련 서류만 자동 표시)</label>
-      <select id="m_income" onchange="var _pr=document.getElementById('m_pensionRow'); if(_pr) _pr.style.display=(this.value==='연금수령')?'':'none';">
-        ${["미정","직장인","자영업자","연금수령","이중소득"].map(t=>`<option ${(c&&c.incomeType===t)?"selected":""}>${t}</option>`).join("")}
-      </select></div>
-    <div class="field" id="m_pensionRow" style="${(c&&c.incomeType==='연금수령')?'':'display:none'}">
-      <label>연금 종류 (모르면 비워두고 넘어가도 됩니다)</label>
-      <select id="m_pension">
-        ${["","민간퇴직연금","공무원·군인·사학연금","국민연금"].map(t=>`<option value="${t}" ${((c&&c.pensionKind)||"")===t?"selected":""}>${t||"아직 모름 (미선택)"}</option>`).join("")}
-      </select></div>
-    <div class="field"><label>주거 유형</label>
-      <select id="m_housing">
-        ${["미정","임차","무상거주","자가"].map(t=>`<option ${((c&&c.housing)||"미정")===t?"selected":""}>${t}</option>`).join("")}
-      </select></div>
-    <div class="field"><label>재산 유형 (있는 것만 체크 → 관련 서류 자동 표시)</label>
-      <div style="display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;padding-bottom:5px;-webkit-overflow-scrolling:touch">
-        ${ASSET_OPTS.map(a=>`<label style="flex:none;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:12px;cursor:pointer"><input type="checkbox" class="m_asset" value="${a}" ${(c&&(c.assets||[]).includes(a))?"checked":""}> ${a}</label>`).join("")}
-      </div></div>
-    <div class="field"><label>마감일 (보정기한·접수예정일 등)</label>
-      <div style="display:flex;gap:8px">
-        <input id="m_dlabel" value="${c?esc(c.deadlineLabel||'보정기한'):'보정기한'}" placeholder="보정기한" style="flex:0 0 38%"/>
-        <input id="m_deadline" type="date" value="${c&&c.deadline?esc(c.deadline.slice(0,10)):''}" style="flex:1"/>
-      </div></div>
-    <div class="field"><label>사건번호 (선택)</label><input id="m_caseno" value="${c?esc(c.caseNo||''):""}" placeholder="2026개회12345"/></div>
-    <div class="field"><label>연락처 (선택)</label><input id="m_phone" value="${c?esc(c.phone||''):""}" placeholder="010-0000-0000" oninput="this.value=formatPhone(this.value)"/></div>
-    <div class="field"><label>주민등록번호 (선택 · 송달앱·케이스허브와 함께 쓰임)</label>
-      ${(c&&c.rrnFront)?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span id="m_rrnview" style="font-size:13.5px;font-weight:600;color:var(--ink)">${esc(maskRrn(c.rrnFront))}</span>
-        <button class="btn btn-sm" type="button" id="m_rrnbtn" onclick="toggleRrnModal('${c.id}')">보기</button>
-      </div>`:""}
-      <input id="m_rrn" value="" placeholder="${(c&&c.rrnFront)?'바꿀 때만 입력':'000000-0000000'}" inputmode="numeric" oninput="this.value=formatRrn(this.value)"/>
+    <style>
+    .ef-sec{background:#fafbfc;border:1px solid #edeff2;border-radius:13px;padding:13px;margin-bottom:11px}
+    .ef-st{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:800;color:var(--brand);margin-bottom:11px}
+    .ef-st .n{width:19px;height:19px;border-radius:6px;background:var(--brand);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:800}
+    .ef-st .h{font-weight:600;color:var(--muted);font-size:10.5px;margin-left:auto}
+    .ef-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 11px}
+    .ef-full{grid-column:1/-1}
+    .ef-f>label{display:block;font-size:12px;color:var(--ink);font-weight:700;margin-bottom:6px}
+    .ef-f .opt{font-weight:500;color:var(--muted);font-size:10.5px;margin-left:3px}
+    .ef-in,.ef-sel{width:100%;font-family:inherit;font-size:14px;color:var(--ink);padding:10px 11px;border:1.5px solid var(--line);border-radius:9px;background:#fff;box-sizing:border-box}
+    .ef-key{border-color:var(--brand);background:#fbf5f6}
+    .ef-seg{display:flex;gap:6px;flex-wrap:wrap}
+    .ef-seg .b{flex:1 1 66px;min-width:62px;font-family:inherit;font-size:13px;font-weight:700;padding:10px 5px;border-radius:9px;border:1.5px solid var(--line);background:#fff;color:var(--muted);cursor:pointer;text-align:center;line-height:1.25}
+    .ef-seg .b small{display:block;font-size:10px;font-weight:600;color:#a2a8b0;margin-top:2px}
+    .ef-seg .b.on{background:var(--brand);border-color:var(--brand);color:#fff}
+    .ef-seg .b.on small{color:#f0cdd4}
+    .ef-chips{display:flex;flex-wrap:wrap;gap:6px}
+    .ef-chips .b{font-family:inherit;white-space:nowrap;border:1.5px solid var(--line);border-radius:999px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:#fff;color:var(--ink)}
+    .ef-chips .b.on{background:var(--brand);border-color:var(--brand);color:#fff}
+    .ef-dim{opacity:.4;pointer-events:none}
+    .ef-sub{margin-top:10px;background:#fff;border:1px dashed var(--brand);border-radius:10px;padding:11px 12px}
+    .ef-sub>label{display:block;font-size:12px;color:var(--brand);font-weight:800;margin-bottom:7px}
+    .ef-hint{font-size:11px;color:var(--muted);margin-top:7px}
+    .ef-hint b{color:var(--brand)}
+    .ef-toggle{width:100%;text-align:left;font-family:inherit;font-size:12.5px;font-weight:800;color:var(--brand);background:#fafbfc;border:1px solid #edeff2;border-radius:13px;padding:12px 13px;cursor:pointer;display:flex;align-items:center;gap:7px;margin-bottom:11px}
+    .ef-toggle .n{width:19px;height:19px;border-radius:6px;background:var(--brand);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:800}
+    .ef-toggle .arw{margin-left:auto;color:var(--muted);font-weight:800}
+    .ef-row2{display:flex;gap:8px}
+    </style>
+    <h3>${c?"의뢰인 기본정보":"새 의뢰인 추가"}</h3>
+
+    <div class="ef-sec">
+      <div class="ef-st"><span class="n">1</span> 기본 정보</div>
+      <div class="ef-grid">
+        <div class="ef-f ef-full"><label>이름 <span style="color:var(--brand)">*</span></label><input id="m_name" class="ef-in ef-key" value="${c?esc(c.name):""}" placeholder="홍길동"/></div>
+        <div class="ef-f ef-full"><label>소속 사무소 <span class="opt">요청 메시지·태그에 표시</span></label>
+          <select id="m_firm" class="ef-sel">${FIRMS.map(f=>`<option ${((c&&c.firm)||cfg.firmName||FIRMS[0])===f?"selected":""}>${f}</option>`).join("")}</select></div>
+        <div class="ef-f"><label>사건 종류</label>
+          <select id="m_type" class="ef-sel">${["개인회생","회복","개인파산"].map(t=>`<option ${(c&&c.caseType===t)?"selected":""}>${t}</option>`).join("")}</select></div>
+        <div class="ef-f"><label>사건 단계</label>
+          <select id="m_stage" class="ef-sel">${STAGES.map(t=>`<option ${((c&&clientStage(c))||"서류수집")===t?"selected":""}>${t}</option>`).join("")}</select></div>
+        <div class="ef-f ef-full"><label>담당자 <span class="opt">사무장·상담자</span></label><input id="m_assignee" class="ef-in" value="${c?esc(c.assignee||''):""}" placeholder="예: 김사무장"/></div>
+      </div>
     </div>
-    <div class="modal-actions">
+
+    <div class="ef-sec">
+      <div class="ef-st"><span class="n">2</span> 소득 · 주거 · 재산 <span class="h">선택 시 관련 서류 자동 표시</span></div>
+      <input type="hidden" id="m_income" value="${inc}"/>
+      <input type="hidden" id="m_pension" value="${esc(pk)}"/>
+      <input type="hidden" id="m_housing" value="${hs}"/>
+      <input type="hidden" id="m_dualparts" value="${dparts.join(',')}"/>
+
+      <div class="ef-f ef-full" style="margin-bottom:11px"><label>소득 유형</label>
+        <div class="ef-seg" id="ef_incseg">
+          ${seg(inc,"미정","미정")}${seg(inc,"직장인","직장인")}${seg(inc,"자영업자","자영업자")}${seg(inc,"연금수령","연금수령")}${seg(inc,"이중소득","이중소득")}
+        </div>
+
+        <div class="ef-sub" id="ef_dualRow" style="${showDual?'':'display:none'}">
+          <label>소득 구성 (해당하는 두 가지)</label>
+          <div class="ef-chips" id="ef_dualseg">
+            <button type="button" class="b${dparts.indexOf('job')>=0?' on':''}" data-p="job" onclick="efDual('job')">직장인</button>
+            <button type="button" class="b${dparts.indexOf('biz')>=0?' on':''}" data-p="biz" onclick="efDual('biz')">자영업자</button>
+            <button type="button" class="b${dparts.indexOf('pen')>=0?' on':''}" data-p="pen" onclick="efDual('pen')">연금수령</button>
+          </div>
+          <div class="ef-hint" id="ef_dualHint">두 가지를 고르면 관련 서류가 함께 켜집니다.</div>
+        </div>
+
+        <div class="ef-sub" id="m_pensionRow" style="${showPen?'':'display:none'}">
+          <label>연금 종류</label>
+          <div class="ef-chips" id="ef_penseg">
+            <button type="button" class="b${pk==='민간퇴직연금'?' on':''}" data-k="민간퇴직연금" onclick="efPen('민간퇴직연금')">민간퇴직연금</button>
+            <button type="button" class="b${pk==='공무원·군인·사학연금'?' on':''}" data-k="공무원·군인·사학연금" onclick="efPen('공무원·군인·사학연금')">공무원·군인·사학</button>
+            <button type="button" class="b${pk==='국민연금'?' on':''}" data-k="국민연금" onclick="efPen('국민연금')">국민연금</button>
+            <button type="button" class="b${pk===''?' on':''}" data-k="" onclick="efPen('')">아직 모름</button>
+          </div>
+          <div class="ef-hint"><b>모르면 고르지 않고 넘어가도 됩니다.</b> 연금 수급처는 당사자에게 확인하세요.</div>
+        </div>
+      </div>
+
+      <div class="ef-f ef-full" style="margin-bottom:11px"><label>주거 유형</label>
+        <div class="ef-seg" id="ef_houseseg">${hseg("미정")}${hseg("임차")}${hseg("무상거주")}${hseg("자가")}</div></div>
+
+      <div class="ef-f ef-full"><label>재산 유형 <span class="opt">있는 것만 선택</span></label>
+        <div class="ef-chips">
+          ${ASSET_OPTS.map(a=>`<label class="b" style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" class="m_asset" value="${a}" ${(c&&(c.assets||[]).includes(a))?"checked":""}> ${a}</label>`).join("")}
+        </div></div>
+    </div>
+
+    <div class="ef-sec">
+      <div class="ef-st"><span class="n">3</span> 일정 · 식별 <span class="h">모두 선택 입력</span></div>
+      <div class="ef-grid">
+        <div class="ef-f ef-full"><label>마감일 <span class="opt">보정기한·접수예정일 등</span></label>
+          <div class="ef-row2"><input id="m_dlabel" class="ef-in" value="${c?esc(c.deadlineLabel||'보정기한'):'보정기한'}" placeholder="보정기한" style="flex:0 0 40%"/><input id="m_deadline" class="ef-in" type="date" value="${c&&c.deadline?esc(c.deadline.slice(0,10)):''}" style="flex:1"/></div></div>
+        <div class="ef-f ef-full"><label>사건번호 <span class="opt">선택</span></label><input id="m_caseno" class="ef-in" value="${c?esc(c.caseNo||''):""}" placeholder="2026개회12345"/></div>
+        <div class="ef-f ef-full"><label>연락처 <span class="opt">선택</span></label><input id="m_phone" class="ef-in" value="${c?esc(c.phone||''):""}" placeholder="010-0000-0000" oninput="this.value=formatPhone(this.value)"/></div>
+        <div class="ef-f ef-full"><label>주민등록번호 <span class="opt">선택 · 송달앱·케이스허브와 함께 쓰임</span></label>
+          ${(c&&c.rrnFront)?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span id="m_rrnview" style="font-size:13.5px;font-weight:600;color:var(--ink)">${esc(maskRrn(c.rrnFront))}</span>
+            <button class="btn btn-sm" type="button" id="m_rrnbtn" onclick="toggleRrnModal('${c.id}')">보기</button>
+          </div>`:""}
+          <input id="m_rrn" class="ef-in" value="" placeholder="${(c&&c.rrnFront)?'바꿀 때만 입력':'000000-0000000'}" inputmode="numeric" oninput="this.value=formatRrn(this.value)"/>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:6px">
       <button class="btn" onclick="closeModal()">취소</button>
       <button class="btn btn-primary" onclick="saveClient(${c?`'${c.id}'`:"null"})">저장</button>
-    </div>`);
+    </div>`, 520);
+  window._efDual = dparts.slice();
   setTimeout(()=>$("#m_name")&&$("#m_name").focus(),50);
 }
+/* 기본정보 폼 세그먼트·칩 헬퍼 (시안A) */
+function efIncome(v){
+  $("#m_income").value=v;
+  document.querySelectorAll('#ef_incseg [data-v]').forEach(b=>b.classList.toggle('on', b.getAttribute('data-v')===v));
+  const dr=$("#ef_dualRow"); if(dr) dr.style.display=(v==='이중소득')?'':'none';
+  if(v!=='이중소득'){ window._efDual=[]; $("#m_dualparts").value=""; document.querySelectorAll('#ef_dualseg [data-p]').forEach(b=>b.classList.remove('on','ef-dim')); efDualHint(); }
+  efPenRow();
+}
+function efHousing(v){ $("#m_housing").value=v; document.querySelectorAll('#ef_houseseg [data-v]').forEach(b=>b.classList.toggle('on', b.getAttribute('data-v')===v)); }
+function efPen(v){ $("#m_pension").value=v; document.querySelectorAll('#ef_penseg [data-k]').forEach(b=>b.classList.toggle('on', b.getAttribute('data-k')===v)); }
+function efDual(p){
+  if(!Array.isArray(window._efDual)) window._efDual=[];
+  const i=window._efDual.indexOf(p);
+  if(i>=0) window._efDual.splice(i,1);
+  else { if(window._efDual.length>=2) return; window._efDual.push(p); }
+  $("#m_dualparts").value=window._efDual.join(',');
+  const full=window._efDual.length>=2;
+  document.querySelectorAll('#ef_dualseg [data-p]').forEach(b=>{ const k=b.getAttribute('data-p'); const on=window._efDual.indexOf(k)>=0; b.classList.toggle('on',on); b.classList.toggle('ef-dim', !on&&full); });
+  efDualHint(); efPenRow();
+}
+function efDualHint(){ const h=$("#ef_dualHint"); if(!h) return; const n=(window._efDual||[]).length; h.textContent = n<2 ? ("두 가지를 고르면 관련 서류가 함께 켜집니다. ("+n+"/2)") : "선택 완료 (2/2). 바꾸려면 켜진 것을 다시 누르세요."; }
+function efPenRow(){ const inc=$("#m_income").value; const show=(inc==='연금수령')||(inc==='이중소득'&&(window._efDual||[]).indexOf('pen')>=0); const r=$("#m_pensionRow"); if(r) r.style.display=show?'':'none'; if(!show){ if($("#m_pension")) $("#m_pension").value=""; document.querySelectorAll('#ef_penseg [data-k]').forEach(b=>b.classList.remove('on')); } }
 function saveClient(id){
   const name=$("#m_name").value.trim(); if(!name){ alert("이름을 입력하세요"); return; }
   const dl=$("#m_deadline").value;
@@ -3793,7 +3888,10 @@ function saveClient(id){
   const rrnIn=rrnDigits($("#m_rrn")?$("#m_rrn").value:"");
   if(rrnIn && rrnIn.length!==13){ alert("주민등록번호는 숫자 13자리로 입력하세요."); return; }
   const data={ name, firm:$("#m_firm").value, caseType:$("#m_type").value, stage:$("#m_stage").value, assignee:$("#m_assignee").value.trim(),
-    incomeType:$("#m_income").value, pensionKind:(($("#m_income").value==="연금수령"&&$("#m_pension"))?$("#m_pension").value:""), housing:$("#m_housing").value, assets,
+    incomeType:$("#m_income").value,
+    dualParts:(($("#m_income").value==="이중소득"&&$("#m_dualparts"))?$("#m_dualparts").value.split(",").filter(Boolean):[]),
+    pensionKind:(function(){ const iv=$("#m_income").value; const dp=$("#m_dualparts")?$("#m_dualparts").value.split(",").filter(Boolean):[]; const penApplies=(iv==="연금수령")||(iv==="이중소득"&&dp.indexOf("pen")>=0); return (penApplies&&$("#m_pension"))?$("#m_pension").value:""; })(),
+    housing:$("#m_housing").value, assets,
     deadlineLabel:$("#m_dlabel").value.trim()||"보정기한", deadline:dl?dl:null, caseNo:$("#m_caseno").value.trim(), phone:formatPhone($("#m_phone").value) };
   if(rrnIn) data._rrnPending=rrnIn;
   if(id){ const c=findClient(id); Object.assign(c,data); applyTags(c); touch(`[${name}] 정보 수정`); }
@@ -4982,7 +5080,7 @@ function sbApplyStatus(s, status, reason){
 function sbBuildClient(row, rows, docs, memos, secret){
   let aj={}; try{ aj=(typeof row.app_json==="string")?JSON.parse(row.app_json):(row.app_json||{}); }catch(_){ aj={}; }
   const c={ id:row.id, name:row.name, caseType:row.case_type||"개인회생", assignee:row.assignee||"",
-    caseNo:row.case_no||"", phone:row.phone||"", rrnFront:row.rrn_front||"", incomeType:row.income_type||"", pensionKind:aj.pensionKind||"", housing:aj.housing||"미정",
+    caseNo:row.case_no||"", phone:row.phone||"", rrnFront:row.rrn_front||"", incomeType:row.income_type||"", pensionKind:aj.pensionKind||"", dualParts:(Array.isArray(aj.dualParts)?aj.dualParts:[]), housing:aj.housing||"미정",
     assets: row.asset_type ? String(row.asset_type).split(",").map(x=>x.trim()).filter(Boolean) : [],
     pinned:!!row.pinned, urgent:!!row.urgent, archived:!!row.archived,
     stage: SB_STAGE_BACK[row.stage]||"서류수집", deadline: row.court_deadline||null,
@@ -5192,7 +5290,7 @@ let SB_OFFICES=[];
 function sbFirmFromOffice(oid){ const o=SB_OFFICES.find(x=>x.id===oid); if(!o) return null; const n=o.name||""; if(n.includes("블루")) return "법률사무소 블루"; if(n.includes("이준")) return "법무법인 이준 서초 분사무소"; return n; }
 function sbOfficeFromFirm(firm){ const blue=(firm||"").includes("블루"); const o=SB_OFFICES.find(x=> blue ? (x.name||"").includes("블루") : (x.name||"").includes("이준")); return o? o.id : OURS_OFFICE_ID; }
 /* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
-function sbAppJson(c){ return { firm:c.firm||null, housing:c.housing||"미정", pensionKind:c.pensionKind||null, msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: NA_DEFAULT.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
+function sbAppJson(c){ return { firm:c.firm||null, housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: NA_DEFAULT.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
 function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
   stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
