@@ -231,6 +231,28 @@
   .item.done .nm{background:none;color:var(--ink);font-weight:600;padding:0;box-shadow:none;border-radius:0;font-size:15.5px;}
   .item.st-rej .nm{background:none;color:var(--red);font-weight:600;padding:0;border-radius:0;font-size:15.5px;}
   .item.done .item-src{color:#3A8F63;}
+  /* ── 열린 카드: PC=상태 오른쪽 / 모바일=상태 파일 아래 · 파일 놓기(드래그앤드롭) ── */
+  .ib-main{margin-top:2px;}
+  .ib-left{min-width:0;}
+  .ib-right{margin-top:14px;}
+  .ib-stl{font-size:11.5px;font-weight:800;color:var(--muted);margin:0 0 7px;}
+  .ib-right .item-controls{margin:0;flex-direction:column;align-items:stretch;}
+  .ib-right .seg{display:flex;width:100%;}
+  .ib-right .seg button{flex:1;padding:10px 6px;font-size:12.5px;}
+  .ib-right .tags{display:flex;width:100%;margin-top:7px;}
+  .ib-right .tag{flex:1;text-align:center;padding:8px 4px;}
+  .ib-drop{margin-top:8px;border:1.5px dashed #cdd2d8;border-radius:11px;padding:11px;text-align:center;color:var(--muted);font-size:12.5px;background:#fafbfc;cursor:pointer;}
+  .ib-drop b{color:var(--ink);} .ib-drop-plus{color:var(--brand);font-weight:800;}
+  .ib-drop.over{border-color:var(--brand);background:var(--brand-soft);color:var(--brand);}
+  @media(min-width:720px){
+    .ib-main{display:flex;gap:18px;align-items:flex-start;}
+    .ib-left{flex:1;}
+    .ib-right{width:236px;flex:none;border-left:1px solid var(--line);padding-left:18px;margin-top:0;}
+    .ib-right .seg{flex-direction:column;border:none;border-radius:0;overflow:visible;}
+    .ib-right .seg button{border:1.5px solid var(--line);border-radius:11px;margin-bottom:8px;padding:12px;}
+    .ib-right .tags{flex-direction:column;}
+    .ib-right .tag{margin-bottom:6px;}
+  }
 
   /* Modal */
   .overlay{position:fixed;inset:0;background:rgba(20,24,45,.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;}
@@ -1851,11 +1873,14 @@ function itemHtml(c,it,isExtra,bid){
       <i class="item-caret">▾</i>
     </div>
     <div class="item-body" ${open?"":'style="display:none"'}>
+      <div class="ib-main"><div class="ib-left">
       ${it.note?`<div class="item-note">${esc(it.note)}</div>`:""}
       ${WHERE[it.id]?`<div class="item-note">📍 ${esc(WHERE[it.id])}</div>`:""}
       ${s.link?`<div class="item-note"><a href="${esc(s.link)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700">🔗 링크 열기</a></div>`:""}
       ${filesHtml(c.id,it.id)}
       ${(function(){ let d=[]; if(s.reqDate&&!s.done) d.push(`요청 ${fmtD(s.reqDate)}${daysAgo(s.reqDate)>=3?` · ${daysAgo(s.reqDate)}일 경과`:''}`); if(s.recvDate&&s.done) d.push(`받음 ${fmtD(s.recvDate)}`); return d.length?`<div class="item-note" style="color:${(!s.done&&daysAgo(s.reqDate)>=7)?'var(--red)':'var(--brand)'}">🕒 ${d.join(" · ")}</div>`:""; })()}
+      <div class="ib-drop" ondragover="ibDragOver(event,this)" ondragleave="ibDragLeave(this)" ondrop="ibDrop(event,'${c.id}','${it.id}')" onclick="attachFiles('${c.id}','${it.id}')" title="파일을 끌어다 놓거나 눌러서 선택(여러 개)"><span class="ib-drop-plus">＋</span> <b>파일 끌어다 놓기</b> · 또는 눌러서 선택</div>
+      </div><div class="ib-right"><div class="ib-stl">상태 바꾸기</div>
       <div class="item-controls">
         <div class="seg">
           <button class="${s.mode==='self'?'on-self':''}" onclick="setMode('${c.id}','${it.id}','self')">직접발급</button>
@@ -1867,7 +1892,7 @@ function itemHtml(c,it,isExtra,bid){
           <button class="tag ${s.reqTag==='requesting'?'on t-req':''}" onclick="setTag('${c.id}','${it.id}','requesting')">요청중</button>
           <button class="tag ${s.reqTag==='received'?'on t-recv':''}" onclick="setTag('${c.id}','${it.id}','received')">받음</button>
         </div>`:""}
-      </div>
+      </div></div></div>
       <div class="item-tools">${RESOURCES[it.id]?`<button class="memo-toggle" style="color:var(--brand);font-weight:800" onclick="openResource('${it.id}')">📄 양식·샘플</button>`:""}
         <button class="memo-toggle" onclick="attachFiles('${c.id}','${it.id}')">📎 파일${fc?` ${fc}`:""}</button>
         <button class="memo-toggle" onclick="setLink('${c.id}','${it.id}')">${s.link?'🔗 링크':'＋ 링크'}</button>
@@ -2109,44 +2134,55 @@ async function compressImage(file, maxDim=2200, quality=0.75){
 }
 function attachFiles(cid,id){
   if(!filesReady()){ toast("파일 첨부는 ⚙️설정에서 구글 드라이브 연결 후 가능합니다 (기기 간 공유를 위해)"); return; }
-  const c=findClient(cid);
   const inp=document.createElement("input"); inp.type="file"; inp.multiple=true;
-  inp.onchange=async()=>{
-    const picked=[...inp.files]; if(!picked.length) return;
-    const s=c.items[id]; if(!s.files) s.files=[];
-    const valid=[];
-    for(const f of picked){
-      if(f.size>40*1024*1024){ toast(`${f.name}: 40MB 초과 — 건너뜀 (큰 파일은 🔗링크 권장)`); continue; }
-      if(f.size>20*1024*1024 && !confirm(`${f.name} (${fileSizeStr(f.size)})는 큰 파일이라 느리거나 실패할 수 있어요. 계속할까요?`)) continue;
-      valid.push(f);
-    }
-    if(!valid.length){ renderDetail(cid); return; }
-    setSync("saving");
-    const folder=clientFolder(c); const results=new Array(valid.length); let okN=0;
-    const totalBytes=valid.reduce((n,f)=>n+(f.size||0),0);
-    const lid=dlog("start","서류칸 파일첨부",{client_name:c.name, slot:itemName(id,c), files:valid.length, bytes:totalBytes});
-    const up=async(f0,i)=>{ const f=await compressImage(f0);
-      const j=await gwUpload(folder,f.name,f.type||"application/octet-stream",f);   // ★파일 그대로 전송(base64 변환 없음)
-      const ent={name:f.name,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
-      s.files.push(ent);
-      try{ await sbSaveDocNow(c, id, ent); }                     // ★즉시 장부 기록 — 실패하면 되돌린다
-      catch(e){ await sbRollbackUpload(c, id, ent, e); throw new Error("서버 저장 실패: "+(e.message||e)); }
-      results[i]=ent; };
-    let failMsg="";
-    /* 한 개씩 순차 업로드 — 동시에 올리면 파일들이 한꺼번에 메모리에 올라가 화면이 멈춘다 */
-    for(let i=0;i<valid.length;i++){
-      toast(valid.length>1?`업로드 중… (${i+1}/${valid.length}) ${valid[i].name}`:"업로드 중…");
-      await new Promise(r=>setTimeout(r,0));    // 진행률을 화면에 그릴 틈을 준다
-      try{ await up(valid[i],i); }
-      catch(e){ console.error(e); failMsg=(failMsg?failMsg+" / ":"")+`${valid[i].name}: ${e.message||e}`; toast(`${valid[i].name} 업로드 실패: ${e.message||e}`); setSync("error"); }
-    }
-    okN=results.filter(Boolean).length;
-    dlogEnd(lid, failMsg?{kind:"fail",detail:failMsg.slice(0,300),files:okN}:{kind:"done",files:okN}); dlogFlush();
-    if(okN){ s.manual=true; if(s.mode==="na") s.mode="self"; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; }
-      applyTags(c); touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부·받음`); toast(`${okN}개 첨부 완료 · '받음' 처리 ✓`); }
-    renderDetail(cid);
-  };
+  inp.onchange=()=>{ const picked=[...inp.files]; if(picked.length) uploadItemFiles(cid,id,picked); };
   inp.click();
+}
+/* 드래그앤드롭: 열린 서류칸의 '파일 놓기' 영역에 파일을 끌어다 놓아 여러 개 첨부 */
+function ibDragOver(e,el){ e.preventDefault(); e.stopPropagation(); if(el) el.classList.add("over"); }
+function ibDragLeave(el){ if(el) el.classList.remove("over"); }
+function ibDrop(e,cid,id){ e.preventDefault(); e.stopPropagation();
+  const el=e.currentTarget; if(el) el.classList.remove("over");
+  const picked=(e.dataTransfer&&e.dataTransfer.files)?[...e.dataTransfer.files]:[];
+  if(picked.length) uploadItemFiles(cid,id,picked);
+}
+/* 파일 업로드 처리 — 파일 선택(input)과 드래그앤드롭이 공용으로 사용 */
+async function uploadItemFiles(cid,id,picked){
+  if(!filesReady()){ toast("파일 첨부는 ⚙️설정에서 구글 드라이브 연결 후 가능합니다 (기기 간 공유를 위해)"); return; }
+  const c=findClient(cid); if(!c) return;
+  if(!picked||!picked.length) return;
+  const s=c.items[id]; if(!s.files) s.files=[];
+  const valid=[];
+  for(const f of picked){
+    if(f.size>40*1024*1024){ toast(`${f.name}: 40MB 초과 — 건너뜀 (큰 파일은 🔗링크 권장)`); continue; }
+    if(f.size>20*1024*1024 && !confirm(`${f.name} (${fileSizeStr(f.size)})는 큰 파일이라 느리거나 실패할 수 있어요. 계속할까요?`)) continue;
+    valid.push(f);
+  }
+  if(!valid.length){ renderDetail(cid); return; }
+  setSync("saving");
+  const folder=clientFolder(c); const results=new Array(valid.length); let okN=0;
+  const totalBytes=valid.reduce((n,f)=>n+(f.size||0),0);
+  const lid=dlog("start","서류칸 파일첨부",{client_name:c.name, slot:itemName(id,c), files:valid.length, bytes:totalBytes});
+  const up=async(f0,i)=>{ const f=await compressImage(f0);
+    const j=await gwUpload(folder,f.name,f.type||"application/octet-stream",f);   // ★파일 그대로 전송(base64 변환 없음)
+    const ent={name:f.name,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
+    s.files.push(ent);
+    try{ await sbSaveDocNow(c, id, ent); }                     // ★즉시 장부 기록 — 실패하면 되돌린다
+    catch(e){ await sbRollbackUpload(c, id, ent, e); throw new Error("서버 저장 실패: "+(e.message||e)); }
+    results[i]=ent; };
+  let failMsg="";
+  /* 한 개씩 순차 업로드 — 동시에 올리면 파일들이 한꺼번에 메모리에 올라가 화면이 멈춘다 */
+  for(let i=0;i<valid.length;i++){
+    toast(valid.length>1?`업로드 중… (${i+1}/${valid.length}) ${valid[i].name}`:"업로드 중…");
+    await new Promise(r=>setTimeout(r,0));    // 진행률을 화면에 그릴 틈을 준다
+    try{ await up(valid[i],i); }
+    catch(e){ console.error(e); failMsg=(failMsg?failMsg+" / ":"")+`${valid[i].name}: ${e.message||e}`; toast(`${valid[i].name} 업로드 실패: ${e.message||e}`); setSync("error"); }
+  }
+  okN=results.filter(Boolean).length;
+  dlogEnd(lid, failMsg?{kind:"fail",detail:failMsg.slice(0,300),files:okN}:{kind:"done",files:okN}); dlogFlush();
+  if(okN){ s.manual=true; if(s.mode==="na") s.mode="self"; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; }
+    applyTags(c); touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부·받음`); toast(`${okN}개 첨부 완료 · '받음' 처리 ✓`); }
+  renderDetail(cid);
 }
 /* 앱 내 미리보기 (PC·모바일 공통) — 이미지는 <img>, PDF는 PDF.js로 렌더링 */
 let _previewUrl=null, _previewName=null, _pdfjsLoading=null;
@@ -2285,7 +2321,7 @@ function filesHtml(cid,id){
     const isPdf=/\.pdf$/i.test(f.name);
     return `<div class="frow" draggable="true" ondragstart="fileDragStart('${cid}','${id}',${fi})" ondragover="event.preventDefault()" ondrop="event.stopPropagation();fileDrop('${cid}','${id}',${fi})" style="display:flex;align-items:center;gap:5px;padding:2px 0;flex-wrap:wrap">`
       +(multi?`<span style="cursor:grab;color:var(--gray)" title="끌어서 순서 변경">⠿</span><span style="color:var(--muted);font-size:12px;min-width:16px;text-align:right">${fi+1}.</span>`:"")
-      +`📎 <a href="#" onclick="event.preventDefault();event.stopPropagation();openPreview('${cid}','${id}',${fi})" style="color:var(--brand);font-weight:700" title="미리보기">${esc(f.name)}</a> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span>`
+      +`📎 <a href="#" onclick="event.preventDefault();event.stopPropagation();openPreview('${cid}','${id}',${fi})" style="color:var(--brand);font-weight:700;word-break:break-all" title="미리보기">${esc(f.name)}</a> <span style="color:var(--gray)">${fileSizeStr(f.size)}</span>`
       +(multi?` <button onclick="event.stopPropagation();moveFile('${cid}','${id}',${fi},-1)" ${fi===0?'disabled':''} style="border:none;background:none;cursor:pointer;color:var(--brand);font-size:13px" title="위로">▲</button><button onclick="event.stopPropagation();moveFile('${cid}','${id}',${fi},1)" ${fi===files.length-1?'disabled':''} style="border:none;background:none;cursor:pointer;color:var(--brand);font-size:13px" title="아래로">▼</button>`:"")
       +(isImg?` <button onclick="event.stopPropagation();openImgEditor('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="사진 편집(자르기·회전)">✏</button>`:"")
       +(isPdf?` <button onclick="event.stopPropagation();openPdfEditor('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="PDF 편집(페이지 삭제·순서·회전)">✏</button>`:"")
