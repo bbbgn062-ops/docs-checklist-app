@@ -3235,6 +3235,25 @@ function dlDragOver(e,i){ e.preventDefault(); e.dataTransfer.dropEffect="move"; 
 function dlDragEnd(e){ _dlDragIdx=null; }
 function dlDrop(e,i){ e.preventDefault(); const from=_dlDragIdx; if(from===null||from===i) return; if(_dlCtx.rows[from].bid!==_dlCtx.rows[i].bid){ _dlDragIdx=null; toast("순서 변경은 같은 묶음 안에서만 돼요"); return; } const r=_dlCtx.rows.splice(from,1)[0]; _dlCtx.rows.splice(i,0,r); _dlDragIdx=null; renderDownloadModal(); }
 function addImageA4(doc,img){ const SHORT=595.28,LONG=841.89; const land=img.width>img.height; const A4W=land?LONG:SHORT, A4H=land?SHORT:LONG; const sc=Math.min(A4W/img.width, A4H/img.height); const w=img.width*sc, h=img.height*sc; const pg=doc.addPage([A4W,A4H]); pg.drawImage(img,{x:(A4W-w)/2, y:(A4H-h)/2, width:w, height:h}); } /* 이미지 모양에 맞춰 A4 세로/가로 자동 선택 · A4 비율에 비율유지 최대한 크게(잘림없음) · 가운데 정렬 */
+/* PDF 페이지를 A4에 맞춰 얹기 — 이미지와 동일하게 A4 통일. embedPage로 벡터 그대로(래스터화·화질저하 없음), 비율유지 최대한 크게(잘림없음), 가운데 정렬, /Rotate(회전) 보존(뷰어에 보이던 방향 그대로). 이미 A4면 사실상 그대로. 실패해도 doc에 페이지를 남기지 않도록 모두 계산 후 한꺼번에 추가(부분/중복 방지) */
+async function addPdfPagesA4(doc, srcBytes){
+  const P=window.PDFLib; const degrees=P.degrees; const SHORT=595.28, LONG=841.89;
+  const src=await P.PDFDocument.load(srcBytes,{ignoreEncryption:true});
+  const pages=src.getPages(); const planned=[];
+  for(let i=0;i<pages.length;i++){
+    const sp=pages[i]; const ep=await doc.embedPage(sp);
+    const bw=ep.width, bh=ep.height;
+    let ang=0; try{ ang=((sp.getRotation().angle%360)+360)%360; }catch(_){ }
+    const swap=(ang%180!==0); const vw=swap?bh:bw, vh=swap?bw:bh;
+    const land=vw>vh; const A4W=land?LONG:SHORT, A4H=land?SHORT:LONG;
+    const sc=Math.min(A4W/vw, A4H/vh); const dw=vw*sc, dh=vh*sc;
+    const ox=(A4W-dw)/2, oy=(A4H-dh)/2; const theta=(360-ang)%360;
+    let x,y; if(theta===0){ x=ox; y=oy; } else if(theta===90){ x=ox+dw; y=oy; }
+    else if(theta===180){ x=ox+dw; y=oy+dh; } else { x=ox; y=oy+dh; }
+    planned.push({ep,A4W,A4H,x,y,sc,theta});
+  }
+  planned.forEach(pl=>{ const pg=doc.addPage([pl.A4W,pl.A4H]); pg.drawPage(pl.ep,{x:pl.x,y:pl.y,xScale:pl.sc,yScale:pl.sc,rotate:degrees(pl.theta)}); });
+}
 function loadJSZip(){ return new Promise((res,rej)=>{ if(window.JSZip) return res(window.JSZip);
   const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
   s.onload=()=>res(window.JSZip); s.onerror=()=>rej(new Error("ZIP 라이브러리 로드 실패(인터넷 필요)")); document.head.appendChild(s); }); }
@@ -3263,7 +3282,7 @@ async function doDownload(){
             const idoc=await PDFLib.PDFDocument.create(); const ileft=[]; let ii=0;
             for(const fo of it.files){ ii++; const bytes=await fetchFileBytes(fo.f); const ext=extOf(fo.f.name).toLowerCase();
               try{
-                if(ext===".pdf"){ const src=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true}); const ps=await idoc.copyPages(src,src.getPageIndices()); ps.forEach(p=>idoc.addPage(p)); }
+                if(ext===".pdf"){ await addPdfPagesA4(idoc,bytes); }
                 else if(ext===".jpg"||ext===".jpeg"){ const img=await idoc.embedJpg(bytes); addImageA4(idoc,img); }
                 else if(ext===".png"){ const img=await idoc.embedPng(bytes); addImageA4(idoc,img); }
                 else ileft.push({fo,bytes,i:ii});
@@ -3286,7 +3305,7 @@ async function doDownload(){
         const doc=await PDFLib.PDFDocument.create(); const leftovers=[];
         for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f); const ext=extOf(fo.f.name).toLowerCase();
           try{
-            if(ext===".pdf"){ const src=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true}); const ps=await doc.copyPages(src,src.getPageIndices()); ps.forEach(p=>doc.addPage(p)); }
+            if(ext===".pdf"){ await addPdfPagesA4(doc,bytes); }
             else if(ext===".jpg"||ext===".jpeg"){ const img=await doc.embedJpg(bytes); addImageA4(doc,img); }
             else if(ext===".png"){ const img=await doc.embedPng(bytes); addImageA4(doc,img); }
             else leftovers.push({it,fo,bytes,i});
@@ -3310,7 +3329,7 @@ async function doDownload(){
       for(const g of picked){ for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f);
         const ext=extOf(fo.f.name).toLowerCase(); const suffix=it.files.length>1?("_"+i):""; const base=nm+"_"+safeName(dlItemLabel(it.name))+suffix;
         try{
-          if(ext===".pdf"){ outs.push({name:base+".pdf", blob:new Blob([bytes],{type:"application/pdf"})}); }
+          if(ext===".pdf"){ const d2=await PDFLib.PDFDocument.create(); await addPdfPagesA4(d2,bytes); const ob=await d2.save(); outs.push({name:base+".pdf", blob:new Blob([ob],{type:"application/pdf"})}); }
           else if(ext===".jpg"||ext===".jpeg"||ext===".png"){
             const doc=await PDFLib.PDFDocument.create();
             const img=(ext===".png")?await doc.embedPng(bytes):await doc.embedJpg(bytes);
@@ -3628,7 +3647,7 @@ async function pvbRender(){
       try{
         const bytes=await fetchFileBytes(fo.f);
         if(ctx.token!==my) return; // 다른 묶음으로 바뀜 → 이 렌더 중단
-        if(ext===".pdf"){ const src=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true}); const ps=await doc.copyPages(src,src.getPageIndices()); ps.forEach(p=>doc.addPage(p)); }
+        if(ext===".pdf"){ await addPdfPagesA4(doc,bytes); }
         else if(ext===".jpg"||ext===".jpeg"){ const img=await doc.embedJpg(bytes); addImageA4(doc,img); }
         else if(ext===".png"){ const img=await doc.embedPng(bytes); addImageA4(doc,img); }
         else excluded.push(fo.f.name);
