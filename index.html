@@ -2326,7 +2326,7 @@ function filesHtml(cid,id){
       +(isImg?` <button onclick="event.stopPropagation();openImgEditor('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="사진 편집(자르기·회전)">✏</button>`:"")
       +(isPdf?` <button onclick="event.stopPropagation();openPdfEditor('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="PDF 편집(페이지 삭제·순서·회전)">✏</button>`:"")
       +` <button onclick="event.stopPropagation();pvbMoveFile('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="다른 서류로 이동">↪</button>`
-      +` <button onclick="event.stopPropagation();openFile('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="다운로드">⤓</button> <button onclick="event.stopPropagation();removeFile('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px" title="삭제">×</button></div>`;
+      +` <button onclick="event.stopPropagation();renameFile('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:12px;font-weight:700" title="파일 이름 수정">이름</button> <button onclick="event.stopPropagation();openFile('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px" title="다운로드">⤓</button> <button onclick="event.stopPropagation();removeFile('${cid}','${id}',${fi})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px" title="삭제">×</button></div>`;
   }).join("");
   const allBtn=multi?`<div style="margin-top:5px"><button class="memo-toggle" onclick="event.stopPropagation();openPreviewAll('${cid}','${id}')">👁 순서대로 모두 보기 (${files.length})</button></div>`:"";
   return `<div class="item-note">${rows}${allBtn}</div>`;
@@ -2343,6 +2343,24 @@ function moveFile(cid,id,idx,dir){
   const c=findClient(cid); const arr=c.items[id].files; const j=idx+dir; if(j<0||j>=arr.length) return;
   const t=arr[idx]; arr[idx]=arr[j]; arr[j]=t;
   touch(`[${c.name}] '${itemName(id,c)}' 파일 순서 변경`); renderDetail(cid); sbSaveFileOrder(cid,id);
+}
+/* 파일 이름 수정 — 화면 표시용 이름(documents.file_name)만 바꾼다. 확장자는 자동 유지, 저장소 실제 파일은 그대로. */
+async function renameFile(cid,id,idx){
+  const c=findClient(cid); if(!c) return; const s=c.items[id]; const f=s&&s.files&&s.files[idx]; if(!f) return;
+  const cur=f.name||"";
+  const input=prompt("파일 이름을 수정하세요 (확장자는 자동으로 유지됩니다)", cur.replace(/\.[^.]+$/,""));
+  if(input===null) return;
+  const base=(input||"").trim(); if(!base){ toast("이름을 입력해주세요"); return; }
+  const ext=extOf(cur);                                   // 원래 확장자 유지
+  const finalName=base.replace(/\.[^.]+$/,"")+ext;        // 사용자가 확장자를 붙여도 원래 것으로 통일
+  if(finalName===cur) return;
+  const prev=f.name; f.name=finalName; setSync("saving");
+  if(typeof BACKEND!=="undefined" && BACKEND==="supabase" && f.docId){
+    try{ const r=await sb.from("documents").update({file_name:finalName}).eq("id",f.docId); if(r.error) throw r.error; }
+    catch(e){ f.name=prev; setSync("error"); toast("이름 변경 저장 실패: "+((e&&e.message)||e)); renderDetail(cid); return; }
+  }
+  touch(`[${c.name}] '${itemName(id,c)}' 파일명 변경 → ${finalName}`);
+  toast("파일 이름을 변경했습니다 ✓"); renderDetail(cid);
 }
 async function openPreviewAll(cid,id){
   const c=findClient(cid); const s=c.items[id]; const files=(s&&s.files)||[]; if(!files.length) return;
@@ -3331,7 +3349,7 @@ async function doDownload(){
               const JSZip=await loadJSZip(); const zip=new JSZip(); const used={};
               const addZ=(name,blob)=>{ let n=name; while(used[n]) n=n.replace(/(\.[^.]+)$/,"_"+Math.random().toString(36).slice(2,4)+"$1"); used[n]=1; zip.file(n,blob); };
               if(pdfBytes) addZ(nm+"_"+label+".pdf", new Blob([pdfBytes],{type:"application/pdf"}));
-              for(const lo of ileft){ const suffix=it.files.length>1?("_"+lo.i):""; addZ(nm+"_"+label+suffix+extOf(lo.fo.f.name), new Blob([lo.bytes])); }
+              for(const lo of ileft){ addZ(lo.fo.f.name, new Blob([lo.bytes])); } /* ZIP: 원래 파일명 그대로 유지(채무자_서류명 으로 바꾸지 않음) */
               const zblob=await zip.generateAsync({type:"blob"});
               outs.push({name:nm+"_"+label+".zip", blob:zblob});
             }
@@ -3355,7 +3373,7 @@ async function doDownload(){
           const JSZip=await loadJSZip(); const zip=new JSZip(); const used={};
           const addZ=(name,blob)=>{ let n=name; while(used[n]) n=n.replace(/(\.[^.]+)$/,"_"+Math.random().toString(36).slice(2,4)+"$1"); used[n]=1; zip.file(n,blob); };
           if(pdfBytes) addZ(nm+"_"+label+".pdf", new Blob([pdfBytes],{type:"application/pdf"}));
-          for(const lo of leftovers){ const suffix=lo.it.files.length>1?("_"+lo.i):""; addZ(nm+"_"+safeName(dlItemLabel(lo.it.name))+suffix+extOf(lo.fo.f.name), new Blob([lo.bytes])); }
+          for(const lo of leftovers){ addZ(lo.fo.f.name, new Blob([lo.bytes])); } /* ZIP: 원래 파일명 그대로 유지 */
           const zblob=await zip.generateAsync({type:"blob"});
           outs.push({name:nm+"_"+label+".zip", blob:zblob});
         }
