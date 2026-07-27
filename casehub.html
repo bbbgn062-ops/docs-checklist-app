@@ -66,6 +66,8 @@
  .dday.soon{background:#FCE4E4;color:var(--red)}.dday.warn{background:#FBEEDD;color:var(--amber)}.dday.norm{background:#eef0f2;color:#57534e}
  .mk{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px}
  .mk.urgent{background:#FCE4E4;color:var(--red)} .mk.pin{background:#FFF3D6;color:#9a6b00}
+ .mk.hold{background:#FFF3CD;color:#7a6100;border:1px solid #EBD98F}
+ .holdline{margin-top:8px;font-size:12px;line-height:1.5;color:#7a6100;background:#FFF8E1;border:1px solid #F0E2A8;border-radius:8px;padding:7px 9px;font-weight:700}
  .bodyc{display:flex;align-items:center;gap:18px}
  .ring{width:104px;height:104px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center}
  .ring .hole{width:78px;height:78px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px #f0eeec}
@@ -239,6 +241,12 @@
    <label class="fl">담당자<input class="in" id="nc_as" placeholder="(선택)"></label>
    <div class="frowend"><button class="fbtn ghost" onclick="closeNewClient()">취소</button><button class="fbtn pri" onclick="saveNewClient()">등록</button></div>
  </div></div>
+ <div id="holdModal" class="fmodal hidden"><div class="fbox"><h3>⏸ 보류 사유</h3>
+   <div id="hd_who" style="font-size:13px;color:#6b645c;line-height:1.6;margin:-4px 0 10px"></div>
+   <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px" id="hd_presets"></div>
+   <label class="fl">사유 (짧게 · 최대 60자)<input class="in" id="hd_reason" maxlength="60" placeholder="예: 의뢰인 연락두절 — 8월에 다시 연락"></label>
+   <div class="frowend"><button class="fbtn ghost" onclick="closeHoldBox()">취소</button><button class="fbtn pri" onclick="saveHoldBox()">저장</button></div>
+ </div></div>
  <div id="pvModal" class="pvmodal hidden"><div class="pvinner"><div class="pvtop"><span id="pvName" class="pvtitle"></span><div class="pvacts"><button id="pvEdit" class="pvbtn hidden" onclick="openEditor()">편집</button><a id="pvOpen" class="pvbtn" target="_blank" rel="noopener">새 탭</a><button class="pvbtn" onclick="closePreview()">닫기</button></div></div><div id="pvBody" class="pvbody"></div></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -336,14 +344,17 @@
    $("#who").textContent=MYROLE==="office"?(MYNAME||""):((MYNAME?MYNAME+" · ":"")+(ROLE_KO[MYROLE]||MYROLE));
    const _ab=$("#adminBtn");if(_ab)_ab.style.display=(MYROLE==="master")?"":"none";
    const CLI_COLS="id,name,office_id,case_type,stage,amending,assignee,phone,income_type,asset_type,income_note,asset_note,court_deadline,deadline_kind,urgent,pinned,archived,is_public,collect_pct,case_no,created_at";
-   const CLI_SEL=CLI_COLS+",rrn_front";   // 앞 7자리(동명이인 구분용). 전체 번호는 여기 없다 — 서버 함수로만 본다.
+   const CLI_HOLD=",on_hold,hold_reason";  // 보류(나중으로 미룸) — 취합앱과 같은 칸을 본다
+   const CLI_SEL=CLI_COLS+CLI_HOLD+",rrn_front";   // 앞 7자리(동명이인 구분용). 전체 번호는 여기 없다 — 서버 함수로만 본다.
    let [offRes,cliRes,progRes,itemRes]=await Promise.all([
      db.from("offices").select("id,name").order("name"),
      chSelectPaged("clients",CLI_SEL),
      db.rpc("my_progress"),
      chSelectPaged("checklist_items","id,client_id,doc_name,status")   // ★1,000줄 한계 — 반드시 페이징(안 그러면 부족서류 목록이 절반만 읽힘)
    ]);
-   if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS);   // rrn_front 칸이 아직 없는 DB에서도 화면이 비지 않게
+   if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS+CLI_HOLD);      // rrn_front 칸이 아직 없을 때
+   if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS+",rrn_front");  // 보류 칸(on_hold)이 아직 없을 때 — SQL 실행 전에도 화면이 뜬다
+   if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS);   // 둘 다 아직 없는 DB에서도 화면이 비지 않게
    if(cliRes.data) cliRes.data.sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"ko"));
    officeColor={};OFFNAME={};
    (offRes.data||[]).forEach((o,i)=>{ const ours=(o.type==="ours")||((o.name||"").includes("이준")); officeColor[o.id]= ours ? {bg:"#FDECEF",dash:"#f0c9d2",dot:"#9B1B33"} : PALETTE[i%PALETTE.length]; OFFNAME[o.id]=o.name;});
@@ -433,13 +444,15 @@
      const marks=(c.pinned?`<span class="mk pin">중요</span>`:"")+(c.urgent?`<span class="mk urgent">급건</span>`:"");
      const ddBadge=(dd&&canEdit())?`<span class="dday ${dd.cls}">${esc(c.deadline_kind||"기한")} ${dd.txt}</span>`:"";
      const amBadge=c.amending?`<span class="amend">보정중</span>`:"";
+     const holdBadge=c.on_hold?`<span class="mk hold">⏸ 보류</span>`:"";
+     const holdLine=(c.on_hold&&(c.hold_reason||"").trim())?`<div class="holdline">⏸ 보류 사유 · ${esc(c.hold_reason)}</div>`:"";
      const card=document.createElement("div");
      card.className="card";card.style.background=col.bg;card.style.border="1px solid "+col.dash;
      card.innerHTML=`<div class="ch"><div><div class="nm">${esc(c.name)} <span class="ctype">${esc(c.case_type||"개인회생")}</span>${c.case_no?`<span style="display:inline-block;margin-left:6px;padding:2px 9px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:11.5px;font-weight:800;border:1px solid #cfd8ef;vertical-align:middle">사건 ${esc(c.case_no)}</span>`:""}</div>`+
        `<div class="of"><span class="ofchip" style="background:#fff;border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span>${c.assignee?" · "+esc(c.assignee):""}${canEdit()?`<label class="sw" style="margin-left:8px;vertical-align:-5px" title="원사무실 공개 여부"><input type="checkbox" ${c.is_public?"checked":""} onclick="event.stopPropagation()" onchange="setFlag('${c.id}','is_public',this.checked)"><span></span></label><span style="font-size:12px;font-weight:700;color:${c.is_public?"#0A7D3C":"#9a948c"};margin-left:5px;vertical-align:middle">${c.is_public?"공개":"비공개"}</span>`:""}</div></div>`+
-       `<div class="chr"><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${amBadge}${ddBadge}${marks?`<div>${marks}</div>`:""}</div></div>`+
+       `<div class="chr"><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${holdBadge}${amBadge}${ddBadge}${marks?`<div>${marks}</div>`:""}</div></div>`+
        `<div class="bodyc"><div class="ring" style="background:conic-gradient(${ringc} calc(${p}*3.6deg), #eceae7 0)"><div class="hole"><b>${p}%</b><small>완료율</small></div></div>`+
-       `<div class="info">${infoHtml}</div></div>`+actBtn+
+       `<div class="info">${infoHtml}</div></div>`+holdLine+actBtn+
        `<button class="btn ghost" onclick="openDetail('${c.id}')">상세 보기</button>`;
      wrap.appendChild(card);
    });
@@ -492,9 +505,11 @@
    let html=`<button class="back" onclick="goList()">목록으로</button>`;
    html+=`<div class="dhead"><div><div class="dn">${esc(c.name)} <span class="ctype">${esc(c.case_type||"개인회생")}</span></div>`+
      `<div class="dmeta"><span class="ofchip" style="background:${col.bg};border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${c.case_no?`<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:12px;font-weight:800;border:1px solid #cfd8ef;margin-left:4px">사건 ${esc(c.case_no)}</span>`:""}`+
+     (c.on_hold?`<span class="mk hold">⏸ 보류중</span>`:"")+
      (c.amending?`<span class="amend">보정중</span>`:"")+
      ((dd&&canEdit())?`<span class="dday ${dd.cls}">${esc(c.deadline_kind||"기한")} ${dd.txt}</span>`:"")+(c.urgent?`<span class="mk urgent">급건</span>`:"")+(c.pinned?`<span class="mk pin">중요</span>`:"")+`</div>`+
-     (canEdit()?`<div class="dflags"><span class="chk"><label class="sw"><input type="checkbox" ${c.urgent?"checked":""} onchange="setFlag('${cid}','urgent',this.checked)"><span></span></label> 급건</span><span class="chk"><label class="sw"><input type="checkbox" ${c.pinned?"checked":""} onchange="setFlag('${cid}','pinned',this.checked)"><span></span></label> 중요 고정</span><span class="chk"><label class="sw"><input type="checkbox" ${c.archived?"checked":""} onchange="setFlag('${cid}','archived',this.checked)"><span></span></label> 보관</span>${canEdit()?pubSwitch(c):""}</div>`:"")+`</div>`+
+     (canEdit()?`<div class="dflags"><span class="chk"><label class="sw"><input type="checkbox" ${c.urgent?"checked":""} onchange="setFlag('${cid}','urgent',this.checked)"><span></span></label> 급건</span><span class="chk"><label class="sw"><input type="checkbox" ${c.pinned?"checked":""} onchange="setFlag('${cid}','pinned',this.checked)"><span></span></label> 중요 고정</span><span class="chk"><label class="sw"><input type="checkbox" ${c.archived?"checked":""} onchange="setFlag('${cid}','archived',this.checked)"><span></span></label> 보관</span><span class="chk"><label class="sw"><input type="checkbox" ${c.on_hold?"checked":""} onchange="onHoldToggle('${cid}',this.checked)"><span></span></label> ⏸ 보류</span>${canEdit()?pubSwitch(c):""}</div>`:"")+
+     ((c.on_hold&&(c.hold_reason||"").trim())?`<div class="holdline" style="max-width:640px">⏸ 보류 사유 · ${esc(c.hold_reason)}${canEdit()?` <button onclick="openHoldBox('${cid}')" style="border:none;background:none;color:#7a6100;font-weight:800;cursor:pointer;text-decoration:underline;font-size:12px">사유 수정</button>`:""}</div>`:"")+`</div>`+
      `<div class="dring">`+
        (canEdit()?`<div class="dctl"><span class="ctllbl">진행 단계</span><select class="sel" onchange="setStage('${cid}',this.value)">`+STAGES.map(s=>`<option ${s===c.stage?"selected":""}>${s}</option>`).join("")+`</select></div>`:"")+
        ((canEdit()&&AMEND_STAGES.includes(c.stage))?`<div class="dctl"><span class="ctllbl">보정중</span><label class="sw amend"><input type="checkbox" ${c.amending?"checked":""} onchange="setAmending('${cid}',this.checked)"><span></span></label></div>`:"")+
@@ -696,6 +711,44 @@
  function pubSwitch(c){return '<span class="chk"><label class="sw"><input type="checkbox" '+(c.is_public?'checked':'')+' onchange="setFlag(\''+c.id+'\',\'is_public\',this.checked)"><span></span></label> 원사무실 공개</span>';}
  async function togglePub(cid){const c=CLIENTS.find(x=>x.id===cid);if(!c)return;await setFlag(cid,'is_public',!c.is_public);renderList();}
  async function setFlag(cid,f,v){const {error}=await db.from("clients").update({[f]:v}).eq("id",cid);if(error){toast("변경 권한이 없습니다.");return;}const c=CLIENTS.find(x=>x.id===cid);if(c)c[f]=v;const ko={urgent:"급건",pinned:"중요 고정",archived:"보관",is_public:"원사무실 공개"}[f]||f;logAct(cid,`${ko} ${v?"설정":"해제"}`);if(f==="archived"&&v){toast("보관함으로 이동했습니다.");load();return;}toast("변경했습니다.");}
+ /* ===== 보류(나중으로 미룸) =====
+    취합앱과 같은 칸(clients.on_hold / hold_reason)을 쓴다. 어느 앱에서 바꿔도 양쪽에 같이 보인다.
+    삭제와 달리 서류·기록은 그대로 남고, 스위치를 내리면 즉시 원래대로 돌아온다. */
+ let HOLD_CID=null;
+ function onHoldToggle(cid,on){
+   if(!canEdit()){toast("변경 권한이 없습니다.");return;}
+   if(on){ openHoldBox(cid); return; }
+   const c=CLIENTS.find(x=>x.id===cid);
+   if(!confirm(`'${c?c.name:""}' 의뢰인의 보류를 풀까요?`)){ openDetail(cid); return; }
+   applyHold(cid,false,null);
+ }
+ function openHoldBox(cid){
+   if(!canEdit()){toast("변경 권한이 없습니다.");return;}
+   HOLD_CID=cid; const c=CLIENTS.find(x=>x.id===cid);
+   const w=$("#hd_who"); if(w) w.innerHTML=`<b>${esc(c?c.name:"")}</b> 의뢰인을 나중으로 미룹니다.<br>서류·기록은 지워지지 않고, 목록에 <b>⏸ 보류</b> 표시만 붙습니다.`;
+   const ps=$("#hd_presets");
+   if(ps) ps.innerHTML=["의뢰인 연락두절","비용 미납","의뢰인 요청으로 보류","서류 준비 대기","다른 사건 종결 후 진행"]
+     .map(t=>`<button class="fbtn ghost" style="padding:5px 10px;font-size:12px" onclick="document.getElementById('hd_reason').value='${t}';document.getElementById('hd_reason').focus()">${t}</button>`).join("");
+   const r=$("#hd_reason"); if(r) r.value=(c&&c.hold_reason)||"";
+   $("#holdModal").classList.remove("hidden");
+   setTimeout(()=>{const e=$("#hd_reason"); if(e){e.focus();e.select();}},60);
+ }
+ function closeHoldBox(){ $("#holdModal").classList.add("hidden"); const cid=HOLD_CID; HOLD_CID=null; if(cid) openDetail(cid); }
+ async function saveHoldBox(){
+   const cid=HOLD_CID; if(!cid) return;
+   const reason=($("#hd_reason").value||"").trim();
+   if(!reason){ toast("보류 사유를 짧게라도 적어주세요."); $("#hd_reason").focus(); return; }
+   $("#holdModal").classList.add("hidden"); HOLD_CID=null;
+   applyHold(cid,true,reason);
+ }
+ async function applyHold(cid,on,reason){
+   const {error}=await db.from("clients").update({on_hold:on, hold_reason:on?reason:null}).eq("id",cid);
+   if(error){ toast("변경 실패(권한 또는 보류 칸 없음): "+error.message); openDetail(cid); return; }
+   const c=CLIENTS.find(x=>x.id===cid); if(c){ c.on_hold=on; c.hold_reason=on?reason:null; }
+   logAct(cid, on?`보류 설정 (${reason})`:"보류 해제");
+   toast(on?"보류로 표시했습니다.":"보류를 풀었습니다.");
+   openDetail(cid);
+ }
  async function setStage(cid,v){const {error}=await db.from("clients").update({stage:v}).eq("id",cid);if(error){toast("변경 권한이 없습니다.");return;}const c=CLIENTS.find(x=>x.id===cid);if(c)c.stage=v;logAct(cid,`단계를 '${v}'로 변경`);toast("단계를 변경했습니다.");openDetail(cid);}
  async function setAmending(cid,v){const {error}=await db.from("clients").update({amending:v}).eq("id",cid);if(error){toast("변경 권한이 없습니다.");return;}const c=CLIENTS.find(x=>x.id===cid);if(c)c.amending=v;logAct(cid,v?"보정중 표시":"보정중 해제");toast(v?"보정중으로 표시했습니다.":"보정중을 해제했습니다.");openDetail(cid);}
  async function setDoc(id,cid,pub){const {error}=await db.from("documents").update({is_public:pub}).eq("id",id);if(error){toast("변경 권한이 없습니다.");return;}logAct(cid,pub?"서류 공개 전환":"서류 내부 전환");toast(pub?"서류를 공개로 바꿨습니다.":"서류를 내부로 바꿨습니다.");openDetail(cid);}
