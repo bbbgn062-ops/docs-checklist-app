@@ -3890,7 +3890,7 @@ function openClientModal(id){
         <div class="ef-f ef-full"><label>소속 사무소 <span class="opt">요청 메시지·태그에 표시</span></label>
           <select id="m_firm" class="ef-sel">${FIRMS.map(f=>`<option ${((c&&c.firm)||cfg.firmName||FIRMS[0])===f?"selected":""}>${f}</option>`).join("")}</select></div>
         <div class="ef-f"><label>사건 종류</label>
-          <select id="m_type" class="ef-sel">${["개인회생","회복","개인파산"].map(t=>`<option ${(c&&c.caseType===t)?"selected":""}>${t}</option>`).join("")}</select></div>
+          <select id="m_type" class="ef-sel">${["개인회생","회복","회생+회복","개인파산"].map(t=>`<option ${(c&&c.caseType===t)?"selected":""}>${t}</option>`).join("")}</select></div>
         <div class="ef-f"><label>사건 단계</label>
           <select id="m_stage" class="ef-sel">${STAGES.map(t=>`<option ${((c&&clientStage(c))||"서류수집")===t?"selected":""}>${t}</option>`).join("")}</select></div>
         <div class="ef-f ef-full"><label>담당자 <span class="opt">사무장·상담자</span></label><input id="m_assignee" class="ef-in" value="${c?esc(c.assignee||''):""}" placeholder="예: 김사무장"/></div>
