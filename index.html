@@ -390,6 +390,8 @@
   <!-- DASHBOARD -->
   <section id="view-dashboard">
     <div id="dashHeader"></div>
+    <!-- ★큰 탭을 맨 위(숫자 바로 위)로 옮김 — 케이스허브와 같은 자리 (2026-08-11 혜림 요청) -->
+    <div id="appTabs"></div>
     <div id="dashStats"></div>
     <div id="urgentBoard"></div>
     <div id="cancelMemo"></div>
@@ -426,7 +428,7 @@
       </select>
       <select id="stageSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
         <option value="">단계 전체</option>
-        <option>상담</option><option>서류수집</option><option>검토</option><option>법원접수</option><option>개시결정</option><option>완료</option>
+        <option>상담</option><option>서류수집</option><option>검토</option><option>서류작성</option><option>법원접수</option><option>개시결정</option><option>인가결정</option><option>기각</option><option>완료</option>
       </select>
       <select id="assigneeSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
         <option value="">담당 전체</option>
@@ -440,7 +442,6 @@
         <option>직장인</option><option>자영업자</option><option>연금수령</option><option>이중소득</option><option>미정</option>
       </select>
     </div>
-    <div id="appTabs"></div>
     <div id="firmChips" class="firmchips"></div>
     <div id="stagePills"></div>
     <div id="cards" class="cards"></div>
@@ -809,8 +810,8 @@ function renderQuickLinks(){
 }
 
 /* ---------- 1-3. 사건 단계(스테이지) ---------- */
-const STAGES = ["상담","서류수집","검토","법원접수","개시결정","완료"];
-const STAGE_COLOR = { "상담":"#857D76","서류수집":"#D97706","검토":"#9B1B33","법원접수":"#2563eb","개시결정":"#059669","완료":"#A8A29E" };
+const STAGES = ["상담","서류수집","검토","서류작성","법원접수","개시결정","인가결정","기각","완료"];   /* 2026-08-11 '서류작성'·'인가결정'·'기각' 신설 */
+const STAGE_COLOR = { "상담":"#857D76","서류수집":"#D97706","검토":"#9B1B33","서류작성":"#7C3AED","법원접수":"#2563eb","개시결정":"#059669","인가결정":"#047857","기각":"#B3261E","완료":"#A8A29E" };
 function clientStage(c){ return STAGES.includes(c.stage)?c.stage:"서류수집"; }
 
 /* ---------- 2. 상태 ---------- */
@@ -836,6 +837,9 @@ function setFirmF(v){ firmF=v; renderDashboard(); }
 let stageFilter = "서류수집";    // 단계(과정) 필터 — 기본값: 서류수집(서류취합)
 let stageExpanded = false;      // 단계 알약 더보기 펼침 상태
 function setStageFilter(s){ stageFilter=s; renderDashboard(); }
+/* 단계 필터는 "검토,서류작성" 처럼 여러 단계를 한 번에 가리킬 수 있다 (대시보드 '취합 완료' 칸). */
+function stageFilterHas(f,s){ return String(f||"").split(",").includes(s); }
+function stageFilterHit(c,f){ if(!f||f==="전체") return true; return stageFilterHas(f,clientStage(c)); }
 function toggleStageMore(){ stageExpanded=!stageExpanded; renderStagePills(); }
 function renderStagePills(){
   const el=document.getElementById("stagePills"); if(!el) return;
@@ -847,8 +851,8 @@ function renderStagePills(){
   const cnt={}; LS.forEach(s=>cnt[s]=0); let all=0;
   base.forEach(c=>{ const st=(APPMODE==="bj")?bjStage(c):clientStage(c); if(cnt[st]!==undefined) cnt[st]++; all++; });
   const stages=[["전체",all]].concat(LS.map(s=>[s,cnt[s]]));
-  const list = stageExpanded ? stages : ((APPMODE==="bj") ? stages : stages.filter(([s])=> s==="서류수집" || s===stageFilter));
-  const pill=([s,n])=>{ const on=curF===s; return `<button onclick="${setF}('${s}')" style="cursor:pointer;font-size:13px;border:0.5px solid ${on?(APPMODE==="bj"?'#4527A0':'var(--brand)'):'var(--line)'};background:${on?(APPMODE==="bj"?'#4527A0':'var(--brand)'):'#fff'};color:${on?'#fff':'var(--ink)'};border-radius:999px;padding:6px 13px;font-weight:700">${s} <span style="opacity:.7;font-weight:600">${n}</span></button>`; };
+  const list = stageExpanded ? stages : ((APPMODE==="bj") ? stages : stages.filter(([s])=> s==="서류수집" || stageFilterHas(stageFilter,s)));
+  const pill=([s,n])=>{ const on=(curF===s)||stageFilterHas(curF,s); return `<button onclick="${setF}('${s}')" style="cursor:pointer;font-size:13px;border:0.5px solid ${on?(APPMODE==="bj"?'#4527A0':'var(--brand)'):'var(--line)'};background:${on?(APPMODE==="bj"?'#4527A0':'var(--brand)'):'#fff'};color:${on?'#fff':'var(--ink)'};border-radius:999px;padding:6px 13px;font-weight:700">${s} <span style="opacity:.7;font-weight:600">${n}</span></button>`; };
   const more=`<button onclick="toggleStageMore()" style="cursor:pointer;font-size:13px;background:none;border:none;color:var(--brand);font-weight:800;padding:6px 6px">${stageExpanded?'접기 ▴':'다른 과정 더보기 ▾'}</button>`;
   /* ⏸️ 보류 바로가기 — 보류로 넘긴 의뢰인이 목록에서 사라져 잊히지 않도록, 인원이 있을 때만 알약을 띄운다 */
   const holdN=state.clients.filter(c=>!c.archived && c.onHold && (!firmF || firmShort(c.firm)===firmF)).length;
@@ -993,7 +997,8 @@ function renderAppTabs(){
   const el=document.getElementById("appTabs"); if(!el) return;
   const act=state.clients.filter(c=>!c.archived && !c.onHold);
   const nAll=act.filter(c=>!isBJOnly(c)).length, nBJ=act.filter(isBJOnly).length;
-  if(nBJ===0 && APPMODE==="all"){ el.innerHTML=""; el.style.display="none"; return; }
+  /* ★2026-08-11: 보정 사건이 0건이어도 탭을 숨기지 않는다(케이스허브와 같게).
+     예전엔 숨겨서, 보정 탭이 있다는 걸 아예 모를 수 있었다. */
   el.style.cssText="display:flex;border-bottom:2px solid var(--line);margin:0 0 14px";
   const t=(m,label,n,col)=>{const on=APPMODE===m;return `<div onclick="setAppMode('${m}')" style="cursor:pointer;user-select:none;padding:11px 20px;font-weight:800;font-size:15px;color:${on?col:'var(--muted)'};border-bottom:3px solid ${on?col:'transparent'};margin-bottom:-2px;display:flex;align-items:center;gap:7px">${label} <span style="font-size:12px;background:${on?col+'1a':'#F1F2F5'};color:${on?col:'var(--muted)'};padding:1px 8px;border-radius:999px;font-weight:800">${n}</span></div>`;};
   el.innerHTML=t("all","전체 사건",nAll,"#9B1B33")+t("bj","보정 사건",nBJ,"#4527A0");
@@ -1443,7 +1448,7 @@ function renderDashHeaderStatsBoard(){
   if(active.length===0){ if(hdr)hdr.innerHTML=""; if(stat)stat.innerHTML=""; if(board)board.innerHTML=""; return; }
   const cnt=s=>active.filter(c=>clientStage(c)===s).length;
   const bcnt=s=>active.filter(c=>bjStage(c)===s).length;
-  const received=active.length, inG=cnt("상담")+cnt("서류수집"), doneG=cnt("검토"), filed=cnt("법원접수");
+  const received=active.length, inG=cnt("상담")+cnt("서류수집"), doneG=cnt("검토")+cnt("서류작성"), filed=cnt("법원접수");   /* 서류작성도 취합은 끝난 상태 (2026-08-11) */
   const today=new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric",weekday:"short"});
   if(hdr) hdr.innerHTML=`<div style="font-size:12px;color:var(--muted);font-weight:800;letter-spacing:.5px;margin-bottom:10px">${today}</div>`;
   const kp=(v,l,st,hot,last)=>`<div onclick="setStageFilter('${st}')" style="flex:1;text-align:center;${last?'':'border-right:1px solid var(--line);'}cursor:pointer"><div style="font-size:34px;font-weight:900;letter-spacing:-1px;line-height:1;color:${hot?'var(--brand)':'var(--ink)'}">${v}</div><div style="font-size:13.5px;color:#4a463f;font-weight:800;margin-top:6px">${l}</div></div>`;
@@ -1451,7 +1456,7 @@ function renderDashHeaderStatsBoard(){
   const kpb=(v,l,st,hot,last)=>`<div onclick="setBjStageFilter('${st}')" style="flex:1;text-align:center;${last?'':'border-right:1px solid var(--line);'}cursor:pointer"><div style="font-size:34px;font-weight:900;letter-spacing:-1px;line-height:1;color:${hot?'#4527A0':'var(--ink)'}">${v}</div><div style="font-size:13.5px;color:#4a463f;font-weight:800;margin-top:6px">${l}</div></div>`;
   if(stat) stat.innerHTML = (APPMODE==="bj")
     ? `<div style="display:flex;border-top:2.5px solid #4527A0;border-bottom:1px solid var(--line);padding:16px 0;margin-bottom:6px">${kpb(received,"보정 사건","전체",false)}${kpb(bcnt("보정중"),"보정 중","보정중",true)}${kpb(bcnt("개시결정"),"개시결정","개시결정",false)}${kpb(bcnt("인가결정"),"인가결정","인가결정",false,true)}</div>`
-    : `<div style="display:flex;border-top:2.5px solid var(--ink);border-bottom:1px solid var(--line);padding:16px 0;margin-bottom:6px">${kp(received,"받은 사건","전체",false)}${kp(inG,"취합 중","서류수집",true)}${kp(doneG,"취합 완료","검토",false)}${kp(filed,"접수 완료","법원접수",false,true)}</div>`;
+    : `<div style="display:flex;border-top:2.5px solid var(--ink);border-bottom:1px solid var(--line);padding:16px 0;margin-bottom:6px">${kp(received,"받은 사건","전체",false)}${kp(inG,"취합 중","서류수집",true)}${kp(doneG,"취합 완료","검토,서류작성",false)}${kp(filed,"접수 완료","법원접수",false,true)}</div>`;
   let bh="";
   const offDefs=[["이준","법무법인 이준 서초","var(--brand)"],["블루","법률사무소 블루","#2563EB"]];
   const offs=offDefs.map(d=>({name:d[1],col:d[2],n:active.filter(c=>firmShort(c.firm)===d[0]).length})).filter(o=>o.n>0);
@@ -1613,7 +1618,7 @@ function renderDashboard(){
     if(stageF && clientStage(c)!==stageF) return false;
     if(!inAppMode(c)) return false;   /* ★큰 탭으로 먼저 가름 (2026-08-11) */
     if(APPMODE==="bj"){ if(bjStageFilter && bjStageFilter!=="전체" && bjStage(c)!==bjStageFilter) return false; }
-    else if(stageFilter && stageFilter!=="전체" && clientStage(c)!==stageFilter) return false;
+    else if(stageFilter && stageFilter!=="전체" && !stageFilterHit(c,stageFilter)) return false;
     if(assigneeF && (c.assignee||"")!==assigneeF) return false;
     if(catF && (c.caseType||"개인회생")!==catF) return false;
     if(incF && (c.incomeType||"미정")!==incF) return false;
@@ -1672,7 +1677,7 @@ function renderDashboard(){
       <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);font-weight:700;margin-top:6px">
         <span>${p.done}/${p.total} 확보</span><span style="color:${p.pct===100?'var(--green)':'var(--ink)'}">${p.pct}%</span></div>`}
       ${chipHtml?`<div class="card-stats">${chipHtml}</div>`:""}
-      ${(c.onHold&&(c.holdReason||"").trim())?`<div class="hold-reason">⏸️ 보류 사유 · ${esc(c.holdReason)}</div>`:""}
+      ${(c.onHold&&(c.holdReason||"").trim())?`<div class="hold-reason" style="white-space:pre-wrap">⏸️ 보류 사유 · ${esc(c.holdReason)}</div>`:""}
       <div style="display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap">
         ${c.phone?`<a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()" style="font-size:12px;color:var(--brand);font-weight:700;text-decoration:none">📞 ${esc(c.phone)}</a>`:""}<span style="flex:1"></span>
         <button class="qbtn" onclick="event.stopPropagation();openRequestMsg('${c.id}')">📨 요청</button>
@@ -1724,7 +1729,7 @@ function renderDetail(id){
         ${dd!==null?`<span class="chip" style="background:${dd<0?'var(--red-soft)':'var(--amber-soft)'};color:${dd<0?'var(--red)':'var(--amber)'};font-weight:600;white-space:nowrap">${dd<0?`마감 ${-dd}일`:dd===0?"D-DAY":"D-"+dd}</span>`:""}
       </div>
       ${primaryBtn}
-      ${c.onHold?`<div class="hold-reason" style="margin-top:14px;font-size:12.5px">⏸️ <b>보류 중인 의뢰인입니다.</b>${(c.holdReason||"").trim()?`<br>사유 · ${esc(c.holdReason)}`:""}
+      ${c.onHold?`<div class="hold-reason" style="margin-top:14px;font-size:12.5px;white-space:pre-wrap">⏸️ <b>보류 중인 의뢰인입니다.</b>${(c.holdReason||"").trim()?`<br>사유 · ${esc(c.holdReason)}`:""}
         <div style="margin-top:7px;display:flex;gap:14px;flex-wrap:wrap">
           <button onclick="openHoldModal('${c.id}')" style="border:none;background:none;color:#7a6100;font-weight:800;cursor:pointer;text-decoration:underline;font-size:12.5px">사유 수정</button>
           <button onclick="unsetHold('${c.id}')" style="border:none;background:none;color:var(--green);font-weight:800;cursor:pointer;text-decoration:underline;font-size:12.5px">▶️ 보류 풀고 다시 진행</button>
@@ -2230,6 +2235,7 @@ async function uploadItemFiles(cid,id,picked){
   if(!filesReady()){ toast("파일 첨부는 ⚙️설정에서 구글 드라이브 연결 후 가능합니다 (기기 간 공유를 위해)"); return; }
   const c=findClient(cid); if(!c) return;
   if(!picked||!picked.length) return;
+  const _hold=holdSnap(c);          // ★보류 지킴이 — 파일을 넣어도 보류가 풀리지 않게
   const s=c.items[id]; if(!s.files) s.files=[];
   const valid=[];
   for(const f of picked){
@@ -2260,7 +2266,10 @@ async function uploadItemFiles(cid,id,picked){
   okN=results.filter(Boolean).length;
   dlogEnd(lid, failMsg?{kind:"fail",detail:failMsg.slice(0,300),files:okN}:{kind:"done",files:okN}); dlogFlush();
   if(okN){ s.manual=true; if(s.mode==="na") s.mode="self"; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; }
-    applyTags(c); touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부·받음`); toast(`${okN}개 첨부 완료 · '받음' 처리 ✓`); }
+    applyTags(c); holdRestore(c,_hold);
+    touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부·받음`);
+    toast(_hold&&_hold.on ? `${okN}개 첨부 완료 · '받음' 처리 ✓ (보류는 그대로 유지됩니다)` : `${okN}개 첨부 완료 · '받음' 처리 ✓`); }
+  else { holdRestore(c,_hold); }
   renderDetail(cid);
 }
 /* 앱 내 미리보기 (PC·모바일 공통) — 이미지는 <img>, PDF는 PDF.js로 렌더링 */
@@ -4084,13 +4093,28 @@ function openHoldModal(id){
     <div class="hint" style="margin:-2px 0 13px;line-height:1.65"><b>${esc(c.name||"의뢰인")}</b> 의뢰인을 나중으로 미룹니다.<br>
       서류·기록은 하나도 지워지지 않고, <b>진행중 목록에서만 잠시 빠집니다.</b><br>
       다시 보려면 목록 위 <b>필터 ▾ → ⏸️ 보류함</b>을 고르세요.</div>
-    <div class="field"><label>보류 사유 (짧게 · 최대 60자)</label>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${presets.map(t=>`<button class="btn btn-sm" onclick="var e=document.getElementById('hold_reason'); e.value='${t}'; e.focus();">${t}</button>`).join("")}</div>
-      <input id="hold_reason" type="text" maxlength="60" value="${esc(c.holdReason||"")}" placeholder="예) 의뢰인 연락두절 — 8월에 다시 연락" style="width:100%"/>
+    <div class="field"><label>보류 사유·메모 (여러 줄 가능 · 최대 300자)</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${presets.map(t=>`<button class="btn btn-sm" onclick="var e=document.getElementById('hold_reason'); e.value=(e.value.trim()?e.value.trim()+'\\n':'')+'${t}'; e.focus();">${t}</button>`).join("")}</div>
+      <textarea id="hold_reason" maxlength="300" placeholder="예) 의뢰인 연락두절 — 8월에 다시 연락&#10;8/5 문자 발송, 답 없음" style="width:100%;min-height:88px;line-height:1.6;resize:vertical;font-family:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line);border-radius:9px">${esc(c.holdReason||"")}</textarea>
+      <div class="hint" style="margin-top:6px">언제든 다시 열어 고칠 수 있습니다. 파일을 넣어도 보류는 풀리지 않습니다.</div>
     </div>
     <div class="modal-actions"><button class="btn" onclick="closeModal()">취소</button>
       <button class="btn btn-primary" onclick="saveHold('${c.id}')">${editing?"사유 저장":"⏸️ 보류로 넘기기"}</button></div>`,440);
   setTimeout(()=>{ const e=document.getElementById("hold_reason"); if(e){ e.focus(); e.select(); } },60);
+}
+/* ★보류 지킴이 (2026-08-11)
+   증상: 보류로 넘긴 의뢰인에게 파일을 넣으면 보류가 풀리고 사유도 지워진다는 신고.
+   파일 첨부는 '받음' 처리·태그 재계산 등 여러 곳을 건드리므로, 그 사이에 보류가 흐트러지지 않도록
+   작업 전에 보류 상태를 적어 두었다가 작업이 끝나면 그대로 되돌려 놓는다.
+   ★보류를 푸는 길은 오직 '보류 풀고 다시 진행' 버튼(unsetHold) 하나뿐이다. */
+function holdSnap(c){ return c ? {on:!!c.onHold, why:(c.holdReason||"")} : null; }
+function holdRestore(c, snap){
+  if(!c || !snap) return false;
+  let fixed=false;
+  if(snap.on && !c.onHold){ c.onHold=true; fixed=true; }
+  if(snap.on && (c.holdReason||"")!==snap.why){ c.holdReason=snap.why; fixed=true; }
+  if(fixed) console.warn("[보류 지킴이] 작업 중 보류가 풀리려 해서 되돌렸습니다:", c.name);
+  return fixed;
 }
 function saveHold(id){
   const c=findClient(id); if(!c) return;
@@ -4100,7 +4124,7 @@ function saveHold(id){
   c.onHold=true; c.holdReason=reason;
   touch(`[${c.name}] ${was?"보류 사유 수정":"보류로 넘김"} · ${reason}`);
   closeModal();
-  if(was){ if(currentClientId===id) renderDetail(id); else renderDashboard(); toast("보류 사유를 수정했습니다"); }
+  if(was){ if(currentClientId===id) renderDetail(id); else renderDashboard(); toast("보류 사유·메모를 저장했습니다 ✓"); }
   else { showDashboard(); toast(`${esc(c.name||"의뢰인")} 보류로 넘겼습니다 · 필터 ▾ → ⏸️ 보류함`); }
 }
 function unsetHold(id){
@@ -4946,6 +4970,7 @@ async function _ibUploadFile(c, fobj, slot){
 }
 async function _ibDoAssign(slot){
   if(_ibBusy) return; const c=ensureItems(_ibCli()); if(!c){ _ibClosePick(); return; } _ibLast=slot;
+  const _hold=holdSnap(c);          // ★보류 지킴이 — 배정해도 보류가 풀리지 않게
   const mode=_ibPickCtx&&_ibPickCtx.mode;
   if(mode==="split"){ _ibClosePick(); await _ibBuildSplit(slot); return; }
   _ibBusy=true;
@@ -4975,7 +5000,7 @@ async function _ibDoAssign(slot){
     }
   }catch(e){ console.error(e); if(_ibLid){ dlogEnd(_ibLid,{kind:"fail",detail:String(e.message||e).slice(0,300)}); _ibLid=null; dlogFlush(); }
     toast("배정 실패: "+(e.message||e)); setSync("error"); }
-  finally{ _ibBusy=false; }
+  finally{ _ibBusy=false; if(holdRestore(c,_hold)) touch(`[${c&&c.name}] 보류 유지`); }
 }
 
 /* ---- 한 장씩 보며 배정 ---- */
@@ -5264,7 +5289,7 @@ async function sbSaveFileOrder(cid,id){
 /* 단계(stage) 되돌림: 케이스허브 → 서류취합 화면 단계 */
 /* ★보정 사건 전용 단계(보정중·기각)는 취합앱에 없는 이름이다.
    매핑을 안 해 두면 "서류수집"으로 떨어져 화면이 엉뚱하게 보인다. 화면 표시용으로만 쓰고 서버에는 안 쓴다. */
-const SB_STAGE_BACK={"서류취합중":"서류수집","취합완료":"검토","접수완료":"법원접수","개시결정":"개시결정","인가결정":"완료","보정중":"법원접수","기각":"법원접수",
+const SB_STAGE_BACK={"서류취합중":"서류수집","취합완료":"검토","접수완료":"법원접수","개시결정":"개시결정","인가결정":"완료","보정중":"법원접수","기각":"기각",
   "서류취합":"서류수집","작성":"검토","접수":"법원접수","인가":"완료"};
 /* 묶음(bundle) 제목 → 화면 블록 id (매칭 안 된 서류를 넣을 곳) */
 const SB_BUNDLE_BID={"기본서류":"b1","채권자목록":"b2","재산":"b3","수입지출":"b4","기타":"b5","통장거래내역":"b6","경위서":"b7"};
@@ -5294,7 +5319,9 @@ function sbBuildClient(row, rows, docs, memos, secret){
        칸이 아직 없는 DB에서만 app_json에 넣어둔 값을 쓴다. */
     onHold: SB_HAS_HOLD ? !!row.on_hold : !!aj.onHold,
     holdReason: SB_HAS_HOLD ? (row.hold_reason||"") : (aj.holdReason||""),
-    stage: SB_STAGE_BACK[row.stage]||"서류수집", deadline: row.court_deadline||null,
+    /* 단계: 케이스허브 값(row.stage)이 정답이되, 취합앱에만 있는 세부 단계(서류작성)는 app_json.stage2 로 되살린다.
+       stage2를 케이스허브 값으로 바꿔 봤을 때 row.stage와 같을 때만 쓴다 — 케이스허브에서 단계를 바꿨다면 그쪽이 이긴다. */
+    stage: ((aj.stage2 && STAGES.includes(aj.stage2) && SB_STAGE_FWD[aj.stage2]===row.stage) ? aj.stage2 : (SB_STAGE_BACK[row.stage]||"서류수집")), deadline: row.court_deadline||null,
     deadlineLabel: row.deadline_kind||"보정기한", amending:!!(row.amending||row.correcting),
     memo:"", items:{}, extra:{}, cert:{files:[],pw:""}, timeline:Array.isArray(aj.timeline)?aj.timeline:[], msgLog:Array.isArray(aj.msgLog)?aj.msgLog:[], msgTpl:(aj.msgTpl&&typeof aj.msgTpl==="object"&&!Array.isArray(aj.msgTpl))?aj.msgTpl:{},
     firm: aj.firm || sbFirmFromOffice(row.office_id) || cfg.firmName, isPublic:!!row.is_public, createdAt: row.created_at, updatedAt: row.updated_at, _sbId: row.id, office_id: row.office_id,
@@ -5496,7 +5523,10 @@ async function sbLogout(){ if(!confirm("로그아웃할까요? 다시 들어오�
    - 화면 항목 상태 → 케이스허브 status 로 변환해 저장(+doc_key 채움).
    ============================================================ */
 const OURS_OFFICE_ID="689027dc-305f-43ba-9870-e3978f6e8b01"; // 우리(이준 서초) 사무소 id
-const SB_STAGE_FWD={"상담":"서류취합중","서류수집":"서류취합중","검토":"취합완료","법원접수":"접수완료","개시결정":"개시결정","완료":"인가결정"};
+const SB_STAGE_FWD={"상담":"서류취합중","서류수집":"서류취합중","검토":"취합완료","서류작성":"취합완료","법원접수":"접수완료","개시결정":"개시결정","인가결정":"인가결정","기각":"기각","완료":"인가결정"};
+/* ★'서류작성'은 취합앱에만 있는 단계다. 케이스허브(clients.stage)에는 '취합완료'로 적는다.
+   그러면 다시 읽을 때 '검토'로 되돌아가 버리므로, 취합앱 자기 단계는 app_json.stage2 에 따로 적어 둔다.
+   케이스허브에서 단계를 바꾸면 stage2와 어긋나므로 그때는 케이스허브 값을 따른다(아래 sbRowToClient). */
 const BID_BUNDLE={b1:"기본서류",b2:"채권자목록",b3:"재산",b4:"수입지출",b5:"기타",b6:"통장거래내역",b7:"경위서"};
 const ITEM_BLOCK={}; TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{ ITEM_BLOCK[it.id]=b.id; })));
 function isUuid(v){ return typeof v==="string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v); }
@@ -5513,7 +5543,7 @@ let SB_OFFICES=[];
 function sbFirmFromOffice(oid){ const o=SB_OFFICES.find(x=>x.id===oid); if(!o) return null; const n=o.name||""; if(n.includes("블루")) return "법률사무소 블루"; if(n.includes("이준")) return "법무법인 이준 서초 분사무소"; return n; }
 function sbOfficeFromFirm(firm){ const blue=(firm||"").includes("블루"); const o=SB_OFFICES.find(x=> blue ? (x.name||"").includes("블루") : (x.name||"").includes("이준")); return o? o.id : OURS_OFFICE_ID; }
 /* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
-function sbAppJson(c){ return { firm:c.firm||null, onHold:!!c.onHold, holdReason:c.holdReason||"", housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: NA_DEFAULT.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
+function sbAppJson(c){ return { stage2: clientStage(c), firm:c.firm||null, onHold:!!c.onHold, holdReason:c.holdReason||"", housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: NA_DEFAULT.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
 function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
   stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
