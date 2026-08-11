@@ -63,8 +63,10 @@
   .card.arch{opacity:.62;}
   .card.hold{opacity:.75;background:#fcfbf8;border-color:#e8dfc9;}
   .hold-reason{margin-top:9px;font-size:12px;line-height:1.55;color:#7a6100;background:#fff8e1;border:1px solid #f0e2a8;border-radius:9px;padding:8px 10px;font-weight:600;}
-  .card-top{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
-  .card-name{font-size:17px;font-weight:900;letter-spacing:-.4px;}
+  .card-top{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;row-gap:6px;}
+  /* 이름과 배지가 글자 단위로 쪼개지지 않게 (2026-08-11) */
+  .card-name{font-size:17px;font-weight:900;letter-spacing:-.4px;white-space:nowrap;flex:0 0 auto;}
+  .card-top .badge{white-space:nowrap;flex:0 0 auto;}
   .badge{font-size:11.5px;font-weight:800;padding:3px 9px;border-radius:7px;background:var(--brand-soft);color:var(--brand);}
   .badge.회생{background:var(--brand-soft);color:var(--brand);}
   .badge.파산{background:var(--amber-soft);color:var(--amber);}
@@ -793,7 +795,7 @@ const URGENT_ICON_SRC="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAY
 const URGENT_ICON=`<img src="${URGENT_ICON_SRC}" alt="" style="width:1em;height:1em;vertical-align:-2px;margin-right:2px">`;
 function urgentBadge(c){ return c&&c.urgent?`<span class="badge" style="background:#fdecec;color:#d11;font-weight:800">${URGENT_ICON}급건</span>`:""; }
 function urgentToggle(c){ const on=!!(c&&c.urgent); return `<button onclick="event.stopPropagation();toggleUrgent('${c.id}')" title="급건 켜기/끄기" style="border:none;background:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:2px 0;vertical-align:middle">`
-  +`<span style="font-size:12.5px;font-weight:800;color:${on?'#d11':'var(--muted)'};display:inline-flex;align-items:center">${on?URGENT_ICON:''}급건</span>`
+  +`<span style="font-size:12.5px;font-weight:800;white-space:nowrap;color:${on?'#d11':'var(--muted)'};display:inline-flex;align-items:center">${on?URGENT_ICON:''}급건</span>`
   +`<span style="position:relative;width:42px;height:24px;border-radius:999px;background:${on?'#e11':'#c9c9c9'};display:inline-block;flex:none;transition:background .15s"><span style="position:absolute;top:3px;left:${on?'21px':'3px'};width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .15s"></span></span></button>`; }
 function toggleUrgent(cid){ const c=findClient(cid); if(!c)return; c.urgent=!c.urgent; touch(`[${c.name}] 급건 ${c.urgent?"지정":"해제"}`); toast(`${esc(c.name||"의뢰인")} ${c.urgent?"🚨 급건 지정":"급건 해제"}`); if(currentClientId===cid) renderDetail(cid); else renderDashboard(); }
 function renderQuickLinks(){
@@ -1658,10 +1660,10 @@ function renderDashboard(){
     const chipHtml=chips.slice(0,2).join("")+(chips.length>2?`<span class="chip" style="background:var(--gray-soft);color:var(--muted)">+${chips.length-2}</span>`:"");
     return `<div class="card ${c.archived?'arch':''}${c.onHold?' hold':''}" onclick="openDetail('${c.id}')">
       <div class="card-top">
-        <span class="card-name">${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</span>${isBJOnly(c)?`<span class="badge" style="background:#EDE7F6;color:#4527A0;border:1px solid #C8BBE6;margin-left:6px;white-space:nowrap">보정만</span>`:""}${c.onHold?`<span class="badge" style="background:#fff3cd;color:#8a6d00;margin-left:6px;white-space:nowrap">⏸️ 보류</span>`:""}
-        <span style="flex:1"></span>
-        ${urgentToggle(c)}
-        <span class="badge" style="background:${firmColor(c.firm)};color:#fff;margin-left:6px">${esc(firmShort(c.firm))}</span> <label class="sw" title="원사무실 공개" onclick="event.stopPropagation()"><input type="checkbox" ${c.isPublic?"checked":""} onchange="togglePublic('${c.id}')"><span></span></label><span style="font-size:11px;color:var(--muted);margin-left:4px;vertical-align:3px">${c.isPublic?"공개":"비공개"}</span></div>
+        <span class="card-name">${c.pinned?'📌 ':''}${esc(c.name||"이름 없음")}</span>${c.onHold?`<span class="badge" style="background:#fff3cd;color:#8a6d00;margin-left:6px;white-space:nowrap">⏸️ 보류</span>`:""}
+        <span style="flex:1;min-width:4px"></span>
+        <span style="display:inline-flex;align-items:center;gap:6px;flex:0 0 auto">${urgentToggle(c)}
+        <span class="badge" style="background:${firmColor(c.firm)};color:#fff;margin-left:6px;white-space:nowrap">${esc(firmShort(c.firm))}</span> <label class="sw" title="원사무실 공개" onclick="event.stopPropagation()"><input type="checkbox" ${c.isPublic?"checked":""} onchange="togglePublic('${c.id}')"><span></span></label><span style="font-size:11px;color:var(--muted);margin-left:4px;vertical-align:3px;white-space:nowrap">${c.isPublic?"공개":"비공개"}</span></span></div>
       <div class="meta">${esc(c.caseType||"개인회생")} · <span style="color:${stgColor};font-weight:700">${stg}</span>${c.assignee?(" · 담당 "+esc(c.assignee)):""}${c.caseNo?(" · "+esc(c.caseNo)):""} · 수정 ${fmt(c.updatedAt)}</div>
       ${isBJOnly(c)
         /* 보정만 사건: 서류취합을 안 하므로 진행 막대·% 대신 안내를 보여준다 (2026-08-11) */
