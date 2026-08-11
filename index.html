@@ -1017,6 +1017,19 @@ function activeGroups(c){ const set=new Set();
   (c.assets||[]).forEach(a=>(TAG_GROUPS.assets[a]||[]).forEach(g=>set.add(g)));
   return set; }
 function _groupActive(c,g){ return g.items.some(it=>{ const s=c.items[it.id]; return s && (s.done || (s.files&&s.files.length)); }); } // 그룹 안에 받은/파일 있는 서류가 하나라도 있으면 '해당 그룹'으로 간주
+/* ★파일을 넣었을 때 '받음' 자동 처리 — 단 보완필요(반려)인 서류는 건드리지 않는다. (2026-08-11 혜림 신고)
+   왜: '보완필요'는 "받긴 받았는데 잘못돼서 다시 받아야 한다"는 표시다.
+       새 파일이 들어왔다고 앱이 멋대로 풀어 버리면, 새로 온 파일이 제대로 왔는지 확인할 새도 없이
+       ⚠ 보완필요 표시와 사유 메시지가 함께 사라져 버린다.
+   그래서 파일은 그대로 붙이되 보완필요·사유는 남겨 두고, 직원이 확인한 뒤
+   '⚠ 보완해제'를 눌러야 풀리게 한다. 돌려준 값 false = 보완필요라 받음 처리를 건너뛴 것. */
+function markReceivedAfterUpload(s){
+  if(!s) return false;
+  s.manual=true; if(s.mode==="na") s.mode="self";
+  if(s.rejected) return false;                 // 보완필요는 그대로 유지
+  if(!s.done){ s.done=true; s.recvDate=now(); if(s.mode==="request") s.reqTag="received"; }
+  return true;
+}
 function applyTags(c){
   const anyRecv = TEMPLATE.some(b=>b.groups.some(g=>TAG_CONTROLLED.includes(g.id)&&_groupActive(c,g)));
   const anyTag = anyRecv || !!TAG_GROUPS.income[c.incomeType] || !!TAG_GROUPS.housing[c.housing] || ((c.assets||[]).length>0) || (c.housing==="무상거주");
@@ -2265,10 +2278,12 @@ async function uploadItemFiles(cid,id,picked){
   }
   okN=results.filter(Boolean).length;
   dlogEnd(lid, failMsg?{kind:"fail",detail:failMsg.slice(0,300),files:okN}:{kind:"done",files:okN}); dlogFlush();
-  if(okN){ s.manual=true; if(s.mode==="na") s.mode="self"; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; }
+  if(okN){ const _recv=markReceivedAfterUpload(s);
     applyTags(c); holdRestore(c,_hold);
-    touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부·받음`);
-    toast(_hold&&_hold.on ? `${okN}개 첨부 완료 · '받음' 처리 ✓ (보류는 그대로 유지됩니다)` : `${okN}개 첨부 완료 · '받음' 처리 ✓`); }
+    touch(`[${c.name}] '${itemName(id,c)}' 파일 ${okN}개 첨부${_recv?"·받음":" (보완필요 유지)"}`);
+    const _keep=[]; if(!_recv) _keep.push("보완필요는 그대로 둡니다 · 확인 후 '⚠ 보완해제'를 눌러주세요");
+    if(_hold&&_hold.on) _keep.push("보류도 그대로 유지됩니다");
+    toast(_keep.length ? `${okN}개 첨부 완료 · ${_keep.join(" · ")}` : `${okN}개 첨부 완료 · '받음' 처리 ✓`); }
   else { holdRestore(c,_hold); }
   renderDetail(cid);
 }
@@ -4170,7 +4185,10 @@ function addTimeline(cid){ const c=findClient(cid); const t=prompt("상담·연�
   touch(`[${c.name}] 상담기록 추가`); renderDetail(cid); }
 function delTimeline(cid,i){ const c=findClient(cid); if(!confirm("이 기록을 삭제할까요?")) return; c.timeline.splice(i,1); touch(`[${c.name}] 상담기록 삭제`); renderDetail(cid); }
 function toggleReject(cid,id){ const c=findClient(cid); const s=c.items[id];
-  if(s.rejected){ s.rejected=false; s.rejectReason=""; touch(`[${c.name}] '${itemName(id,c)}' 보완필요 해제`); }
+  if(s.rejected){ s.rejected=false; s.rejectReason="";
+    /* 보완필요를 푸는 순간 파일이 이미 들어와 있으면 그때 '받음'으로 넘긴다 (해제했는데 미확보로 남지 않게) */
+    if(s.files && s.files.length && !s.done){ s.done=true; s.recvDate=now(); if(s.mode==="request") s.reqTag="received"; }
+    touch(`[${c.name}] '${itemName(id,c)}' 보완필요 해제`); toast("보완필요를 풀었습니다 ✓"); }
   else { const r=prompt("보완(반려) 사유를 입력하세요 (예: 최근 3개월분 누락)",""); s.rejected=true; s.rejectReason=(r||"").trim(); s.done=false; if(s.mode==="request"&&s.reqTag==="received") s.reqTag="requesting"; touch(`[${c.name}] '${itemName(id,c)}' 보완필요 표시`); }
   renderDetail(cid); }
 function _missingByMode(c){
@@ -4774,7 +4792,7 @@ function _ibEnsureCss(){
 function _ibIsImg(f){ return (f.type||"").startsWith("image/") || /\.(jpe?g|png|gif|webp|bmp)$/i.test(f.name); }
 function _ibIsPdf(f){ return f.type==="application/pdf" || /\.pdf$/i.test(f.name); }
 function _ibSlotName(id){ const c=_ibCli(); return c?itemName(id,c):id; }
-function _ibMarkReceived(s){ s.manual=true; if(s.mode==="na") s.mode="self"; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; if(s.mode==="request") s.reqTag="received"; } }
+function _ibMarkReceived(s){ return markReceivedAfterUpload(s); }   /* 보완필요는 자동으로 안 푼다 — markReceivedAfterUpload 설명 참고 */
 function _ibRemove(id){ const i=_ib.findIndex(f=>f.id===id); if(i>=0){ try{URL.revokeObjectURL(_ib[i].url);}catch(_){ } _ib.splice(i,1); } _ibSel.delete(id); }
 
 function openInbox(cid){
@@ -5205,7 +5223,7 @@ async function _ibSaveOriginal(c,f){
     try{ await sbSaveDocNow(c, oid, ent); }                      // ★즉시 장부 기록
     catch(e){ await sbRollbackUpload(c, oid, ent, e); throw new Error("서버 저장 실패(원본 보관): "+(e.message||e)); }
     _ibTrackRef(f,oid,j.id);
-    s.mode="self"; s.manual=true; if(!s.done){ s.done=true; s.recvDate=now(); s.rejected=false; }
+    s.mode="self"; markReceivedAfterUpload(s);   /* 보완필요는 그대로 유지 */
     f.origSaved=true;
     _ibRender(); touch(`[${c.name}] 받은 파일함 PDF 원본 보관`);
     dlogEnd(lid,{kind:"done"}); dlogFlush();
