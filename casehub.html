@@ -67,6 +67,8 @@
  .mk{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px}
  .mk.urgent{background:#FCE4E4;color:var(--red)} .mk.pin{background:#FFF3D6;color:#9a6b00}
  .mk.hold{background:#FFF3CD;color:#7a6100;border:1px solid #EBD98F}
+ /* 보정만 넘겨받은 사건 표시 (2026-08-11) */
+ .bjonly{font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:999px;background:#EDE7F6;color:#4527A0;border:1px solid #C8BBE6;white-space:nowrap}
  .holdline{margin-top:8px;font-size:12px;line-height:1.5;color:#7a6100;background:#FFF8E1;border:1px solid #F0E2A8;border-radius:8px;padding:7px 9px;font-weight:700}
  .bodyc{display:flex;align-items:center;gap:18px}
  .ring{width:104px;height:104px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center}
@@ -224,6 +226,7 @@
        <button class="fchip" data-v="개시결정">개시결정</button>
        <button class="fchip" data-v="인가결정">인가결정</button>
        <button class="fchip" data-v="amending">보정중</button>
+       <button class="fchip" data-v="bojeong">보정만</button>
        <button class="fchip" data-v="urgent">급건</button>
        <button class="fchip" data-v="archived">보관함</button>
      </div>
@@ -261,6 +264,9 @@
  const $=(s)=>document.querySelector(s);
  const ROLE_KO={master:"관리자",staff:"직원",office:"원사무실"};
  const STAGES=["서류취합중","취합완료","접수완료","개시결정","인가결정"];
+ /* 보정만 넘겨받은 사건인가 (2026-08-11)
+    — 서류취합을 우리가 하지 않는 사건이라 취합률·단계별 집계에서 뺀다. 칸이 없는 DB에서는 전부 false. */
+ function isBJ(c){ return !!c && c.intake_type==="보정만"; }
  const AMEND_STAGES=["접수완료","개시결정"];
  const INCOME=["","근로소득","사업소득","연금","이중소득","기타"];
  const ASSET_MULTI=["자가","임차보증금","차량","토지","사업용재산","기타"];
@@ -345,14 +351,16 @@
    const _ab=$("#adminBtn");if(_ab)_ab.style.display=(MYROLE==="master")?"":"none";
    const CLI_COLS="id,name,office_id,case_type,stage,amending,assignee,phone,income_type,asset_type,income_note,asset_note,court_deadline,deadline_kind,urgent,pinned,archived,is_public,collect_pct,case_no,created_at";
    const CLI_HOLD=",on_hold,hold_reason";  // 보류(나중으로 미룸) — 취합앱과 같은 칸을 본다
-   const CLI_SEL=CLI_COLS+CLI_HOLD+",rrn_front";   // 앞 7자리(동명이인 구분용). 전체 번호는 여기 없다 — 서버 함수로만 본다.
+   const CLI_BJ=",intake_type";            // 접수 형태(전체/보정만) — 칸이 없는 DB에서도 화면이 뜨도록 폴백을 둔다
+   const CLI_SEL=CLI_COLS+CLI_HOLD+CLI_BJ+",rrn_front";   // 앞 7자리(동명이인 구분용). 전체 번호는 여기 없다 — 서버 함수로만 본다.
    let [offRes,cliRes,progRes,itemRes]=await Promise.all([
      db.from("offices").select("id,name").order("name"),
      chSelectPaged("clients",CLI_SEL),
      db.rpc("my_progress"),
      chSelectPaged("checklist_items","id,client_id,doc_name,status")   // ★1,000줄 한계 — 반드시 페이징(안 그러면 부족서류 목록이 절반만 읽힘)
    ]);
-   if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS+CLI_HOLD);      // rrn_front 칸이 아직 없을 때
+   if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS+CLI_HOLD+CLI_BJ); // rrn_front 칸이 아직 없을 때
+   if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS+CLI_HOLD);      // intake_type 칸이 아직 없을 때
    if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS+",rrn_front");  // 보류 칸(on_hold)이 아직 없을 때 — SQL 실행 전에도 화면이 뜬다
    if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS);   // 둘 다 아직 없는 DB에서도 화면이 비지 않게
    if(cliRes.data) cliRes.data.sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"ko"));
@@ -387,17 +395,20 @@
    const offIds=[...new Set(active.map(c=>c.office_id))];
    const rows=offIds.map(id=>{
      const cs=active.filter(c=>c.office_id===id);
-     const avg=cs.length?Math.round(cs.reduce((s,c)=>s+(PCT[c.id]||0),0)/cs.length):0;
+     const csN=cs.filter(c=>!isBJ(c));   /* 보정만 사건은 평균 취합률에서 뺀다 (2026-08-11) */
+     const avg=csN.length?Math.round(csN.reduce((s,c)=>s+(PCT[c.id]||0),0)/csN.length):0;
      const col=officeColor[id]||{dot:"#9B1B33"};
-     return `<div class="db-orow"><span class="db-dot" style="background:${col.dot}"></span><span class="db-nm">${esc(OFFNAME[id]||"사무소")}</span><span class="db-tr"><i style="width:${avg}%;background:${col.dot}"></i></span><span class="db-pc">${cs.length}건 · ${avg}%</span></div>`;
+     return `<div class="db-orow"><span class="db-dot" style="background:${col.dot}"></span><span class="db-nm">${esc(OFFNAME[id]||"사무소")}</span><span class="db-tr"><i style="width:${avg}%;background:${col.dot}"></i></span><span class="db-pc">${cs.length}건 · ${avg}%${cs.length-csN.length?` <span style="color:#4527A0">(보정 ${cs.length-csN.length})</span>`:""}</span></div>`;
    }).join("");
    el.innerHTML=`<div class="db-h">사무소별 현황</div>`+(rows||`<div class="sd">없음</div>`);
  }
  function dbFilter(v){ viewF=v; document.querySelectorAll(".fchip").forEach(c=>c.classList.toggle("on",c.dataset.v===v)); renderList(); }
  function renderList(){
    const base=VIEWAS?CLIENTS.filter(c=>c.office_id===VIEWAS):CLIENTS; const active=base.filter(c=>!c.archived);
-   const stN={}; STAGES.forEach(s=>stN[s]=active.filter(c=>c.stage===s).length);
-   const received=active.length, inProg=stN["서류취합중"]||0, filed=(stN["접수완료"]||0)+(stN["개시결정"]||0)+(stN["인가결정"]||0);
+   /* ★보정만 넘겨받은 사건은 우리가 서류취합을 하지 않으므로 단계별 집계에서 뺀다 (2026-08-11) */
+   const activeN=active.filter(c=>!isBJ(c));
+   const stN={}; STAGES.forEach(s=>stN[s]=activeN.filter(c=>c.stage===s).length);
+   const received=activeN.length, inProg=stN["서류취합중"]||0, filed=(stN["접수완료"]||0)+(stN["개시결정"]||0)+(stN["인가결정"]||0);
    const maxS=STAGES.reduce((a,b)=>(stN[b]>stN[a]?b:a),STAGES[0]);
    $("#board").innerHTML=
      `<div class="db-kpis"><div class="db-kpi"><div class="v">${received}</div><div class="l">받은 사건</div></div><div class="db-kpi"><div class="v">${inProg}</div><div class="l">취합 중</div></div><div class="db-kpi"><div class="v">${filed}</div><div class="l">접수 완료</div></div></div>`+
@@ -411,6 +422,7 @@
    let arr=CLIENTS.filter(c=> viewF==="archived"? c.archived : !c.archived);
    if(STAGES.includes(viewF)) arr=arr.filter(c=>c.stage===viewF);
    else if(viewF==="amending") arr=arr.filter(c=>c.amending);
+   else if(viewF==="bojeong") arr=arr.filter(isBJ);
    else if(viewF==="urgent") arr=arr.filter(c=>c.urgent);
    if(VIEWAS) arr=arr.filter(c=>c.office_id===VIEWAS);
    if(officeF) arr=arr.filter(c=>c.office_id===officeF);
@@ -432,9 +444,13 @@
      const mlist=MISS[c.id]||[];const dd=dday(c.court_deadline);
      let infoHtml,actBtn;
      if(effRole()==="office"){
-       infoHtml=`<div class="lab">진행 상태</div><div class="val ${p>=100?'ok':''}">${p>=100?'취합 완료':'취합 진행 중'} (${p}%)</div>`;actBtn="";
+       infoHtml=isBJ(c)
+         ? `<div class="lab">진행 상태</div><div class="val">보정 진행 중</div>`
+         : `<div class="lab">진행 상태</div><div class="val ${p>=100?'ok':''}">${p>=100?'취합 완료':'취합 진행 중'} (${p}%)</div>`;actBtn="";
      } else {
-       infoHtml = (p>=100)
+       infoHtml = isBJ(c)
+         ? `<div class="lab">접수 형태</div><div class="val" style="color:#4527A0">보정만 넘겨받은 사건</div>`
+         : (p>=100)
          ? `<div class="lab">취합 상태</div><div class="val ok">취합 완료</div>`
          : (mlist.length>0
            ? `<div class="lab">미수령 ${mlist.length}건</div><div class="val" style="font-size:13.5px;font-weight:600">${mlist.slice(0,3).map(esc).join("<br>")}${mlist.length>3?`<div class="sd" style="margin-top:3px">외 ${mlist.length-3}건</div>`:""}</div>`
@@ -444,14 +460,18 @@
      const marks=(c.pinned?`<span class="mk pin">중요</span>`:"")+(c.urgent?`<span class="mk urgent">급건</span>`:"");
      const ddBadge=(dd&&canEdit())?`<span class="dday ${dd.cls}">${esc(c.deadline_kind||"기한")} ${dd.txt}</span>`:"";
      const amBadge=c.amending?`<span class="amend">보정중</span>`:"";
+     const bjBadge=isBJ(c)?`<span class="bjonly">보정만</span>`:"";
      const holdBadge=c.on_hold?`<span class="mk hold">⏸ 보류</span>`:"";
      const holdLine=(c.on_hold&&(c.hold_reason||"").trim())?`<div class="holdline">⏸ 보류 사유 · ${esc(c.hold_reason)}</div>`:"";
      const card=document.createElement("div");
      card.className="card";card.style.background=col.bg;card.style.border="1px solid "+col.dash;
      card.innerHTML=`<div class="ch"><div><div class="nm">${esc(c.name)} <span class="ctype">${esc(c.case_type||"개인회생")}</span>${c.case_no?`<span style="display:inline-block;margin-left:6px;padding:2px 9px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:11.5px;font-weight:800;border:1px solid #cfd8ef;vertical-align:middle">사건 ${esc(c.case_no)}</span>`:""}</div>`+
        `<div class="of"><span class="ofchip" style="background:#fff;border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span>${c.assignee?" · "+esc(c.assignee):""}${canEdit()?`<label class="sw" style="margin-left:8px;vertical-align:-5px" title="원사무실 공개 여부"><input type="checkbox" ${c.is_public?"checked":""} onclick="event.stopPropagation()" onchange="setFlag('${c.id}','is_public',this.checked)"><span></span></label><span style="font-size:12px;font-weight:700;color:${c.is_public?"#0A7D3C":"#9a948c"};margin-left:5px;vertical-align:middle">${c.is_public?"공개":"비공개"}</span>`:""}</div></div>`+
-       `<div class="chr"><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${holdBadge}${amBadge}${ddBadge}${marks?`<div>${marks}</div>`:""}</div></div>`+
-       `<div class="bodyc"><div class="ring" style="background:conic-gradient(${ringc} calc(${p}*3.6deg), #eceae7 0)"><div class="hole"><b>${p}%</b><small>완료율</small></div></div>`+
+       `<div class="chr"><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${bjBadge}${holdBadge}${amBadge}${ddBadge}${marks?`<div>${marks}</div>`:""}</div></div>`+
+       (isBJ(c)
+        /* 보정만 사건: 서류취합을 안 하므로 0%가 아니라 '보정'으로 표시한다 (2026-08-11) */
+        ? `<div class="bodyc"><div class="ring" style="background:#EDE7F6"><div class="hole"><b style="font-size:15px;color:#4527A0">보정</b><small>취합 없음</small></div></div>`
+        : `<div class="bodyc"><div class="ring" style="background:conic-gradient(${ringc} calc(${p}*3.6deg), #eceae7 0)"><div class="hole"><b>${p}%</b><small>완료율</small></div></div>`)+
        `<div class="info">${infoHtml}</div></div>`+holdLine+actBtn+
        `<button class="btn ghost" onclick="openDetail('${c.id}')">상세 보기</button>`;
      wrap.appendChild(card);
@@ -462,7 +482,7 @@
  function exportXlsx(){
    const arr=CLIENTS.filter(c=>!c.archived).slice().sort((a,b)=>a.name.localeCompare(b.name,"ko"));
    /* 주민번호는 엑셀에 마스킹(앞 7자리)으로만 나간다 — 전체 번호는 파일로 절대 내보내지 않는다 */
-   const rows=arr.map(c=>({"이름":c.name,"원사무소":OFFNAME[c.office_id]||"",사건종류:c.case_type||"",단계:c.stage,보정중:c.amending?"O":"",완료율:(PCT[c.id]||0)+"%",담당자:c.assignee||"",연락처:c.phone||"","주민번호(앞자리)":maskRrn(c.rrn_front),법원기한:c.court_deadline||"",기한종류:c.deadline_kind||""}));
+   const rows=arr.map(c=>({"이름":c.name,"원사무소":OFFNAME[c.office_id]||"",사건종류:c.case_type||"",접수형태:(c.intake_type||"전체"),단계:c.stage,보정중:c.amending?"O":"",완료율:(isBJ(c)?"보정":(PCT[c.id]||0)+"%"),담당자:c.assignee||"",연락처:c.phone||"","주민번호(앞자리)":maskRrn(c.rrn_front),법원기한:c.court_deadline||"",기한종류:c.deadline_kind||""}));
    if(!rows.length){toast("내보낼 의뢰인이 없습니다");return;}
    const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"의뢰인현황");
    XLSX.writeFile(wb,"케이스허브_의뢰인현황.xlsx");toast("엑셀로 내보냈습니다.");
@@ -470,7 +490,7 @@
  function copySummary(){
    const arr=CLIENTS.filter(c=>!c.archived).slice().sort((a,b)=>a.name.localeCompare(b.name,"ko"));
    let t="[케이스허브 현황] "+new Date().toLocaleDateString("ko-KR")+"\n";
-   arr.forEach(c=>{t+=`- ${c.name}(${OFFNAME[c.office_id]||""}) ${c.stage}${c.amending?"/보정중":""} ${PCT[c.id]||0}%\n`;});
+   arr.forEach(c=>{t+=`- ${c.name}(${OFFNAME[c.office_id]||""}) ${c.stage}${isBJ(c)?"/보정만":""}${c.amending?"/보정중":""} ${isBJ(c)?"보정":(PCT[c.id]||0)+"%"}\n`;});
    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(()=>toast("현황 요약을 복사했습니다")).catch(()=>toast("복사 실패"));}
    else toast("복사 불가(브라우저)");
  }
@@ -505,6 +525,7 @@
    let html=`<button class="back" onclick="goList()">목록으로</button>`;
    html+=`<div class="dhead"><div><div class="dn">${esc(c.name)} <span class="ctype">${esc(c.case_type||"개인회생")}</span></div>`+
      `<div class="dmeta"><span class="ofchip" style="background:${col.bg};border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${c.case_no?`<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:12px;font-weight:800;border:1px solid #cfd8ef;margin-left:4px">사건 ${esc(c.case_no)}</span>`:""}`+
+     (isBJ(c)?`<span class="bjonly">보정만 넘겨받은 사건</span>`:"")+
      (c.on_hold?`<span class="mk hold">⏸ 보류중</span>`:"")+
      (c.amending?`<span class="amend">보정중</span>`:"")+
      ((dd&&canEdit())?`<span class="dday ${dd.cls}">${esc(c.deadline_kind||"기한")} ${dd.txt}</span>`:"")+(c.urgent?`<span class="mk urgent">급건</span>`:"")+(c.pinned?`<span class="mk pin">중요</span>`:"")+`</div>`+
