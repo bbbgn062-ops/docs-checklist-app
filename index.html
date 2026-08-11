@@ -1964,7 +1964,7 @@ function itemHtml(c,it,isExtra,bid){
       <button class="chk" onclick="event.stopPropagation();toggleDone('${c.id}','${it.id}')">${s.done&&!s.rejected?CHECK:''}</button>
       <div class="item-name">
         <span class="nm">${esc(it.name)}</span>${s._bj?` <span style="font-size:10.5px;font-weight:800;color:#9B1B33;background:#F7E7EB;border-radius:999px;padding:2px 8px;vertical-align:1px">보정</span>`:""}${fc?` <span style="color:var(--brand);font-size:12px">📎${fc}</span>`:""}${s.memo?` <span style="color:var(--muted);font-size:12px">📝</span>`:""}
-        ${s.rejected?`<div class="item-src" style="color:var(--red);font-weight:700">⚠ 보완필요${s.rejectReason?` — ${esc(s.rejectReason)}`:""}</div>`:(src?`<div class="item-src">${esc(src)}</div>`:"")}
+        ${s.rejected?`<div class="item-src" style="color:var(--red);font-weight:700;white-space:pre-wrap">⚠ 보완필요${s.rejectReason?` — ${esc(s.rejectReason)}`:""}</div>`:(src?`<div class="item-src">${esc(src)}</div>`:"")}
       </div>
       <span class="status-pill" style="color:${pcol};background:${pbg}">${plabel}</span>
       <i class="item-caret">▾</i>
@@ -1995,7 +1995,10 @@ function itemHtml(c,it,isExtra,bid){
         <button class="memo-toggle" onclick="setLink('${c.id}','${it.id}')">${s.link?'🔗 링크':'＋ 링크'}</button>
         <button class="memo-toggle" onclick="toggleMemo('${it.id}')">${s.memo?'📝 메모':'＋ 메모'}</button>
         ${MSG_TEMPLATES[it.id]?`<button class="memo-toggle" onclick="toggleMsgTpl('${it.id}')">📨 메시지</button>`:""}
-        <button class="memo-toggle" style="color:${s.rejected?'var(--red)':'var(--muted)'};font-weight:${s.rejected?'800':'400'}" onclick="toggleReject('${c.id}','${it.id}')">${s.rejected?'⚠ 보완해제':'⚠ 보완'}</button>
+        ${s.rejected
+          ? `<button class="memo-toggle" style="color:var(--red);font-weight:800" onclick="openRejectModal('${c.id}','${it.id}')">✏️ 보완 사유 수정</button>
+             <button class="memo-toggle" style="color:var(--green);font-weight:800" onclick="clearReject('${c.id}','${it.id}')">✅ 보완해제</button>`
+          : `<button class="memo-toggle" style="color:var(--muted)" onclick="openRejectModal('${c.id}','${it.id}')">⚠ 보완</button>`}
         ${isExtra?`<button class="btn-ghost btn-sm" style="font-size:11px;color:var(--red);padding:2px 6px" onclick="removeExtra('${c.id}','${bid}','${it.id}')">삭제</button>`:""}
       </div>
       <div class="memo-box ${s.memo?'':'hidden'}" id="memo-${it.id}">
@@ -4151,6 +4154,48 @@ function unsetHold(id){
   if(currentClientId===id) renderDetail(id); else renderDashboard();
   toast("보류를 풀었습니다 · 진행중 목록으로 돌아왔습니다");
 }
+/* ---------- 보완필요(반려) 사유 쓰기·고치기 ---------- (2026-08-11)
+   왜 창으로 바꿨나: 예전에는 prompt() 한 줄이라 한 번 적으면 고칠 방법이 없었고,
+   고치려면 보완필요를 풀었다가 다시 걸어야 해서 사유가 통째로 날아갔다.
+   이제 여러 줄로 적고, 언제든 다시 열어 고쳐 저장할 수 있다. */
+const REJECT_PRESETS=["최근 3개월분 누락","발급일이 오래됨 (3개월 초과)","일부 페이지 누락","글자가 흐려 알아볼 수 없음","본인 것이 아님 (다른 사람 서류)","주민등록번호 뒷자리가 보임"];
+function openRejectModal(cid,id){
+  const c=findClient(cid); if(!c) return; const s=c.items[id]; if(!s) return;
+  const editing=!!s.rejected;
+  modal(`<h3 style="margin-top:0">⚠ ${editing?"보완 사유 수정":"보완필요로 표시"}</h3>
+    <div class="hint" style="margin:-2px 0 13px"><b>${esc(itemName(id,c))}</b> · 다시 받아야 하는 서류로 표시합니다.</div>
+    <div class="field"><label>보완 사유 (여러 줄 가능 · 최대 300자)</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${REJECT_PRESETS.map(t=>`<button class="btn btn-sm" onclick="rjPreset('${t}')">${t}</button>`).join("")}</div>
+      <textarea id="rj_reason" maxlength="300" placeholder="예) 최근 3개월분 누락&#10;6월분까지만 있어요. 7·8월분 부탁드립니다." style="width:100%;min-height:96px;line-height:1.6;resize:vertical;font-family:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line);border-radius:9px">${esc(s.rejectReason||"")}</textarea>
+      <div class="hint" style="margin-top:6px">요청 메시지에도 그대로 들어갑니다.</div>
+    </div>
+    <div class="modal-actions">
+      ${editing?`<button class="btn" style="color:var(--green);font-weight:700" onclick="closeModal();clearReject('${cid}','${id}')">✅ 보완해제</button>`:""}
+      <button class="btn" onclick="closeModal()">취소</button>
+      <button class="btn btn-primary" onclick="saveReject('${cid}','${id}')">${editing?"사유 저장":"⚠ 보완필요로 표시"}</button></div>`,470);
+  setTimeout(()=>{ const e=document.getElementById("rj_reason"); if(e){ e.focus(); e.selectionStart=e.selectionEnd=e.value.length; } },60);
+}
+function rjPreset(t){ const e=document.getElementById("rj_reason"); if(!e) return; const v=(e.value||"").trim(); e.value=(v?v+"\n":"")+t; e.focus(); }
+function saveReject(cid,id){
+  const c=findClient(cid); if(!c) return; const s=c.items[id]; if(!s) return;
+  const el=document.getElementById("rj_reason"); const reason=(el?el.value:"").trim();
+  if(!reason){ alert("보완 사유를 짧게라도 적어주세요.\n(의뢰인에게 무엇을 다시 받아야 하는지 알려주기 위해서입니다)"); if(el) el.focus(); return; }
+  const was=!!s.rejected;
+  s.rejected=true; s.rejectReason=reason; s.done=false;
+  if(s.mode==="request" && s.reqTag==="received") s.reqTag="requesting";
+  closeModal();
+  touch(`[${c.name}] '${itemName(id,c)}' ${was?"보완 사유 수정":"보완필요 표시"} · ${reason.split("\n")[0]}`);
+  renderDetail(cid); toast(was?"보완 사유를 저장했습니다 ✓":"보완필요로 표시했습니다");
+}
+function clearReject(cid,id){
+  const c=findClient(cid); if(!c) return; const s=c.items[id]; if(!s) return;
+  const old=(s.rejectReason||"").trim();
+  s.rejected=false; s.rejectReason="";
+  /* 푸는 순간 파일이 이미 들어와 있으면 그때 '받음'으로 넘긴다 (해제했는데 미확보로 남지 않게) */
+  if(s.files && s.files.length && !s.done){ s.done=true; s.recvDate=now(); if(s.mode==="request") s.reqTag="received"; }
+  touch(`[${c.name}] '${itemName(id,c)}' 보완필요 해제${old?" (사유였음: "+old.split("\n")[0]+")":""}`);
+  renderDetail(cid); toast("보완필요를 풀었습니다 ✓");
+}
 function bulkRequesting(cid){ const c=findClient(cid);
   if(!confirm("모든 '의뢰인요청' 미수령 서류를 '요청중'으로 표시할까요?")) return;
   let n=0; Object.keys(c.items).forEach(id=>{ const s=c.items[id]; if(s.mode==="request" && !s.done && s.reqTag==="none"){ s.reqTag="requesting"; if(!s.reqDate)s.reqDate=now(); n++; } });
@@ -4185,11 +4230,7 @@ function addTimeline(cid){ const c=findClient(cid); const t=prompt("상담·연�
   touch(`[${c.name}] 상담기록 추가`); renderDetail(cid); }
 function delTimeline(cid,i){ const c=findClient(cid); if(!confirm("이 기록을 삭제할까요?")) return; c.timeline.splice(i,1); touch(`[${c.name}] 상담기록 삭제`); renderDetail(cid); }
 function toggleReject(cid,id){ const c=findClient(cid); const s=c.items[id];
-  if(s.rejected){ s.rejected=false; s.rejectReason="";
-    /* 보완필요를 푸는 순간 파일이 이미 들어와 있으면 그때 '받음'으로 넘긴다 (해제했는데 미확보로 남지 않게) */
-    if(s.files && s.files.length && !s.done){ s.done=true; s.recvDate=now(); if(s.mode==="request") s.reqTag="received"; }
-    touch(`[${c.name}] '${itemName(id,c)}' 보완필요 해제`); toast("보완필요를 풀었습니다 ✓"); }
-  else { const r=prompt("보완(반려) 사유를 입력하세요 (예: 최근 3개월분 누락)",""); s.rejected=true; s.rejectReason=(r||"").trim(); s.done=false; if(s.mode==="request"&&s.reqTag==="received") s.reqTag="requesting"; touch(`[${c.name}] '${itemName(id,c)}' 보완필요 표시`); }
+  if(s.rejected) clearReject(cid,id); else openRejectModal(cid,id);
   renderDetail(cid); }
 function _missingByMode(c){
   const self=[], req=[];
@@ -4237,10 +4278,10 @@ function fallbackCopy(t){ const ta=document.createElement("textarea"); ta.value=
 let _msgCtx=null;
 function reqOpenItems(c){
   const list=[];
-  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{ const s=c.items[it.id];
-    if(s && s.mode==="request" && s.reqTag!=="received" && !s.done) list.push({id:it.id,name:it.name}); })));
-  Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>{ const s=c.items[ex.id];
-    if(s && s.mode==="request" && s.reqTag!=="received" && !s.done) list.push({id:ex.id,name:ex.name}); }));
+  /* ★보완필요인 서류는 '왜 다시 받아야 하는지'(사유)도 같이 담는다 — 메시지에 넣어 준다 (2026-08-11) */
+  const put=(arr,id,name)=>{ const s=c.items[id]; if(s && s.mode==="request" && s.reqTag!=="received" && !s.done) arr.push({id,name,redo:!!s.rejected,reason:(s.rejected?(s.rejectReason||""):"")}); };
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>put(list,it.id,it.name))));
+  Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>put(list,ex.id,ex.name)));
   return list;
 }
 function openRequestMsg(cid){
@@ -4258,10 +4299,9 @@ function openRequestMsg(cid){
 }
 function reqRequestingItems(c){
   const list=[];
-  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{ const s=c.items[it.id];
-    if(s && s.mode==="request" && s.reqTag==="requesting" && !s.done) list.push({id:it.id,name:it.name}); })));
-  Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>{ const s=c.items[ex.id];
-    if(s && s.mode==="request" && s.reqTag==="requesting" && !s.done) list.push({id:ex.id,name:ex.name}); }));
+  const put=(arr,id,name)=>{ const s=c.items[id]; if(s && s.mode==="request" && s.reqTag==="requesting" && !s.done) arr.push({id,name,redo:!!s.rejected,reason:(s.rejected?(s.rejectReason||""):"")}); };
+  TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>put(list,it.id,it.name))));
+  Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>put(list,ex.id,ex.name)));
   return list;
 }
 function openReminder(cid){
@@ -4280,7 +4320,7 @@ function openReminder(cid){
 function renderMsgModal(){
   const isRemind = _msgCtx.kind==="reminder";
   const checks=_msgCtx.list.map(x=>`<label style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:13.5px;cursor:pointer">
-    <input type="checkbox" ${_msgCtx.sel.has(x.id)?"checked":""} onchange="toggleMsgSel('${x.id}')"> ${esc(x.name)}</label>`).join("");
+    <input type="checkbox" ${_msgCtx.sel.has(x.id)?"checked":""} onchange="toggleMsgSel('${x.id}')"> ${esc(x.name)}${x.redo?` <span style="color:var(--red);font-weight:800;font-size:11.5px">⚠ 다시</span>`:""}</label>`).join("");
   modal(`<h3>${isRemind?"⏰ 미수령 리마인더 메시지":"📨 서류 요청 메시지 만들기"}</h3>
     <p class="hint">${isRemind?"아직 못 받은(요청중) 서류만 모았습니다. 정중한 리마인더를 보내세요.":"보낼 서류를 고르고 말투를 선택한 뒤, 복사해서 문자·카톡에 붙여넣으세요."}</p>
     <div class="field"><label>포함할 서류 (<span id="msgCount">${_msgCtx.sel.size}</span>개)</label>
@@ -4313,6 +4353,10 @@ function renderMsgModal(){
 function toggleMsgSel(id){ if(_msgCtx.sel.has(id)) _msgCtx.sel.delete(id); else _msgCtx.sel.add(id);
   const cnt=$("#msgCount"); if(cnt) cnt.textContent=_msgCtx.sel.size; regenMsg(); renderMsgResources(); }
 function cleanMsgName(n){ return (n||"").replace(/채무자\s*/g,"").trim(); } /* 요청 메시지에는 '채무자' 단어 미표기 */
+/* 보완 사유가 여러 줄이면 줄마다 같은 들여쓰기를 붙여 메시지 모양이 흐트러지지 않게 한다 */
+function msgReasonLines(reason,prefix){
+  return String(reason||"").split("\n").map(l=>l.trim()).filter(Boolean).map(l=>prefix+l+"\n").join("");
+}
 function buildRequestText(){
   const c=findClient(_msgCtx.cid);
   const firm=(c.firm||cfg.firmName||"법무법인").trim();
@@ -4326,15 +4370,15 @@ function buildRequestText(){
     t+= remind
       ? `[${firm}] 안녕하세요, ${name}님.\n지난번에 요청드린 아래 서류가 아직 도착하지 않아 다시 안내드립니다. 번거로우시겠지만 준비되는 대로 보내주시면 감사하겠습니다.\n\n`
       : `[${firm}] 안녕하세요, ${name}님.\n개인회생 사건 진행을 위해 아래 서류가 필요합니다. 준비되는 대로 보내주시면 감사하겠습니다.\n\n`;
-    items.forEach((x,i)=>{ t+=`${i+1}. ${cleanMsgName(x.name)}\n`; if(how && msgWhere(x.id,c)) t+=`   ↳ ${msgWhere(x.id,c)}\n`; });
+    items.forEach((x,i)=>{ t+=`${i+1}. ${cleanMsgName(x.name)}${x.redo?" (다시 보내주세요)":""}\n`; if(x.redo&&x.reason) t+=msgReasonLines(x.reason,"   ※ "); if(how && msgWhere(x.id,c)) t+=`   ↳ ${msgWhere(x.id,c)}\n`; });
     t+=`\n사진 또는 파일(PDF)로 보내주시면 됩니다. 문의사항은 편하게 연락 주세요.\n감사합니다.`;
   } else if(_msgCtx.tone==="simple"){
     t+= remind ? `${name}님, 지난번 요청드린 서류 중 아직 못 받은 항목입니다.\n\n` : `${name}님, 개인회생 진행에 필요한 서류입니다.\n\n`;
-    items.forEach(x=>{ t+=`- ${cleanMsgName(x.name)}`; if(how && msgWhere(x.id,c)) t+=` (${msgWhere(x.id,c)})`; t+=`\n`; });
+    items.forEach(x=>{ t+=`- ${cleanMsgName(x.name)}${x.redo?" (다시)":""}`; if(how && msgWhere(x.id,c)) t+=` (${msgWhere(x.id,c)})`; t+=`\n`; if(x.redo&&x.reason) t+=msgReasonLines(x.reason,"  ※ "); });
     t+=`\n준비되는 대로 보내주세요. 감사합니다. - ${firm}`;
   } else { // kakao
     t+= remind ? `${name}님 안녕하세요 😊\n지난번에 부탁드린 서류 중 아직 안 온 것들이에요! 확인 부탁드려요 🙏\n\n` : `${name}님 안녕하세요 😊\n개인회생 준비로 아래 서류가 필요해요!\n\n`;
-    items.forEach(x=>{ t+=`✅ ${cleanMsgName(x.name)}`; if(how && msgWhere(x.id,c)) t+=`\n   → ${msgWhere(x.id,c)}`; t+=`\n`; });
+    items.forEach(x=>{ t+=`✅ ${cleanMsgName(x.name)}${x.redo?" (다시 부탁드려요)":""}`; if(how && msgWhere(x.id,c)) t+=`\n   → ${msgWhere(x.id,c)}`; t+=`\n`; if(x.redo&&x.reason) t+=msgReasonLines(x.reason,"   ※ "); });
     t+=`\n준비되면 사진이나 파일로 보내주시면 됩니다 🙏\n- ${firm}`;
   }
   if(items.some(x=>RESOURCES[x.id])) t+=`\n\n※ 작성 양식(채무증대경위서·무상거주 사실확인서 등)을 함께 보내드립니다.`;
