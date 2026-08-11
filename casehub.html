@@ -61,6 +61,13 @@
  .pill{font-size:12px;font-weight:800;padding:5px 11px;border-radius:999px;background:#f1efed;color:#57534e;white-space:nowrap}
  .pill.서류취합중{background:#FBEEDD;color:var(--amber)} .pill.취합완료{background:#E9EDFB;color:var(--blue)}
  .pill.접수완료,.pill.개시결정,.pill.인가결정{background:#DDF3EA;color:var(--green)}
+ /* 보정 사건 전용 단계 (2026-08-11) */
+ .pill.보정중{background:#EDE7F6;color:#4527A0} .pill.기각{background:#F1F2F5;color:#5B6270}
+ .bigtabs{display:flex;border-bottom:2px solid var(--line);margin:0 0 14px}
+ .bt{padding:11px 20px;font-weight:800;font-size:15px;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;display:flex;align-items:center;gap:7px;user-select:none}
+ .bt .cnt{font-size:12px;background:#F1F2F5;color:var(--muted);padding:1px 8px;border-radius:999px;font-weight:800}
+ .bt.on{color:var(--brand);border-bottom-color:var(--brand)} .bt.on .cnt{background:#FDECEF;color:var(--brand)}
+ .bt.bj.on{color:#4527A0;border-bottom-color:#4527A0} .bt.bj.on .cnt{background:#EDE7F6;color:#4527A0}
  .amend{font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:999px;background:#FCE4E4;color:var(--red);white-space:nowrap}
  .dday{font-size:12px;font-weight:800;padding:4px 10px;border-radius:999px;white-space:nowrap}
  .dday.soon{background:#FCE4E4;color:var(--red)}.dday.warn{background:#FBEEDD;color:var(--amber)}.dday.norm{background:#eef0f2;color:#57534e}
@@ -214,22 +221,12 @@
    <div class="wrap" id="listWrap">
      <h1 class="htitle">서류취합 작업</h1>
      <div id="previewBar"></div>
+     <div class="bigtabs" id="bigtabs"></div>
      <div id="board"></div>
      <div id="dash"></div>
      <div class="toolbar" id="toolbar"></div>
      <div class="searchbar"><input class="searchin" id="searchIn" placeholder="의뢰인 이름 · 담당자 · 사무소 검색" oninput="onSearch(this.value)"></div>
-     <div class="filters" id="filters">
-       <button class="fchip on" data-v="all">전체</button>
-       <button class="fchip" data-v="서류취합중">서류취합중</button>
-       <button class="fchip" data-v="취합완료">취합완료</button>
-       <button class="fchip" data-v="접수완료">접수완료</button>
-       <button class="fchip" data-v="개시결정">개시결정</button>
-       <button class="fchip" data-v="인가결정">인가결정</button>
-       <button class="fchip" data-v="amending">보정중</button>
-       <button class="fchip" data-v="bojeong">보정만</button>
-       <button class="fchip" data-v="urgent">급건</button>
-       <button class="fchip" data-v="archived">보관함</button>
-     </div>
+     <div class="filters" id="filters"></div>
      <div class="grid" id="cards"></div>
      <div class="empty hidden" id="emptyMsg">표시할 의뢰인이 없습니다.</div>
    </div>
@@ -264,6 +261,12 @@
  const $=(s)=>document.querySelector(s);
  const ROLE_KO={master:"관리자",staff:"직원",office:"원사무실"};
  const STAGES=["서류취합중","취합완료","접수완료","개시결정","인가결정"];
+ /* 보정만 넘겨받은 사건 전용 단계 (2026-08-11 혜림 확정)
+    — 우리가 접수한 사건이 아니므로 서류취합중·취합완료·접수완료를 쓰지 않는다. */
+ const BJ_STAGES=["보정중","개시결정","인가결정","기각"];
+ let MODE="all";   /* "all" = 전체 사건 탭 / "bj" = 보정 사건 탭 */
+ function curStages(){ return MODE==="bj" ? BJ_STAGES : STAGES; }
+ function stagesFor(c){ return isBJ(c) ? BJ_STAGES : STAGES; }
  /* 보정만 넘겨받은 사건인가 (2026-08-11)
     — 서류취합을 우리가 하지 않는 사건이라 취합률·단계별 집계에서 뺀다. 칸이 없는 DB에서는 전부 false. */
  function isBJ(c){ return !!c && c.intake_type==="보정만"; }
@@ -368,10 +371,15 @@
    (offRes.data||[]).forEach((o,i)=>{ const ours=(o.type==="ours")||((o.name||"").includes("이준")); officeColor[o.id]= ours ? {bg:"#FDECEF",dash:"#f0c9d2",dot:"#9B1B33"} : PALETTE[i%PALETTE.length]; OFFNAME[o.id]=o.name;});
    try{if(!VIEWAS&&!sessionStorage.getItem("acc_logged")){sessionStorage.setItem("acc_logged","1");db.from("access_log").insert({user_name:MYNAME||"직원",role:MYROLE,office_name:OFFNAME[MYOFFICE]||null}).then(()=>{});}}catch(e){}
    PCT={};(progRes.data||[]).forEach(r=>PCT[r.client_id]=r.pct); (cliRes.data||[]).forEach(c=>{ if(c.collect_pct!=null) PCT[c.id]=c.collect_pct; });
+   /* ★보정만 사건은 취합률 자체를 쓰지 않는다. 화면 어디에서도 %가 새지 않도록 값을 지운다 (2026-08-11) */
+   (cliRes.data||[]).forEach(c=>{ if(c.intake_type==="보정만") delete PCT[c.id]; });
    MISS={};
+   /* 보정만 사건은 우리가 받을 서류가 없으므로 부족서류 목록을 만들지 않는다 (2026-08-11) */
+   const _bjIds=new Set((cliRes.data||[]).filter(c=>c.intake_type==="보정만").map(c=>c.id));
    /* ★부족 서류 목록에 '보완필요'도 포함한다. 파일이 왔지만 부족한 서류(예: 사업자가 2곳인데 사업자등록증 1장만 옴)는
       아직 받은 것이 아니므로 원사무실에도 부족 서류로 보여야 한다 — 2026-07-13 추가 */
    (itemRes.data||[]).forEach(it=>{
+     if(_bjIds.has(it.client_id)) return;   /* 보정만 사건은 부족서류 목록을 만들지 않는다 */
      if(it.status==="미요청"||it.status==="요청중"){ (MISS[it.client_id]=MISS[it.client_id]||[]).push(it.doc_name); }
      else if(it.status==="보완필요"){ (MISS[it.client_id]=MISS[it.client_id]||[]).push(it.doc_name+" (보완필요)"); }
    });
@@ -402,27 +410,58 @@
    }).join("");
    el.innerHTML=`<div class="db-h">사무소별 현황</div>`+(rows||`<div class="sd">없음</div>`);
  }
+ function setMode(m){ if(MODE===m) return; MODE=m; viewF="all"; searchQ=""; const si=$("#searchIn"); if(si) si.value=""; renderList(); window.scrollTo({top:0,behavior:"smooth"}); }
+ function renderTabs(){
+   const b0=VIEWAS?CLIENTS.filter(c=>c.office_id===VIEWAS):CLIENTS;
+   const nAll=b0.filter(c=>!c.archived&&!isBJ(c)).length, nBJ=b0.filter(c=>!c.archived&&isBJ(c)).length;
+   const t=$("#bigtabs"); if(!t) return;
+   t.innerHTML='<div class="bt '+(MODE==="all"?"on":"")+'" onclick="setMode(\'all\')">전체 사건 <span class="cnt">'+nAll+'</span></div>'
+             +'<div class="bt bj '+(MODE==="bj"?"on":"")+'" onclick="setMode(\'bj\')">보정 사건 <span class="cnt">'+nBJ+'</span></div>';
+ }
+ /* 필터칩은 탭에 따라 다르게 그린다 (2026-08-11) */
+ function renderChips(stN){
+   const items=[["all","전체"]].concat(curStages().map(x=>[x,x]));
+   if(MODE==="all") items.push(["amending","보정중"]);
+   items.push(["urgent","급건"],["archived","보관함"]);
+   const f=$("#filters"); if(!f) return;
+   f.innerHTML=items.map(function(it){
+     const v=it[0], t=it[1], n=(stN&&stN[v]!=null)?(" "+stN[v]):"";
+     return '<button class="fchip '+(viewF===v?"on":"")+'" data-v="'+v+'">'+esc(t)+n+'</button>';
+   }).join("");
+ }
  function dbFilter(v){ viewF=v; document.querySelectorAll(".fchip").forEach(c=>c.classList.toggle("on",c.dataset.v===v)); renderList(); }
  function renderList(){
-   const base=VIEWAS?CLIENTS.filter(c=>c.office_id===VIEWAS):CLIENTS; const active=base.filter(c=>!c.archived);
-   /* ★보정만 넘겨받은 사건은 우리가 서류취합을 하지 않으므로 단계별 집계에서 뺀다 (2026-08-11) */
-   const activeN=active.filter(c=>!isBJ(c));
-   const stN={}; STAGES.forEach(s=>stN[s]=activeN.filter(c=>c.stage===s).length);
-   const received=activeN.length, inProg=stN["서류취합중"]||0, filed=(stN["접수완료"]||0)+(stN["개시결정"]||0)+(stN["인가결정"]||0);
-   const maxS=STAGES.reduce((a,b)=>(stN[b]>stN[a]?b:a),STAGES[0]);
-   $("#board").innerHTML=
-     `<div class="db-kpis"><div class="db-kpi"><div class="v">${received}</div><div class="l">받은 사건</div></div><div class="db-kpi"><div class="v">${inProg}</div><div class="l">취합 중</div></div><div class="db-kpi"><div class="v">${filed}</div><div class="l">접수 완료</div></div></div>`+
-     `<div class="db-h">단계별 사건</div><div class="db-pipe">`+STAGES.map(s=>`<div class="db-st ${(s===maxS&&stN[s]>0)?'hot':''}" onclick="dbFilter('${s}')"><div class="n">${stN[s]}</div><div class="x">${esc(s)}</div></div>`).join("")+`</div>`;
+   renderTabs();
+   const baseAll=VIEWAS?CLIENTS.filter(c=>c.office_id===VIEWAS):CLIENTS;
+   /* ★탭으로 먼저 가른다. 전체 사건 탭에는 보정 사건이 하나도 섞이지 않는다 (2026-08-11) */
+   const base=baseAll.filter(c=> MODE==="bj" ? isBJ(c) : !isBJ(c));
+   const active=base.filter(c=>!c.archived);
+   const ST=curStages();
+   const stN={all:active.length}; ST.forEach(x=>stN[x]=active.filter(c=>c.stage===x).length);
+   stN.amending=active.filter(c=>c.amending).length; stN.urgent=active.filter(c=>c.urgent).length;
+   const maxS=ST.reduce((a,b)=>(stN[b]>stN[a]?b:a),ST[0]);
+   if(MODE==="bj"){
+     const dueSoon=active.filter(c=>{const d=dday(c.court_deadline);return !!d&&d.cls!=="ok";}).length;
+     $("#board").innerHTML=
+       `<div class="db-kpis"><div class="db-kpi"><div class="v">${active.length}</div><div class="l">보정 사건</div></div><div class="db-kpi"><div class="v">${stN["보정중"]||0}</div><div class="l">보정 중</div></div><div class="db-kpi"><div class="v">${dueSoon}</div><div class="l">기한 임박</div></div></div>`+
+       `<div class="db-h">단계별 사건</div><div class="db-pipe">`+ST.map(x=>`<div class="db-st ${(x===maxS&&stN[x]>0)?'hot':''}" onclick="dbFilter('${x}')"><div class="n">${stN[x]}</div><div class="x">${esc(x)}</div></div>`).join("")+`</div>`;
+   } else {
+     const inProg=stN["서류취합중"]||0, filed=(stN["접수완료"]||0)+(stN["개시결정"]||0)+(stN["인가결정"]||0);
+     $("#board").innerHTML=
+       `<div class="db-kpis"><div class="db-kpi"><div class="v">${active.length}</div><div class="l">받은 사건</div></div><div class="db-kpi"><div class="v">${inProg}</div><div class="l">취합 중</div></div><div class="db-kpi"><div class="v">${filed}</div><div class="l">접수 완료</div></div></div>`+
+       `<div class="db-h">단계별 사건</div><div class="db-pipe">`+ST.map(x=>`<div class="db-st ${(x===maxS&&stN[x]>0)?'hot':''}" onclick="dbFilter('${x}')"><div class="n">${stN[x]}</div><div class="x">${esc(x)}</div></div>`).join("")+`</div>`;
+   }
+   renderChips(stN);
    renderDash(active);
    const offIds=[...new Set(CLIENTS.map(c=>c.office_id))];
    const offOpts=offIds.map(id=>`<option value="${id}" ${officeF===id?"selected":""}>${esc(OFFNAME[id]||"")}</option>`).join("");
    const sortSel=`<select class="sel" onchange="setSort(this.value)" title="정렬">`+[["smart","기본 정렬"],["new","신규 등록순"],["pctHigh","취합률 높은순"],["pctLow","취합률 낮은순"],["urgent","급건순"]].map(o=>`<option value="${o[0]}" ${SORTMODE===o[0]?"selected":""}>${o[1]}</option>`).join("")+`</select>`;
    $("#toolbar").innerHTML = (canEdit()
      ? `<button class="tbtn" onclick="openNewClient()" style="background:var(--primary);color:#fff;border-color:var(--primary)">+ 새 의뢰인</button><select class="sel" onchange="onOffice(this.value)"><option value="">전체 원사무실</option>${offOpts}</select><button class="tbtn" onclick="exportXlsx()">엑셀 내보내기</button><button class="tbtn" onclick="copySummary()">현황 요약 복사</button>` : "")+sortSel;
-   let arr=CLIENTS.filter(c=> viewF==="archived"? c.archived : !c.archived);
-   if(STAGES.includes(viewF)) arr=arr.filter(c=>c.stage===viewF);
+   let arr=baseAll.filter(c=> MODE==="bj" ? isBJ(c) : !isBJ(c))
+                  .filter(c=> viewF==="archived"? c.archived : !c.archived);
+   if(ST.includes(viewF)) arr=arr.filter(c=>c.stage===viewF);
    else if(viewF==="amending") arr=arr.filter(c=>c.amending);
-   else if(viewF==="bojeong") arr=arr.filter(isBJ);
    else if(viewF==="urgent") arr=arr.filter(c=>c.urgent);
    if(VIEWAS) arr=arr.filter(c=>c.office_id===VIEWAS);
    if(officeF) arr=arr.filter(c=>c.office_id===officeF);
@@ -455,7 +494,8 @@
          : (mlist.length>0
            ? `<div class="lab">미수령 ${mlist.length}건</div><div class="val" style="font-size:13.5px;font-weight:600">${mlist.slice(0,3).map(esc).join("<br>")}${mlist.length>3?`<div class="sd" style="margin-top:3px">외 ${mlist.length-3}건</div>`:""}</div>`
            : `<div class="lab">취합 상태</div><div class="val">취합 진행 중 (${p}%)</div>`);
-       actBtn = (c.stage!=="인가결정")?`<button class="btn go" onclick="nextStage('${c.id}','${c.stage}')">다음 단계로</button>`:"";
+       const _ls=stagesFor(c);
+       actBtn = (c.stage!==_ls[_ls.length-1])?`<button class="btn go" onclick="nextStage('${c.id}','${c.stage}')">다음 단계로</button>`:"";
      }
      const marks=(c.pinned?`<span class="mk pin">중요</span>`:"")+(c.urgent?`<span class="mk urgent">급건</span>`:"");
      const ddBadge=(dd&&canEdit())?`<span class="dday ${dd.cls}">${esc(c.deadline_kind||"기한")} ${dd.txt}</span>`:"";
@@ -496,7 +536,7 @@
  }
 
  async function logAct(cid,action){ try{ await db.from("activity_log").insert({client_id:cid,actor:MYNAME||"직원",action}); }catch(e){} }
- async function nextStage(cid,cur){const i=STAGES.indexOf(cur);if(i<0||i>=STAGES.length-1){toast("이미 마지막 단계입니다.");return;}const next=STAGES[i+1];const {error}=await db.from("clients").update({stage:next}).eq("id",cid);if(error){toast("권한이 없습니다.");return;}logAct(cid,`단계를 '${next}'로 변경`);toast(`단계를 '${next}'로 변경했습니다.`);load();}
+ async function nextStage(cid,cur){const _c=CLIENTS.find(x=>x.id===cid);const LS=stagesFor(_c);const i=LS.indexOf(cur);if(i<0||i>=LS.length-1){toast("이미 마지막 단계입니다.");return;}const next=LS[i+1];const {error}=await db.from("clients").update({stage:next}).eq("id",cid);if(error){toast("권한이 없습니다.");return;}logAct(cid,`단계를 '${next}'로 변경`);toast(`단계를 '${next}'로 변경했습니다.`);load();}
 
  /* ★모바일 뒤로가기 대응 — 상세를 열 때 브라우저 기록에 발자국을 남긴다.
     안 그러면 한 페이지짜리 앱이라 뒤로가기가 목록이 아니라 탭 종료로 간다. */
@@ -532,9 +572,12 @@
      (canEdit()?`<div class="dflags"><span class="chk"><label class="sw"><input type="checkbox" ${c.urgent?"checked":""} onchange="setFlag('${cid}','urgent',this.checked)"><span></span></label> 급건</span><span class="chk"><label class="sw"><input type="checkbox" ${c.pinned?"checked":""} onchange="setFlag('${cid}','pinned',this.checked)"><span></span></label> 중요 고정</span><span class="chk"><label class="sw"><input type="checkbox" ${c.archived?"checked":""} onchange="setFlag('${cid}','archived',this.checked)"><span></span></label> 보관</span><span class="chk"><label class="sw"><input type="checkbox" ${c.on_hold?"checked":""} onchange="onHoldToggle('${cid}',this.checked)"><span></span></label> ⏸ 보류</span>${canEdit()?pubSwitch(c):""}</div>`:"")+
      ((c.on_hold&&(c.hold_reason||"").trim())?`<div class="holdline" style="max-width:640px">⏸ 보류 사유 · ${esc(c.hold_reason)}${canEdit()?` <button onclick="openHoldBox('${cid}')" style="border:none;background:none;color:#7a6100;font-weight:800;cursor:pointer;text-decoration:underline;font-size:12px">사유 수정</button>`:""}</div>`:"")+`</div>`+
      `<div class="dring">`+
-       (canEdit()?`<div class="dctl"><span class="ctllbl">진행 단계</span><select class="sel" onchange="setStage('${cid}',this.value)">`+STAGES.map(s=>`<option ${s===c.stage?"selected":""}>${s}</option>`).join("")+`</select></div>`:"")+
-       ((canEdit()&&AMEND_STAGES.includes(c.stage))?`<div class="dctl"><span class="ctllbl">보정중</span><label class="sw amend"><input type="checkbox" ${c.amending?"checked":""} onchange="setAmending('${cid}',this.checked)"><span></span></label></div>`:"")+
-       `<div class="ring" style="background:conic-gradient(${ringc} calc(${pct}*3.6deg), #eceae7 0)"><div class="hole"><b>${pct}%</b><small>완료율</small></div></div></div></div>`;
+       (canEdit()?`<div class="dctl"><span class="ctllbl">진행 단계</span><select class="sel" onchange="setStage('${cid}',this.value)">`+stagesFor(c).map(s=>`<option ${s===c.stage?"selected":""}>${esc(s)}</option>`).join("")+`</select></div>`:"")+
+       ((canEdit()&&!isBJ(c)&&AMEND_STAGES.includes(c.stage))?`<div class="dctl"><span class="ctllbl">보정중</span><label class="sw amend"><input type="checkbox" ${c.amending?"checked":""} onchange="setAmending('${cid}',this.checked)"><span></span></label></div>`:"")+
+       (isBJ(c)
+         /* 보정만 사건: 서류취합을 하지 않으므로 완료율 원을 아예 안 그린다 (2026-08-11) */
+         ? `<div class="ring" style="background:#EDE7F6"><div class="hole"><b style="font-size:14px;color:#4527A0">보정</b><small>취합 없음</small></div></div></div></div>`
+         : `<div class="ring" style="background:conic-gradient(${ringc} calc(${pct}*3.6deg), #eceae7 0)"><div class="hole"><b>${pct}%</b><small>완료율</small></div></div></div></div>`);
 
    // 사건번호 (모든 역할 — 원사무실도 입력 가능; 저장은 set_case_no 안전함수)
    html+=`<div class="section"><h3>사건번호</h3>`

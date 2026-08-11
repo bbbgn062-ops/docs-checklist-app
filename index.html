@@ -1677,8 +1677,11 @@ function renderDetail(id){
       </div>
       <div class="meta" style="margin-top:7px">${(c.incomeType&&c.incomeType!=="미정")?esc(c.incomeType)+" · ":""}${(c.housing&&c.housing!=="미정")?esc(c.housing)+" · ":""}${(c.assets||[]).map(esc).join(" · ")}${(c.assets||[]).length?" · ":""}${c.assignee?("담당 "+esc(c.assignee)+" · "):""}${c.caseNo?(esc(c.caseNo)+" · "):""}${c.phone?(`<a href="tel:${esc(c.phone)}" style="color:var(--brand);font-weight:700;text-decoration:none">☎ ${esc(c.phone)}</a> · `):""}${c.rrnFront?(`🪪 <span id="rrnview_${c.id}">${esc(maskRrn(c.rrnFront))}</span> <button id="rrnbtn_${c.id}" onclick="toggleRrnView('${c.id}')" style="font-size:11.5px;color:var(--muted);font-weight:600;background:none;border:1px solid var(--line);border-radius:6px;padding:1px 6px;cursor:pointer">보기</button> · `):""}수정 ${fmt(c.updatedAt)}</div>
       <div style="display:flex;align-items:center;gap:11px;margin-top:14px">
-        <div class="bar" style="flex:1;height:6px"><i style="width:${p.pct}%;background:${p.rejected>0?'linear-gradient(90deg,#f87171,#dc2626)':(p.pct===100?'#059669':'linear-gradient(90deg,#e14b6f,#9B1B33)')}"></i></div>
-        <span style="font-size:13px;color:var(--muted);white-space:nowrap">${p.done}/${p.total} · <b style="color:${p.pct===100?'var(--green)':'var(--ink)'};font-weight:600">${p.pct}%</b></span>
+        ${isBJOnly(c)
+          /* 보정만 사건: 상세에서도 취합 진행바·%를 보여주지 않는다 (2026-08-11) */
+          ? `<div style="flex:1;padding:7px 11px;border-radius:8px;background:#EDE7F6;color:#4527A0;font-size:12.5px;font-weight:700">보정만 넘겨받은 사건 · 서류취합 없음</div>`
+          : `<div class="bar" style="flex:1;height:6px"><i style="width:${p.pct}%;background:${p.rejected>0?'linear-gradient(90deg,#f87171,#dc2626)':(p.pct===100?'#059669':'linear-gradient(90deg,#e14b6f,#9B1B33)')}"></i></div>
+        <span style="font-size:13px;color:var(--muted);white-space:nowrap">${p.done}/${p.total} · <b style="color:${p.pct===100?'var(--green)':'var(--ink)'};font-weight:600">${p.pct}%</b></span>`}
         ${dd!==null?`<span class="chip" style="background:${dd<0?'var(--red-soft)':'var(--amber-soft)'};color:${dd<0?'var(--red)':'var(--amber)'};font-weight:600;white-space:nowrap">${dd<0?`마감 ${-dd}일`:dd===0?"D-DAY":"D-"+dd}</span>`:""}
       </div>
       ${primaryBtn}
@@ -4129,7 +4132,7 @@ function exportExcel(firm){
   if(firm) list=list.filter(c=>firmShort(c.firm)===firmShort(firm));
   if(list.length===0){ toast("내보낼 의뢰인이 없습니다"); return; }
   const rows=list.map(c=>{ const p=progress(c); const d=dDay(c); const mm=_missingByMode(c);
-    return {이름:c.name||"",사무소:firmShort(c.firm),단계:clientStage(c),완료율:p.pct+"%","미확보(회사 직접발급)":mm.self.join(", "),"미확보(의뢰인 발급)":mm.req.join(", "),확보:p.done,전체:p.total,요청중:p.requesting,미요청:p.notReq,보완필요:p.rejected,사건종류:c.caseType||"개인회생",소득유형:c.incomeType||"미정",담당자:c.assignee||"",마감구분:c.deadlineLabel||"",마감일:c.deadline?fmtD(c.deadline):"",DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),사건번호:c.caseNo||"",연락처:c.phone||"","주민번호(앞자리)":maskRrn(c.rrnFront),메모:(c.memo||"").replace(/[\r\n]+/g," ")}; });
+    return {이름:c.name||"",사무소:firmShort(c.firm),단계:clientStage(c),완료율:(isBJOnly(c)?"보정":p.pct+"%"),"미확보(회사 직접발급)":mm.self.join(", "),"미확보(의뢰인 발급)":mm.req.join(", "),확보:p.done,전체:p.total,요청중:p.requesting,미요청:p.notReq,보완필요:p.rejected,사건종류:c.caseType||"개인회생",소득유형:c.incomeType||"미정",담당자:c.assignee||"",마감구분:c.deadlineLabel||"",마감일:c.deadline?fmtD(c.deadline):"",DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),사건번호:c.caseNo||"",연락처:c.phone||"","주민번호(앞자리)":maskRrn(c.rrnFront),메모:(c.memo||"").replace(/[\r\n]+/g," ")}; });
   const cols=Object.keys(rows[0]);
   let table=`<table border="1"><tr>${cols.map(h=>`<th>${h}</th>`).join("")}</tr>`;
   rows.forEach(r=>{ table+=`<tr>${cols.map(h=>`<td>${esc(String(r[h]))}</td>`).join("")}</tr>`; });
@@ -4385,7 +4388,7 @@ function copySummary(cid){
   Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(push));
   let t=`[${c.name}] 개인회생 서류 진행상황 (${fmtD(now())})\n`;
   t+=`사건: ${c.caseType||"개인회생"}${c.caseNo?(" "+c.caseNo):""}\n`;
-  t+=`확보 ${p.done}/${p.total} (${p.pct}%)\n\n`;
+  t+=isBJOnly(c)?`보정만 넘겨받은 사건 · 서류취합 없음\n\n`:`확보 ${p.done}/${p.total} (${p.pct}%)\n\n`;
   if(buckets.reqing.length) t+=`■ 요청중(회신 대기): ${buckets.reqing.join(", ")}\n`;
   if(buckets.notreq.length) t+=`■ 미요청(요청 필요): ${buckets.notreq.join(", ")}\n`;
   if(buckets.self.length) t+=`■ 직접발급 예정: ${buckets.self.join(", ")}\n`;
@@ -4409,7 +4412,7 @@ function printChecklist(cid){
   w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${esc(c.name)} 서류 체크리스트</title>
    <style>body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;padding:24px;color:#1f2540}h1{font-size:20px;margin:0 0 4px}.sub{color:#555;font-size:13px;margin-bottom:6px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}td,th{border:1px solid #c5c9d6;padding:6px 9px;vertical-align:top;text-align:left}tr.bh td{background:#3b5bdb;color:#fff;font-weight:800}tr.gh td{background:#eef0f6;font-weight:700;color:#2f49bf}th{background:#f0f2f8}@media print{.noprint{display:none}}</style></head>
    <body><h1>${esc(c.name)} — 개인회생 서류 체크리스트</h1>
-   <div class="sub">${esc(c.caseType||"개인회생")}${c.caseNo?(" · "+esc(c.caseNo)):""}${(c.incomeType&&c.incomeType!=="미정")?(" · "+esc(c.incomeType)):""} · 확보 ${p.done}/${p.total} (${p.pct}%) · 출력일 ${fmtD(now())}</div>
+   <div class="sub">${esc(c.caseType||"개인회생")}${c.caseNo?(" · "+esc(c.caseNo)):""}${(c.incomeType&&c.incomeType!=="미정")?(" · "+esc(c.incomeType)):""}${isBJOnly(c)?" · 보정만 넘겨받은 사건":" · 확보 "+p.done+"/"+p.total+" "}(${p.pct}%) · 출력일 ${fmtD(now())}</div>
    ${c.memo?`<div class="sub">메모: ${esc(c.memo)}</div>`:""}
    <button class="noprint" onclick="window.print()" style="margin:10px 0;padding:9px 16px;font-size:14px;font-weight:700;border:1px solid #3b5bdb;background:#3b5bdb;color:#fff;border-radius:8px;cursor:pointer">🖨️ 인쇄 / PDF로 저장</button>
    <table><thead><tr><th style="width:45%">서류</th><th style="width:25%">상태</th><th>메모</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
@@ -5220,7 +5223,9 @@ async function sbSaveFileOrder(cid,id){
 }
 
 /* 단계(stage) 되돌림: 케이스허브 → 서류취합 화면 단계 */
-const SB_STAGE_BACK={"서류취합중":"서류수집","취합완료":"검토","접수완료":"법원접수","개시결정":"개시결정","인가결정":"완료",
+/* ★보정 사건 전용 단계(보정중·기각)는 취합앱에 없는 이름이다.
+   매핑을 안 해 두면 "서류수집"으로 떨어져 화면이 엉뚱하게 보인다. 화면 표시용으로만 쓰고 서버에는 안 쓴다. */
+const SB_STAGE_BACK={"서류취합중":"서류수집","취합완료":"검토","접수완료":"법원접수","개시결정":"개시결정","인가결정":"완료","보정중":"법원접수","기각":"법원접수",
   "서류취합":"서류수집","작성":"검토","접수":"법원접수","인가":"완료"};
 /* 묶음(bundle) 제목 → 화면 블록 id (매칭 안 된 서류를 넣을 곳) */
 const SB_BUNDLE_BID={"기본서류":"b1","채권자목록":"b2","재산":"b3","수입지출":"b4","기타":"b5","통장거래내역":"b6","경위서":"b7"};
@@ -5379,7 +5384,7 @@ async function pullFromSupabase(silent){
       for(const c of clients){
         if(!isUuid(c.id)) continue;
         /* ①취합률(collect_pct) 한 칸 */
-        if(SB_HAS_PCT){
+        if(SB_HAS_PCT && !isBJOnly(c)){   /* 보정만 사건은 취합률 자가치유 대상에서 뺀다 (2026-08-11) */
           try{
             const want=progress(c).pct;
             if(c._srvPct!==want){
@@ -5474,11 +5479,16 @@ function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
   urgent:!!c.urgent, pinned:!!c.pinned, archived:!!c.archived, amending:!!c.amending, case_no:c.caseNo||null,
   is_public:!!c.isPublic, app_json: sbAppJson(c) };
-  if(SB_HAS_PCT){ try{ __p.collect_pct = progress(c).pct; }catch(_){} }
+  /* ★보정만 사건은 취합률을 서버에 적지 않는다. 적으면 케이스허브에 0%로 전파된다 (2026-08-11) */
+  if(SB_HAS_PCT && !isBJOnly(c)){ try{ __p.collect_pct = progress(c).pct; }catch(_){} }
   /* 보류 — 칸이 있으면 칸에도 적는다(케이스허브가 이 칸을 읽는다). 칸이 없으면 app_json에만 남는다. */
   if(SB_HAS_HOLD){ __p.on_hold = !!c.onHold; __p.hold_reason = ((c.holdReason||"").trim()||null); }
   /* 접수 형태 — 칸이 있을 때만 적는다(없으면 이 기능만 조용히 꺼진다) */
   if(SB_HAS_INTAKE){ __p.intake_type = (c.intakeType==='보정만') ? '보정만' : '전체'; }
+  /* ★★보정만 사건의 진행 단계는 취합앱이 절대 건드리지 않는다 (2026-08-11).
+     케이스허브에서 정한 보정중·개시결정·인가결정·기각은 취합앱 단계 목록에 없어서,
+     그대로 두면 저장할 때마다 "서류취합중"으로 되돌아가 버린다. 그래서 stage를 통째로 뺀다. */
+  if(isBJOnly(c)) delete __p.stage;
   /* ★주민번호는 이 페이로드에 넣지 않는다. 앱이 직접 clients에 쓰지 않고 서버 함수(rrn_set)로만 저장한다.
      (전체 번호는 암호화 표 client_rrn에, 앞 7자리는 서버가 clients.rrn_front에 적는다) */
   /* ★사무소 동기화(2026-07-20): firm(블루/이준 토글)이 정해져 있으면 office_id도 그 사무소로 맞춰 저장한다.
