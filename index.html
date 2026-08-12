@@ -3414,6 +3414,51 @@ async function addPdfPagesA4(doc, srcBytes){
   }
   planned.forEach(pl=>{ const pg=doc.addPage([pl.A4W,pl.A4H]); pg.drawPage(pl.ep,{x:pl.x,y:pl.y,xScale:pl.sc,yScale:pl.sc,rotate:degrees(pl.theta)}); });
 }
+/* ★2026-08-12 추가 — 손상된 PDF가 섞여 있어도 다운로드가 통째로 실패하지 않게.
+   [왜 필요한가] pdf-lib는 PDF 안의 압축(flate) 덩어리를 '합칠 때'가 아니라 '저장(save)할 때' 푼다.
+   그래서 파일 하나가 깨져 있으면 파일별 try/catch를 전부 무사 통과한 뒤, 맨 마지막 save()에서 터진다
+   (실제 오류 문구: "Bad FCHECK in flate stream: 72, 12"). 그 결과 그 묶음 전체가 '다운로드 실패'가 됐다.
+   [해결] save()를 감싸고, 실패하면 파일을 하나씩 따로 만들어 보며 범인만 골라낸다.
+          범인만 빼고 나머지로 합본을 다시 만들고, 뺀 파일은 원본 그대로 ZIP에 함께 넣는다.
+   entries = [{fo, bytes, ext, ...}] (합칠 순서대로)
+   반환 = {pdfBytes(null 가능), left=[합칠 수 없는 형식], bad=[손상돼 뺀 파일]} */
+async function mergeFilesToPdf(entries){
+  const P=window.PDFLib;
+  const nameOf=e=>((e&&e.fo&&e.fo.f&&e.fo.f.name)||"이름없음");
+  const put=async(doc,e)=>{ /* 합쳤으면 true, 애초에 합칠 수 없는 형식이면 false */
+    if(e.ext===".pdf"){ await addPdfPagesA4(doc,e.bytes); return true; }
+    if(e.ext===".jpg"||e.ext===".jpeg"){ addImageA4(doc, await doc.embedJpg(e.bytes)); return true; }
+    if(e.ext===".png"){ addImageA4(doc, await doc.embedPng(e.bytes)); return true; }
+    return false;
+  };
+  const build=async(list)=>{
+    const doc=await P.PDFDocument.create(); const left=[], bad=[];
+    for(const e of list){
+      try{ if(!(await put(doc,e))) left.push(e); }
+      catch(err){ console.warn("PDF 합치기 건너뜀",nameOf(e),err); bad.push(e); }
+    }
+    return {doc,left,bad};
+  };
+  const r=await build(entries);
+  try{
+    return {pdfBytes: r.doc.getPageCount()>0 ? await r.doc.save() : null, left:r.left, bad:r.bad};
+  }catch(err){
+    console.warn("합본 저장 실패 → 파일별로 손상 여부 재검사",err);
+    const ok=[], bad=r.bad.slice();
+    for(const e of entries){
+      if(r.bad.indexOf(e)>=0 || r.left.indexOf(e)>=0) continue; /* 이미 분류된 건 건너뜀 */
+      try{ const t=await P.PDFDocument.create(); await put(t,e); await t.save(); ok.push(e); }
+      catch(err2){ console.warn("손상된 파일(합본에서 제외)",nameOf(e),err2); bad.push(e); }
+    }
+    const r2=await build(ok);
+    try{
+      return {pdfBytes: r2.doc.getPageCount()>0 ? await r2.doc.save() : null, left:r.left.concat(r2.left), bad:bad.concat(r2.bad)};
+    }catch(err3){
+      console.error("재조립도 실패 — 전부 원본으로 내보냄",err3);
+      return {pdfBytes:null, left:r.left, bad:bad.concat(r2.bad, ok)};
+    }
+  }
+}
 function loadJSZip(){ return new Promise((res,rej)=>{ if(window.JSZip) return res(window.JSZip);
   const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
   s.onload=()=>res(window.JSZip); s.onerror=()=>rej(new Error("ZIP 라이브러리 로드 실패(인터넷 필요)")); document.head.appendChild(s); }); }
@@ -3434,22 +3479,19 @@ async function doDownload(){
   const mode=_dlCtx.mode; closeModal(); toast("다운로드 준비 중…");
   try{
     const outs=[]; // {name, blob} — 순서대로
+    const badFiles=[]; // ★08-12: 손상돼서 합본에 못 넣은 파일 이름(끝에 안내창으로 알려줌)
     if(mode==="pdf"){
       const PDFLib=await loadPdfLib();
       for(const g of picked){
         if(g.bid==="b6"||g.bid==="b7"){ // 통장 거래내역·채무증대 경위서 묶음: 서류명(은행/카드/급여, 경위서/무상거주)별로 각각 하나로 합침 — 한 서류의 여러 파일=한 PDF(엑셀 등 못 합치는 파일은 그 서류 이름의 ZIP), 서류끼리는 따로
           for(const it of g.items){
-            const idoc=await PDFLib.PDFDocument.create(); const ileft=[]; let ii=0;
-            for(const fo of it.files){ ii++; const bytes=await fetchFileBytes(fo.f); const ext=extOf(fo.f.name).toLowerCase();
-              try{
-                if(ext===".pdf"){ await addPdfPagesA4(idoc,bytes); }
-                else if(ext===".jpg"||ext===".jpeg"){ const img=await idoc.embedJpg(bytes); addImageA4(idoc,img); }
-                else if(ext===".png"){ const img=await idoc.embedPng(bytes); addImageA4(idoc,img); }
-                else ileft.push({fo,bytes,i:ii});
-              }catch(e){ console.warn("PDF 합치기 건너뜀",fo.f.name,e); ileft.push({fo,bytes,i:ii}); }
-            }
+            const ients=[]; let ii=0;
+            for(const fo of it.files){ ii++; const bytes=await fetchFileBytes(fo.f); ients.push({fo,bytes,ext:extOf(fo.f.name).toLowerCase(),i:ii}); }
+            const mg=await mergeFilesToPdf(ients);             /* ★08-12: 깨진 PDF는 여기서 걸러짐 */
+            mg.bad.forEach(e=>badFiles.push(e.fo.f.name));
+            const ileft=mg.left.concat(mg.bad);                /* 못 합친 건 원본 그대로 ZIP에 */
             const label=safeName(dlItemLabel(it.name));
-            const pdfBytes=idoc.getPageCount()>0?await idoc.save():null;
+            const pdfBytes=mg.pdfBytes;
             if(ileft.length===0){ if(pdfBytes) outs.push({name:nm+"_"+label+".pdf", blob:new Blob([pdfBytes],{type:"application/pdf"})}); }
             else {
               const JSZip=await loadJSZip(); const zip=new JSZip(); const used={};
@@ -3462,17 +3504,13 @@ async function doDownload(){
           }
           continue;
         }
-        const doc=await PDFLib.PDFDocument.create(); const leftovers=[];
-        for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f); const ext=extOf(fo.f.name).toLowerCase();
-          try{
-            if(ext===".pdf"){ await addPdfPagesA4(doc,bytes); }
-            else if(ext===".jpg"||ext===".jpeg"){ const img=await doc.embedJpg(bytes); addImageA4(doc,img); }
-            else if(ext===".png"){ const img=await doc.embedPng(bytes); addImageA4(doc,img); }
-            else leftovers.push({it,fo,bytes,i});
-          }catch(e){ console.warn("PDF 합치기 건너뜀",fo.f.name,e); leftovers.push({it,fo,bytes,i}); }
-        } }
+        const ents=[];
+        for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f); ents.push({it,fo,bytes,ext:extOf(fo.f.name).toLowerCase(),i}); } }
+        const mg=await mergeFilesToPdf(ents);                  /* ★08-12: 깨진 PDF는 여기서 걸러짐 */
+        mg.bad.forEach(e=>badFiles.push(e.fo.f.name));
+        const leftovers=mg.left.concat(mg.bad);                /* 못 합친 건 원본 그대로 ZIP에 */
         const label=safeName(dlBlockLabel(g.bid,g.btitle));
-        const pdfBytes=doc.getPageCount()>0 ? await doc.save() : null;
+        const pdfBytes=mg.pdfBytes;
         if(leftovers.length===0){
           if(pdfBytes) outs.push({name:nm+"_"+label+".pdf", blob:new Blob([pdfBytes],{type:"application/pdf"})});
         } else {
@@ -3497,14 +3535,28 @@ async function doDownload(){
             const out=await doc.save(); outs.push({name:base+".pdf", blob:new Blob([out],{type:"application/pdf"})});
           }
           else { outs.push({name:base+ext, blob:new Blob([bytes])}); }
-        }catch(e){ console.warn("PDF 변환 건너뜀",fo.f.name,e); outs.push({name:base+ext, blob:new Blob([bytes])}); }
+        }catch(e){ console.warn("PDF 변환 건너뜀",fo.f.name,e); badFiles.push(fo.f.name); outs.push({name:base+ext, blob:new Blob([bytes])}); } /* ★08-12: 변환 실패도 이름 수집 */
       } } }
     } else {
       for(const g of picked){ for(const it of g.items){ let i=0; for(const fo of it.files){ i++; const bytes=await fetchFileBytes(fo.f);
         const suffix=it.files.length>1?("_"+i):""; outs.push({name:nm+"_"+safeName(dlItemLabel(it.name))+suffix+extOf(fo.f.name), blob:new Blob([bytes])}); } } }
     }
     await deliverEach(outs);
+    if(badFiles.length) dlBadNotice(badFiles);  /* ★08-12: 어떤 파일이 문제였는지 화면에 남겨줌 */
   }catch(e){ console.error(e); toast("다운로드 실패: "+e.message); }
+}
+/* ★2026-08-12 추가 — 손상된 파일 안내창. 토스트(1.8초)는 금방 사라져서 파일 이름을 못 읽으므로 창으로 띄운다. */
+function dlBadNotice(names){
+  const list=[...new Set(names)];
+  modal(`<h3>⚠️ 합치지 못한 파일 ${list.length}개</h3>
+    <p class="hint">파일이 손상돼 있어서(내부 압축이 깨짐) <b>합본 PDF에는 넣지 못했습니다.</b><br>
+    나머지 파일로 만든 합본은 정상적으로 받아졌고, 아래 파일은 <b>올린 원본 그대로</b> 같은 ZIP 안에 함께 들어 있습니다.</p>
+    <div style="max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.9">
+      ${list.map(n=>`· ${esc(n)}`).join("<br>")}
+    </div>
+    <p class="hint" style="margin-top:12px">📌 <b>조치</b>: 위 파일은 다시 발급받거나 다시 스캔해서 올려 주세요.
+    (PDF 뷰어로는 열려도 내부가 깨져 있는 경우가 있습니다. 뷰어에서 열어 <b>인쇄 → PDF로 저장</b>으로 다시 만든 뒤 올리면 대개 해결됩니다.)</p>
+    <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">확인</button></div>`);
 }
 /* ---------- 6d. 묶음 합본 미리보기 (사이드바형 · 출력 전 점검용) ---------- */
 /* 출력('묶음 PDF로 합치기')과 동일 로직·순서로 그 묶음 파일을 한 PDF로 합쳐 팝업으로 보여준다.
@@ -3799,31 +3851,32 @@ async function pvbRender(){
   if(body) body.innerHTML=`<div style="color:#fff;padding:24px">묶음 PDF 만드는 중… (파일이 많으면 몇 초 걸려요)</div>`;
   try{
     const PDFLib=await loadPdfLib();
-    const doc=await PDFLib.PDFDocument.create();
-    const excluded=[]; const failed=[]; // excluded=형식이 안 맞아 제외(한글·엑셀 등), failed=pdf/이미지인데 불러오기 실패(일시 오류 등)
+    const excluded=[]; const failed=[]; const broken=[]; const ents=[];
+    // excluded=형식이 안 맞아 제외(한글·엑셀 등), failed=불러오기 실패(일시 오류 등), ★08-12 broken=파일이 손상돼 합치지 못함
     for(const it of g.items){ for(const fo of it.files){
       const ext=extOf(fo.f.name).toLowerCase();
       const isConv=(ext===".pdf"||ext===".jpg"||ext===".jpeg"||ext===".png");
       try{
         const bytes=await fetchFileBytes(fo.f);
         if(ctx.token!==my) return; // 다른 묶음으로 바뀜 → 이 렌더 중단
-        if(ext===".pdf"){ await addPdfPagesA4(doc,bytes); }
-        else if(ext===".jpg"||ext===".jpeg"){ const img=await doc.embedJpg(bytes); addImageA4(doc,img); }
-        else if(ext===".png"){ const img=await doc.embedPng(bytes); addImageA4(doc,img); }
-        else excluded.push(fo.f.name);
-      }catch(e){ console.warn("미리보기 합치기 건너뜀",fo.f.name,e); if(isConv) failed.push(fo.f.name); else excluded.push(fo.f.name); }
+        if(isConv) ents.push({fo,bytes,ext}); else excluded.push(fo.f.name);
+      }catch(e){ console.warn("미리보기 불러오기 실패",fo.f.name,e); if(isConv) failed.push(fo.f.name); else excluded.push(fo.f.name); }
     } }
+    const mg=await mergeFilesToPdf(ents);   /* ★08-12: 깨진 PDF가 섞여 있어도 나머지로 미리보기를 만든다 */
+    mg.bad.forEach(e=>broken.push(e.fo.f.name));
+    mg.left.forEach(e=>excluded.push(e.fo.f.name));
     if(ctx.token!==my) return;
     body=document.getElementById("pvBundleBody"); if(!body) return;
-    if(doc.getPageCount()===0){
-      if(failed.length){ body.innerHTML=`<div style="color:#fff;padding:22px;line-height:1.7">⚠️ 파일을 불러오지 못했어요. <b>일시적인 접속 오류</b>일 수 있습니다.<br>잠시 후 <b>새로고침하고 다시</b> 눌러 주세요. (계속 안 되면 알려주세요)<br><span style="opacity:.6;font-size:12px">불러오기 실패: ${failed.map(esc).join(", ")}</span></div>`; }
+    if(!mg.pdfBytes){
+      if(broken.length){ body.innerHTML=`<div style="color:#fff;padding:22px;line-height:1.7">⚠️ 이 묶음의 파일이 <b>손상</b>돼 합본을 만들 수 없어요.<br>아래 파일을 다시 발급받거나 다시 스캔해서 올려 주세요.<br><span style="opacity:.6;font-size:12px">손상: ${broken.map(esc).join(", ")}</span></div>`; }
+      else if(failed.length){ body.innerHTML=`<div style="color:#fff;padding:22px;line-height:1.7">⚠️ 파일을 불러오지 못했어요. <b>일시적인 접속 오류</b>일 수 있습니다.<br>잠시 후 <b>새로고침하고 다시</b> 눌러 주세요. (계속 안 되면 알려주세요)<br><span style="opacity:.6;font-size:12px">불러오기 실패: ${failed.map(esc).join(", ")}</span></div>`; }
       else { body.innerHTML=`<div style="color:#fff;padding:22px;line-height:1.7">이 묶음은 합본 미리보기를 만들 수 없어요.<br>PDF·이미지(JPG/PNG)가 없고, 한글·엑셀 등만 있습니다.<br><span style="opacity:.6;font-size:12px">${excluded.map(esc).join(", ")}</span></div>`; }
       return;
     }
-    const pdfBytes=await doc.save();
+    const pdfBytes=mg.pdfBytes;
     if(ctx.token!==my) return;
     body=document.getElementById("pvBundleBody"); if(!body) return;
-    body.innerHTML=`${failed.length?`<div class="pvb-exnote">⚠️ ${failed.length}개 파일은 불러오기 실패(일시 오류일 수 있어요 — 새로고침 후 다시): ${failed.map(esc).join(", ")}</div>`:""}${excluded.length?`<div class="pvb-exnote">※ 합칠 수 없는 파일 ${excluded.length}개 제외(한글·엑셀 등): ${excluded.map(esc).join(", ")}</div>`:""}<div class="pvb-viewer"><div class="pvb-thumbs" id="pvbThumbs"></div><div class="pvb-big" id="pvbBig"><div class="pvb-msg">그리는 중…</div></div></div>`;
+    body.innerHTML=`${broken.length?`<div class="pvb-exnote">⚠️ ${broken.length}개 파일은 <b>손상돼서</b> 합본에서 뺐어요(다시 발급·재스캔 필요): ${broken.map(esc).join(", ")}</div>`:""}${failed.length?`<div class="pvb-exnote">⚠️ ${failed.length}개 파일은 불러오기 실패(일시 오류일 수 있어요 — 새로고침 후 다시): ${failed.map(esc).join(", ")}</div>`:""}${excluded.length?`<div class="pvb-exnote">※ 합칠 수 없는 파일 ${excluded.length}개 제외(한글·엑셀 등): ${excluded.map(esc).join(", ")}</div>`:""}<div class="pvb-viewer"><div class="pvb-thumbs" id="pvbThumbs"></div><div class="pvb-big" id="pvbBig"><div class="pvb-msg">그리는 중…</div></div></div>`;
     await pvbRenderPdf(pdfBytes, document.getElementById("pvbBig"), document.getElementById("pvbThumbs"), my);
   }catch(e){ console.error(e); const b=document.getElementById("pvBundleBody"); if(b&&ctx.token===my) b.innerHTML=`<div class="pvb-msg">미리보기 실패: ${esc((e&&e.message)||e)}</div>`; }
 }
