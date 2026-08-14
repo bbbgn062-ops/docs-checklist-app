@@ -102,6 +102,28 @@
   .mw-tl .r:hover .x{opacity:1;}
   .mw-tl .r .x:hover{color:var(--red);}
   .mw-tl .none{font-size:12.5px;color:var(--muted);padding:3px 0;}
+  /* 보완 서류 알림 카드 (2026-08-14) — 보완필요 서류와 그 사유를 의뢰인 메모 아래에 자동으로 띄운다 */
+  .rjbox{background:#fff;border:1px solid #F5D5D5;border-radius:14px;padding:14px 17px;margin:-6px 0 14px;box-shadow:var(--shadow);}
+  .rjbox .rjh{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:800;color:var(--red);margin-bottom:12px;}
+  .rjbox .rjit{margin-bottom:13px;}
+  .rjbox .rjit:last-child{margin-bottom:0;}
+  .rjbox .rjtop{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+  .rjbox .rjchip{background:var(--red-soft);color:var(--red);font-size:11.5px;font-weight:800;padding:3px 9px;border-radius:7px;}
+  .rjbox .rjedit{border:1px solid var(--line);background:#fff;color:var(--muted);font-size:11.5px;font-weight:700;
+    border-radius:7px;padding:3px 9px;cursor:pointer;font-family:inherit;}
+  .rjbox .rjedit:hover{border-color:var(--red);color:var(--red);}
+  .rjbox .rjq{margin-top:6px;padding-left:11px;border-left:3px solid #F0C9C9;color:#7a4a4a;font-size:13px;line-height:1.7;white-space:pre-wrap;}
+  .rjbox .rjq.none{color:var(--gray);border-left-color:var(--line);}
+  /* 보완 + 요청 반반 바 (2026-08-14) — 보완 서류가 있어도 요청·리마인더를 같이 누를 수 있게 */
+  .actbar2{display:flex;margin-top:14px;border-radius:12px;overflow:hidden;box-shadow:0 4px 14px rgba(155,27,51,.18);}
+  .actbar2 button{flex:1 1 0;min-width:0;border:0;padding:13px 10px;font-size:14px;font-weight:600;color:#fff;cursor:pointer;
+    font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;line-height:1.35;}
+  .actbar2 .sep{flex:0 0 1px;background:rgba(255,255,255,.34);}
+  @media(max-width:600px){   /* 좁은 화면에서는 글자가 접히지 않도록 위아래로 내려준다 */
+    .actbar2{flex-direction:column;gap:8px;box-shadow:none;overflow:visible;border-radius:0;}
+    .actbar2 button{border-radius:12px;padding:13px;box-shadow:0 4px 14px rgba(155,27,51,.18);}
+    .actbar2 .sep{display:none;}
+  }
   .empty{text-align:center;color:var(--muted);padding:60px 20px;}
   .empty .big{font-size:48px;margin-bottom:8px;}
 
@@ -852,6 +874,15 @@ let state = { clients:[], log:[], updatedAt:null, updatedBy:null };
 const DEFAULT_OWNER="bbbgn062-ops", DEFAULT_REPO="docs-checklist", DEFAULT_BRANCH="main"; // 우리 사무소 고정값 (자동 기입)
 let cfg = { repo:DEFAULT_REPO, owner:DEFAULT_OWNER, branch:DEFAULT_BRANCH, token:"", path:"data.json", firmName:"법무법인 이준 서초 분사무소", gwUrl:"", gwSecret:"" };
 let deviceName = localStorage.getItem(LS_DEVICE) || "";
+/* ★기록에 남길 '사람' 이름 — 앱 전체 공통 (2026-08-13)
+   순서: ⚙️설정의 '기기 이름' → 없으면 로그인한 계정 이메일 → 그것도 없으면 '미설정'.
+   왜: 기기 이름을 안 적어둔 PC에서도 최소한 계정은 남는다. 나중에 직원별 계정을 나누면 그때부터 사람이 그대로 구분된다.
+   쓰는 곳: 변경 로그·상담 기록·첨부파일 넣은 사람·메모 작성자·민원업체 기록. (⚙️설정 입력칸과 진단기록의 '기기'는 그대로 둔다) */
+function whoNow(){
+  try{ const d=(typeof deviceName!=="undefined"&&deviceName)?String(deviceName).trim():""; if(d) return d; }catch(_){ }
+  try{ if(typeof sbUser!=="undefined" && sbUser && sbUser.email) return String(sbUser.email); }catch(_){ }
+  return "미설정";
+}
 let currentClientId = null;
 let detailFilter = "all";
 let remoteSha = null;          // 깃헙 파일의 최신 버전 식별자
@@ -1093,7 +1124,7 @@ function migrateIfNeeded(){ let changed=false;
   if(state._ver<5){ state.clients.forEach(ensureItems); migrateV2(); state._ver=5; changed=true; }
   if(state._ver<6){ state.clients.forEach(ensureItems); migrateHideOptional(); state._ver=6; changed=true; }
   if(state._ver<8){ state.clients.forEach(ensureItems); migrateInsuranceRequired(); state._ver=8; changed=true; }
-  if(changed){ state.updatedAt=now(); state.updatedBy=deviceName||state.updatedBy||"미설정"; }
+  if(changed){ state.updatedAt=now(); state.updatedBy=whoNow(); }
   return changed;
 }
 /* 보험서류(내보험찾기·해약환급금)를 항상 필수로 복구 — 과거 '해당없음'에 갇혔던 기존 의뢰인 데이터 되살림.
@@ -1165,7 +1196,7 @@ function pushSnapshot(){
   try{
     let snaps=[]; try{ snaps=JSON.parse(localStorage.getItem(LS_SNAP)||"[]"); }catch(_){ snaps=[]; }
     const minKey=(state.updatedAt||now()).slice(0,16); // 분 단위 — 같은 분이면 최신으로 교체
-    const entry={ ts:now(), by:state.updatedBy||deviceName||"?", note:(state.log[0]&&state.log[0].text)||"변경", clients:(state.clients||[]).length, data:JSON.stringify(state) };
+    const entry={ ts:now(), by:state.updatedBy||whoNow(), note:(state.log[0]&&state.log[0].text)||"변경", clients:(state.clients||[]).length, data:JSON.stringify(state) };
     if(snaps.length && _lastSnapMin===minKey){ snaps[0]=entry; } else { snaps.unshift(entry); }
     _lastSnapMin=minKey;
     if(snaps.length>SNAP_MAX) snaps.length=SNAP_MAX;
@@ -1175,13 +1206,13 @@ function pushSnapshot(){
 function getSnapshots(){ try{ return JSON.parse(localStorage.getItem(LS_SNAP)||"[]"); }catch(_){ return []; } }
 
 function addLog(text){
-  state.log.unshift({ ts:now(), who:deviceName||"미설정", text });
+  state.log.unshift({ ts:now(), who:whoNow(), text });
   if(state.log.length>1000) state.log.length=1000;
 }
 
 /* 변경 발생 시 호출: 로컬 즉시 저장 + 깃헙 디바운스 저장 */
 function touch(logText){
-  state.updatedAt=now(); state.updatedBy=deviceName||"미설정";
+  state.updatedAt=now(); state.updatedBy=whoNow();
   // 현재 보고 있는 의뢰인에 개별 수정시각 기록 → 동기화 충돌 시 누구 것이 최신인지 판단(데이터 보존)
   if(currentClientId){ const _cc=findClient(currentClientId); if(_cc) _cc.updatedAt=now(); }
   if(logText) addLog(logText);
@@ -1266,11 +1297,11 @@ async function gwUpload(folder,name,mime,payload){
     return { id: path };
   }
   const b64=(typeof payload==="string")?payload:await blobToBase64(toBlobBody(payload, mime));
-  return gwPost({action:"upload",folder:folder,name:name,mime:mime,content:b64,user:deviceName||"미설정"});
+  return gwPost({action:"upload",folder:folder,name:name,mime:mime,content:b64,user:whoNow()});
 }
 async function gwDelete(id){
   if(BACKEND==="supabase"){ if(!sbInit()) return; const {error}=await sb.storage.from("docs").remove([id]); if(error) throw error; return {ok:true}; }
-  return gwPost({action:"delete",id:id,user:deviceName||"미설정"});
+  return gwPost({action:"delete",id:id,user:whoNow()});
 }
 async function gwFetchBytes(id){
   if(BACKEND==="supabase"){
@@ -1486,6 +1517,23 @@ function isRemindNeeded(c){
 }
 function rejectedList(c){ const arr=[]; const chk=(id,name)=>{ const s=c.items[id]; if(s&&s.rejected) arr.push({id,name,reason:s.rejectReason||""}); };
   TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>chk(it.id,it.name)))); Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>chk(ex.id,ex.name))); return arr; }
+/* 보완 서류 알림 카드 (2026-08-14)
+   왜: 보완필요로 표시하고 사유까지 적어 두어도, 상세 화면을 아래로 한참 내려야만 보였다.
+   무엇이·왜 보완인지를 의뢰인 메모 바로 아래에서 읽고, 그 자리에서 [편집]으로 고칠 수 있게 한다.
+   ★보완 서류가 없거나 사유를 하나도 안 적어두면 카드 자체가 안 나온다 — 평소 화면은 지금 그대로다. */
+function rejectPanel(c){
+  const list=rejectedList(c);
+  if(!list.length) return "";
+  if(!list.some(r=>(r.reason||"").trim())) return "";
+  return `<div class="rjbox">
+    <div class="rjh">⚠ 보완이 필요한 서류 ${list.length}건</div>
+    ${list.map(r=>{ const rr=(r.reason||"").trim(); return `<div class="rjit">
+      <div class="rjtop"><span class="rjchip">${esc(r.name)}</span>
+        <button class="rjedit" onclick="openRejectModal('${c.id}','${r.id}')" title="사유 수정 · 저장 · 보완 해제">✏ 편집</button></div>
+      <div class="rjq${rr?"":" none"}">${rr?esc(rr):"보완 사유가 아직 적혀 있지 않습니다 — [편집]을 눌러 적어 주세요"}</div>
+    </div>`; }).join("")}
+  </div>`;
+}
 function renderDashHeaderStatsBoard(){
   const hdr=$("#dashHeader"), stat=$("#dashStats"), board=$("#dashBoard");
   const active=state.clients.filter(c=>!c.archived && !c.onHold && inAppMode(c) && (!firmF || firmShort(c.firm)===firmF));
@@ -1752,7 +1800,19 @@ function renderDetail(id){
   const fbtn=(label,act)=>`<button onclick="${act}" style="font-size:12.5px;color:var(--muted);font-weight:600;background:none;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px">${label}</button>`;
   const bigBtn=(bg,label,act)=>`<button onclick="${act}" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;background:${bg};color:#fff;font-size:14px;font-weight:600;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px">${label}</button>`;
   let primaryBtn="";
-  if(p.rejected>0) primaryBtn=bigBtn('var(--red)',`⚠ 보완 서류 ${p.rejected}건 보기`,`setFilter('rejected')`);
+  /* ★보완 서류가 있으면 '보완 보기'와 '요청/리마인더'를 반반으로 나눠 둘 다 누를 수 있게 한다 (2026-08-14)
+     예전에는 보완 버튼이 자리를 통째로 차지해, 요청 메시지를 보내려면 아래 서류 목록까지 내려가야 했다.
+     좁은 화면에서는 CSS(.actbar2 @media)가 알아서 위아래 2단으로 내려준다. */
+  const halfBtn=(bg,label,act)=>`<button style="background:${bg}" onclick="${act}">${label}</button>`;
+  if(p.rejected>0){
+    const rjLabel=`⚠ 보완 서류 ${p.rejected}건 보기`;
+    const right = p.notReq>0    ? halfBtn('var(--brand)',`📨 요청 메시지 · ${p.notReq}건`,`openRequestMsg('${c.id}')`)
+                : p.requesting>0 ? halfBtn('var(--amber)',`⏰ 리마인더 · ${p.requesting}건`,`openReminder('${c.id}')`)
+                : "";
+    primaryBtn = right
+      ? `<div class="actbar2">${halfBtn('var(--red)',rjLabel,`setFilter('rejected')`)}<span class="sep"></span>${right}</div>`
+      : bigBtn('var(--red)',rjLabel,`setFilter('rejected')`);
+  }
   else if(p.notReq>0) primaryBtn=bigBtn('var(--brand)',`📨 요청 메시지 보내기 · ${p.notReq}건`,`openRequestMsg('${c.id}')`);
   else if(p.requesting>0) primaryBtn=bigBtn('var(--amber)',`⏰ 리마인더 보내기 · ${p.requesting}건`,`openReminder('${c.id}')`);
   else if(p.total>0 && p.missing===0 && stg==="서류수집") primaryBtn=bigBtn('var(--green)','✅ 모두 받음 · 단계 검토로',`setStage('${c.id}','검토')`);
@@ -1804,6 +1864,7 @@ function renderDetail(id){
   if(detailPanel==='memo' || (c.memo && c.memo.trim())){
     html+=`<div class="overall memo-always" style="margin-top:-6px;margin-bottom:14px"><div class="field" style="margin:0"><label>📝 의뢰인 메모 (상황·특이사항)</label><textarea id="clientMemo" rows="1" placeholder="예: 배우자 명의 차량 있음 / 전세보증금 확인 필요 / 사업자 폐업" oninput="autoGrowMemo(this);onClientMemo('${c.id}')">${esc(c.memo||"")}</textarea></div></div>`;
   }
+  html+=rejectPanel(c);   /* 보완 서류·사유 자동 표시 (메모 바로 아래) — 2026-08-14 */
   if(detailPanel==='timeline'){
     html+=`<div class="overall" style="margin-top:-6px;margin-bottom:14px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><label style="font-size:12.5px;font-weight:800;color:var(--muted)">🗓️ 상담·연락 기록</label><button class="btn btn-sm" onclick="addTimeline('${c.id}')">+ 기록 추가</button></div>${(c.timeline&&c.timeline.length)?`<div class="tl">`+c.timeline.map((t,i)=>`<div class="tl-row"><span class="tl-date">${fmt(t.ts)}</span><span class="tl-who">${esc(t.by||'')}</span><span class="tl-txt">${esc(t.text)}</span><button class="tl-del" onclick="delTimeline('${c.id}',${i})">×</button></div>`).join("")+`</div>`:`<div style="font-size:12.5px;color:var(--muted)">아직 기록이 없습니다. "+기록 추가"로 상담·통화 내용을 남기세요.</div>`}</div>`;
   }
@@ -2305,7 +2366,7 @@ async function uploadItemFiles(cid,id,picked){
   const lid=dlog("start","서류칸 파일첨부",{client_name:c.name, slot:itemName(id,c), files:valid.length, bytes:totalBytes});
   const up=async(f0,i)=>{ const f=await compressImage(f0);
     const j=await gwUpload(folder,f.name,f.type||"application/octet-stream",f);   // ★파일 그대로 전송(base64 변환 없음)
-    const ent={name:f.name,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
+    const ent={name:f.name,size:f.size,driveId:j.id,by:whoNow(),ts:now()};
     s.files.push(ent);
     try{ await sbSaveDocNow(c, id, ent); }                     // ★즉시 장부 기록 — 실패하면 되돌린다
     catch(e){ await sbRollbackUpload(c, id, ent, e); throw new Error("서버 저장 실패: "+(e.message||e)); }
@@ -2584,7 +2645,7 @@ async function applyCrop(){
       const base=(f.name||"image").replace(/\.[^.]+$/,""); const newName=base.replace(/_편집$/,"")+"_편집.jpg";
       const j=await gwUpload(clientFolder(c), newName, "image/jpeg", blob);
       const oldF=f;
-      c.items[id].files[idx]={name:newName,size:blob.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
+      c.items[id].files[idx]={name:newName,size:blob.size,driveId:j.id,by:whoNow(),ts:now()};
       try{ if(oldF.driveId) await gwDelete(oldF.driveId);
            else if(githubReady() && oldF.path) await fetch(ghContentsUrl(oldF.path),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify({message:`delete original ${f.name}`,sha:oldF.sha,branch:cfg.branch})}); }catch(_){ }
       touch(`[${c.name}] '${itemName(id,c)}' 사진 편집본으로 교체`);
@@ -2697,7 +2758,7 @@ async function applyPdfEdit(){
     const base=(f.name||"문서").replace(/\.[^.]+$/,""); const newName=base.replace(/_편집$/,"")+"_편집.pdf";
     const j=await gwUpload(clientFolder(c), newName, "application/pdf", outBlob);
     const oldF=f;
-    c.items[E.id].files[E.idx]={name:newName,size:outBlob.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
+    c.items[E.id].files[E.idx]={name:newName,size:outBlob.size,driveId:j.id,by:whoNow(),ts:now()};
     try{ if(oldF.driveId) await gwDelete(oldF.driveId);
          else if(githubReady() && oldF.path) await fetch(ghContentsUrl(oldF.path),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify({message:`delete original ${oldF.name}`,sha:oldF.sha,branch:cfg.branch})}); }catch(_){ }
     touch(`[${c.name}] '${itemName(E.id,c)}' PDF 페이지 편집본으로 교체`);
@@ -3220,7 +3281,7 @@ async function bpeSaveFile(f){
   // ★안전장치1: 새 파일이 저장소에 실제로 올라갔는지 확인. 실패 시 원본을 전혀 건드리지 않고 중단
   if(!await gwVerify(j.id, newBytes.byteLength)) throw new Error("편집본 저장 검증 실패("+newName+") — 원본 그대로 유지");
   const oldDrive=fileObj.driveId, oldDoc=fileObj.docId;
-  fileObj.name=newName; fileObj.size=(newBytes.byteLength||0); fileObj.driveId=j.id; fileObj.by=deviceName||"미설정"; fileObj.ts=now();
+  fileObj.name=newName; fileObj.size=(newBytes.byteLength||0); fileObj.driveId=j.id; fileObj.by=whoNow(); fileObj.ts=now();
   // DB행을 새(검증된) 저장경로로 갱신
   let rowOK=true;
   if(supa){ if(oldDoc){ try{ const r=await sb.from("documents").update({storage_path:j.id, file_name:newName}).eq("id",oldDoc); rowOK=!r.error; }catch(_){ rowOK=false; } } else { rowOK=false; } }
@@ -3329,7 +3390,7 @@ async function bpeProcessMoves(c, touched){
     }
     const j=await gwUpload(clientFolder(c), newName, newMime, newBytes);
     if(!await gwVerify(j.id, newBytes.byteLength)) throw new Error("이동 파일 저장 검증 실패("+newName+") — 원본 그대로 유지");
-    const nf={name:newName, size:(newBytes.byteLength||0), driveId:j.id, by:deviceName||"미설정", ts:now(), is_public:!!(f.fileRef&&f.fileRef.is_public)};
+    const nf={name:newName, size:(newBytes.byteLength||0), driveId:j.id, by:whoNow(), ts:now(), is_public:!!(f.fileRef&&f.fileRef.is_public)};
     if(supa){
       const tgtDkey=(typeof ITEM_BY_ID!=="undefined" && ITEM_BY_ID[tgt])?tgt:((tItem.doc_key)||tgt);
       const _doc={client_id:_bpe.cid, doc_key:tgtDkey, file_name:newName, storage_path:j.id, uploaded_by:nf.by, is_public:nf.is_public, kind:"취합"};
@@ -3920,12 +3981,12 @@ async function pvbRender(){
   }catch(e){ console.error(e); const b=document.getElementById("pvBundleBody"); if(b&&ctx.token===my) b.innerHTML=`<div class="pvb-msg">미리보기 실패: ${esc((e&&e.message)||e)}</div>`; }
 }
 function onItemMemo(cid,id){ const c=findClient(cid); const ta=event.target; c.items[id].memo=ta.value;
-  state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
+  state.updatedAt=now(); state.updatedBy=whoNow(); saveLocal(); debounceLogSync(); }
 function onClientMemo(cid){ const c=findClient(cid); c.memo=event.target.value;
-  state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
+  state.updatedAt=now(); state.updatedBy=whoNow(); saveLocal(); debounceLogSync(); }
 /* 메모 입력칸을 내용 길이에 맞춰 자동으로 늘림(스크롤 없이 전부 보이게) */
 function autoGrowMemo(t){ if(!t) return; t.style.height='auto'; t.style.height=(t.scrollHeight+2)+'px'; }
-function debounceLogSync(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ state.updatedBy=deviceName||"미설정"; pushSnapshot(); scheduleSync(); }, 1200); }
+function debounceLogSync(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ state.updatedBy=whoNow(); pushSnapshot(); scheduleSync(); }, 1200); }
 function isEditing(){ const a=document.activeElement; return !!(a && (a.tagName==="TEXTAREA" || a.tagName==="INPUT" || a.isContentEditable)); }
 function itemName(id,c){ let n=null; TEMPLATE.forEach(b=>b.groups.forEach(g=>g.items.forEach(it=>{if(it.id===id)n=it.name;}))); if(!n){ Object.values(c.extra||{}).forEach(arr=>arr.forEach(ex=>{if(ex.id===id)n=ex.name;})); } return n||id; }
 
@@ -3982,7 +4043,7 @@ function openCert(cid){ const c=ensureItems(findClient(cid)); if(!c.cert) c.cert
       </div></div>
     <div class="modal-actions" style="margin-top:16px"><button class="btn btn-primary" style="width:100%;padding:12px;font-size:14.5px" onclick="closeModal();renderDetail('${c.id}')">완료</button></div>`,460);
 }
-function onCertPw(cid){ const c=findClient(cid); if(!c.cert)c.cert={files:[],pw:""}; c.cert.pw=event.target.value; state.updatedAt=now(); state.updatedBy=deviceName||"미설정"; saveLocal(); debounceLogSync(); }
+function onCertPw(cid){ const c=findClient(cid); if(!c.cert)c.cert={files:[],pw:""}; c.cert.pw=event.target.value; state.updatedAt=now(); state.updatedBy=whoNow(); saveLocal(); debounceLogSync(); }
 /* 인증서 비밀번호 복사 — 은행 사이트에 붙여넣기 쉽게. 복사 성공/실패를 토스트로 알린다. */
 function copyCertPw(){
   const e=document.getElementById("cert_pw"); const v=e?e.value:"";
@@ -4276,13 +4337,8 @@ function mwCardChip(c){
   const t=mwTone(m.step);
   return `<span class="chip" style="background:${t.bg};color:${t.fg};white-space:nowrap">민원 · ${esc(m.step)}</span>`;
 }
-/* 기록에 남길 사람 — ⚙️설정의 '기기 이름'이 있으면 그것, 비어 있으면 로그인한 계정 이메일 (2026-08-13)
-   ★기기 이름을 안 적어둔 PC에서도 최소한 계정은 남는다. 나중에 직원별 계정을 나누면 그때부터 사람이 그대로 구분된다. */
-function mwWho(){
-  try{ const d=(typeof deviceName!=="undefined"&&deviceName)?String(deviceName).trim():""; if(d) return d; }catch(_){ }
-  try{ if(typeof sbUser!=="undefined" && sbUser && sbUser.email) return String(sbUser.email); }catch(_){ }
-  return "미설정";
-}
+/* 기록에 남길 사람 — 앱 공통 규칙(whoNow)을 그대로 쓴다. 규칙이 두 군데로 갈라지지 않게 한 줄만 둔다 (2026-08-13) */
+function mwWho(){ return whoNow(); }
 let _mwDraft=null;
 function mwTlHtml(){
   const log=(_mwDraft&&Array.isArray(_mwDraft.log))?_mwDraft.log:[];
@@ -4449,7 +4505,7 @@ function batchSel(cid,action){ const c=findClient(cid); if(selSet.size===0){ toa
   touch(`[${c.name}] 선택 ${n}개 일괄 처리`); renderDetail(cid); toast(`${n}개 처리됨 ✓`); }
 function setStage(cid,stage){ const c=findClient(cid); if(c.stage===stage) return; c.stage=stage; touch(`[${c.name}] 단계 → ${stage}`); renderDetail(cid); }
 function addTimeline(cid){ const c=findClient(cid); const t=prompt("상담·연락 내용 (예: 3/12 통화 — 통장사본 요청함)"); if(!t||!t.trim()) return;
-  if(!c.timeline) c.timeline=[]; c.timeline.unshift({ts:now(), by:deviceName||"미설정", text:t.trim()});
+  if(!c.timeline) c.timeline=[]; c.timeline.unshift({ts:now(), by:whoNow(), text:t.trim()});
   touch(`[${c.name}] 상담기록 추가`); renderDetail(cid); }
 function delTimeline(cid,i){ const c=findClient(cid); if(!confirm("이 기록을 삭제할까요?")) return; c.timeline.splice(i,1); touch(`[${c.name}] 상담기록 삭제`); renderDetail(cid); }
 function toggleReject(cid,id){ const c=findClient(cid); const s=c.items[id];
@@ -5246,7 +5302,7 @@ async function _ibUploadFile(c, fobj, slot){
   const file=await compressImage(fobj.file);
   const j=await gwUpload(clientFolder(c), file.name, file.type||"application/octet-stream", file);   // ★파일 그대로 전송
   const s=c.items[slot]; if(!s.files) s.files=[];
-  const ent={name:file.name,size:file.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
+  const ent={name:file.name,size:file.size,driveId:j.id,by:whoNow(),ts:now()};
   s.files.push(ent);
   try{ await sbSaveDocNow(c, slot, ent); }                       // ★즉시 장부 기록 — 실패하면 되돌린다
   catch(e){ await sbRollbackUpload(c, slot, ent, e); throw new Error("서버 저장 실패("+file.name+"): "+(e.message||e)); }
@@ -5454,7 +5510,7 @@ async function _ibBuildSplit(slot){
     await new Promise(r=>setTimeout(r,0));   // 진행 문구를 화면에 그릴 틈을 준다
     const j=await gwUpload(clientFolder(c), pieceName, "application/pdf", outBlob);   // ★변환 없이 그대로 전송
     const s=c.items[slot]; if(!s.files) s.files=[];
-    const ent={name:pieceName,size:outBlob.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
+    const ent={name:pieceName,size:outBlob.size,driveId:j.id,by:whoNow(),ts:now()};
     s.files.push(ent);
     try{ await sbSaveDocNow(c, slot, ent); }                     // ★즉시 장부 기록
     catch(e){ await sbRollbackUpload(c, slot, ent, e); throw new Error("서버 저장 실패("+pieceName+"): "+(e.message||e)); }
@@ -5485,7 +5541,7 @@ async function _ibSaveOriginal(c,f){
     const oname="[원본]"+f.name.replace(/\.[^.]+$/,"")+".pdf";
     const j=await gwUpload(clientFolder(c), oname, "application/pdf", f.file);   // ★변환 없이 그대로 전송
     if(!s.files) s.files=[];
-    const ent={name:oname,size:f.size,driveId:j.id,by:deviceName||"미설정",ts:now()};
+    const ent={name:oname,size:f.size,driveId:j.id,by:whoNow(),ts:now()};
     s.files.push(ent);
     try{ await sbSaveDocNow(c, oid, ent); }                      // ★즉시 장부 기록
     catch(e){ await sbRollbackUpload(c, oid, ent, e); throw new Error("서버 저장 실패(원본 보관): "+(e.message||e)); }
@@ -5549,7 +5605,7 @@ async function sbSaveDocNow(c, slot, ent){
   const s=c.items[slot]||{};
   const dkey=(typeof ITEM_BY_ID!=="undefined" && ITEM_BY_ID[slot]) ? slot : (s.doc_key||slot);
   const doc={ client_id:c.id, doc_key:dkey, file_name:ent.name, storage_path:ent.driveId,
-              uploaded_by:ent.by||deviceName||"직원", is_public:!!ent.is_public, kind:"취합" };
+              uploaded_by:ent.by||whoNow(), is_public:!!ent.is_public, kind:"취합" };
   if(SB_HAS_SORT) doc.sort_order=Math.max(0,((s.files||[]).length-1));
   const r=await sb.from("documents").insert(doc).select("id").single();
   if(r.error) throw r.error;
@@ -5715,7 +5771,7 @@ async function pullFromSupabase(silent){
     const memoBy={}; ((mRes&&mRes.data)||[]).forEach(m=>{ (memoBy[m.client_id]=memoBy[m.client_id]||[]).push(m); });
     const secBy={}; ((sRes&&sRes.data)||[]).forEach(s=>{ secBy[s.client_id]=s; });
     const clients=(cRes.data||[]).map(row=> sbBuildClient(row, byClient[row.id]||[], docBy[row.id]||[], memoBy[row.id]||[], secBy[row.id]||null) );
-    state={ clients, log:(state&&state.log)||[], updatedAt: now(), updatedBy: deviceName||"미설정", _ver:8 };
+    state={ clients, log:(state&&state.log)||[], updatedAt: now(), updatedBy: whoNow(), _ver:8 };
     saveLocal();
     try{ const _rr=await sb.rpc("my_role"); MYROLE=_rr.data||null; }catch(_){ }
     try{ const _cn=await sb.from("cancel_notes").select("*").order("sort_order",{ascending:true}); if(!_cn.error) CANCEL_NOTES=_cn.data||[]; }catch(_){ }
@@ -5929,13 +5985,13 @@ async function sbSyncClient(c){
   Object.keys(c.items).forEach(id=>{
     const s=c.items[id]; if(!s.files||!s.files.length) return;
     const dkey=ITEM_BY_ID[id]?id:(s.doc_key||id);
-    s.files.forEach((f,fidx)=>{ if(f.driveId && !f.docId){ const _doc={client_id:c.id,doc_key:dkey,file_name:f.name,storage_path:f.driveId,uploaded_by:f.by||deviceName||"직원",is_public:!!f.is_public,kind:"취합"}; if(SB_HAS_SORT) _doc.sort_order=fidx; docJobs.push(sb.from("documents").insert(_doc).select("id").single().then(r=>{ if(r.error) throw r.error; f.docId=r.data.id; })); } });
+    s.files.forEach((f,fidx)=>{ if(f.driveId && !f.docId){ const _doc={client_id:c.id,doc_key:dkey,file_name:f.name,storage_path:f.driveId,uploaded_by:f.by||whoNow(),is_public:!!f.is_public,kind:"취합"}; if(SB_HAS_SORT) _doc.sort_order=fidx; docJobs.push(sb.from("documents").insert(_doc).select("id").single().then(r=>{ if(r.error) throw r.error; f.docId=r.data.id; })); } });
   });
   if(docJobs.length){ try{ await Promise.all(docJobs); }catch(e){ _syncErr=_syncErr||e; } }
   // 의뢰인 메모(한 줄로 유지)
   if((c.memo||"")!==(c._sbMemo||"")){
     if(c._sbMemoId){ const {error}=await sb.from("memos").update({body:c.memo||""}).eq("id",c._sbMemoId); if(error) throw error; }
-    else if(c.memo){ const {data,error}=await sb.from("memos").insert({client_id:c.id,body:c.memo,author:deviceName||"직원",is_public:false,kind:"취합"}).select("id").single(); if(error) throw error; c._sbMemoId=data.id; }
+    else if(c.memo){ const {data,error}=await sb.from("memos").insert({client_id:c.id,body:c.memo,author:whoNow(),is_public:false,kind:"취합"}).select("id").single(); if(error) throw error; c._sbMemoId=data.id; }
     c._sbMemo=c.memo||"";
   }
   // 인증서·비번(고보안)
