@@ -93,6 +93,9 @@
  .mk{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px}
  .mk.urgent{background:#FCE4E4;color:var(--red)} .mk.pin{background:#FFF3D6;color:#9a6b00}
  .mk.hold{background:#FFF3CD;color:#7a6100;border:1px solid #EBD98F}
+ /* 민원업체 진행 (2026-08-13) — 단계만 보여준다(업체 이름·내부 메모는 안 보낸다) */
+ .mk.mw{background:#FBEEDD;color:var(--amber);border:1px solid #F0D9B8}
+ .mk.mw.done{background:#DDF3EA;color:var(--green);border-color:#B9E3D2}
  /* 보정만 넘겨받은 사건 표시 (2026-08-11) */
  .bjonly{font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:999px;background:#EDE7F6;color:#4527A0;border:1px solid #C8BBE6;white-space:nowrap}
  .holdline{margin-top:8px;font-size:12px;line-height:1.5;color:#7a6100;background:#FFF8E1;border:1px solid #F0E2A8;border-radius:8px;padding:7px 9px;font-weight:700}
@@ -501,6 +504,22 @@
  /* 보정만 넘겨받은 사건인가 (2026-08-11)
     — 서류취합을 우리가 하지 않는 사건이라 취합률·단계별 집계에서 뺀다. 칸이 없는 DB에서는 전부 false. */
  function isBJ(c){ return !!c && c.intake_type==="보정만"; }
+ /* ===== 민원업체 진행 표시 (2026-08-13) =====
+    취합앱이 clients.app_json 안 minwon = {step, vendor, memo, log} 에 적는다.
+    ★여기(케이스허브·원사무실 미리보기)에서는 단계만 보여준다 — 업체 이름과 내부 메모는 내보내지 않는다.
+    ★읽기 전용: 고치는 곳은 취합앱 한 곳뿐이다(두 곳에서 고치면 값이 어긋난다). */
+ const MW_STEPS=["의뢰함","진행중","발급완료"];
+ function mwStep(c){
+   try{
+     const aj=(typeof c.app_json==="string")?JSON.parse(c.app_json):(c.app_json||{});
+     const s=aj&&aj.minwon&&aj.minwon.step;
+     return MW_STEPS.includes(s)?s:"";
+   }catch(e){ return ""; }
+ }
+ function mwBadge(c){
+   const s=mwStep(c); if(!s) return "";
+   return `<span class="mk mw${s==="발급완료"?" done":""}" title="민원업체(서류 발급 대행) 진행 상황">민원 · ${esc(s)}</span>`;
+ }
  const AMEND_STAGES=["접수완료","개시결정"];
  const INCOME=["","근로소득","사업소득","연금","이중소득","기타"];
  const ASSET_MULTI=["자가","임차보증금","차량","토지","사업용재산","기타"];
@@ -606,13 +625,15 @@
    const CLI_COLS="id,name,office_id,case_type,stage,amending,assignee,phone,income_type,asset_type,income_note,asset_note,court_deadline,deadline_kind,urgent,pinned,archived,is_public,collect_pct,case_no,created_at";
    const CLI_HOLD=",on_hold,hold_reason";  // 보류(나중으로 미룸) — 취합앱과 같은 칸을 본다
    const CLI_BJ=",intake_type";            // 접수 형태(전체/보정만) — 칸이 없는 DB에서도 화면이 뜨도록 폴백을 둔다
-   const CLI_SEL=CLI_COLS+CLI_HOLD+CLI_BJ+",rrn_front";   // 앞 7자리(동명이인 구분용). 전체 번호는 여기 없다 — 서버 함수로만 본다.
+   const CLI_MW=",app_json";               // 민원업체 진행 — 취합앱이 app_json 안 minwon에 적는다 (2026-08-13)
+   const CLI_SEL=CLI_COLS+CLI_HOLD+CLI_BJ+",rrn_front"+CLI_MW;   // 앞 7자리(동명이인 구분용). 전체 번호는 여기 없다 — 서버 함수로만 본다.
    let [offRes,cliRes,progRes,itemRes]=await Promise.all([
      db.from("offices").select("id,name").order("name"),
      chSelectPaged("clients",CLI_SEL),
      db.rpc("my_progress"),
      chSelectPaged("checklist_items","id,client_id,doc_name,status")   // ★1,000줄 한계 — 반드시 페이징(안 그러면 부족서류 목록이 절반만 읽힘)
    ]);
+   if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS+CLI_HOLD+CLI_BJ+",rrn_front"); // app_json을 못 읽을 때(민원 표시만 안 보이고 나머지는 그대로)
    if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS+CLI_HOLD+CLI_BJ); // rrn_front 칸이 아직 없을 때
    if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS+CLI_HOLD);      // intake_type 칸이 아직 없을 때
    if(cliRes.error) cliRes=await chSelectPaged("clients",CLI_COLS+",rrn_front");  // 보류 칸(on_hold)이 아직 없을 때 — SQL 실행 전에도 화면이 뜬다
@@ -793,7 +814,7 @@
      card.className="card";card.style.background=col.bg;card.style.border="1px solid "+col.dash;
      card.innerHTML=`<div class="ch"><div><div class="nm">${esc(c.name)} <span class="ctype">${esc(c.case_type||"개인회생")}</span>${c.case_no?`<span style="display:inline-block;margin-left:6px;padding:2px 9px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:11.5px;font-weight:800;border:1px solid #cfd8ef;vertical-align:middle">사건 ${esc(c.case_no)}</span>`:""}</div>`+
        `<div class="of"><span class="ofchip" style="background:#fff;border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span>${c.assignee?" · "+esc(c.assignee):""}${canEdit()?`<label class="sw" style="margin-left:8px;vertical-align:-5px" title="원사무실 공개 여부"><input type="checkbox" ${c.is_public?"checked":""} onclick="event.stopPropagation()" onchange="setFlag('${c.id}','is_public',this.checked)"><span></span></label><span style="font-size:12px;font-weight:700;color:${c.is_public?"#0A7D3C":"#9a948c"};margin-left:5px;vertical-align:middle">${c.is_public?"공개":"비공개"}</span>`:""}</div></div>`+
-       `<div class="chr"><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${bjBadge}${holdBadge}${amBadge}${ddBadge}${marks?`<div>${marks}</div>`:""}</div></div>`+
+       `<div class="chr"><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${bjBadge}${holdBadge}${mwBadge(c)}${amBadge}${ddBadge}${marks?`<div>${marks}</div>`:""}</div></div>`+
        (isBJ(c)
         /* 보정만 사건: 서류취합을 안 하므로 0%가 아니라 '보정'으로 표시한다 (2026-08-11) */
         ? `<div class="bodyc"><div class="ring" style="background:#EDE7F6"><div class="hole"><b style="font-size:15px;color:#4527A0">보정</b><small>취합 없음</small></div></div>`
@@ -864,6 +885,7 @@
      `<div class="dmeta"><span class="ofchip" style="background:${col.bg};border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${c.case_no?`<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:12px;font-weight:800;border:1px solid #cfd8ef;margin-left:4px">사건 ${esc(c.case_no)}</span>`:""}`+
      (isBJ(c)?`<span class="bjonly">보정만 넘겨받은 사건</span>`:"")+
      (c.on_hold?`<span class="mk hold">⏸ 보류중</span>`:"")+
+     mwBadge(c)+
      (c.amending?`<span class="amend">보정중</span>`:"")+
      ((dd&&canEdit())?`<span class="dday ${dd.cls}">${esc(c.deadline_kind||"기한")} ${dd.txt}</span>`:"")+(c.urgent?`<span class="mk urgent">급건</span>`:"")+(c.pinned?`<span class="mk pin">중요</span>`:"")+`</div>`+
      (canEdit()?flagsHtml(c):"")+

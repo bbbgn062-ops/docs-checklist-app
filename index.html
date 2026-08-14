@@ -80,6 +80,28 @@
   .chip.wait{background:var(--brand-soft);color:var(--brand);}
   .chip.miss{background:var(--red-soft);color:var(--red);}
   .chip.ok{background:var(--green-soft);color:var(--green);}
+  /* 민원업체 진행 표시 (2026-08-13) — 상세 헤더 칩은 메모가 길어도 자르지 않고 줄바꿈한다 */
+  .mw-chip{display:inline-flex;align-items:flex-start;gap:5px;font-size:11.5px;font-weight:800;padding:5px 10px;
+    border-radius:7px;white-space:normal;text-align:left;line-height:1.5;max-width:340px;border:1px solid transparent;cursor:pointer;}
+  .mw-chip .hd{white-space:nowrap;flex:none;}
+  .mw-chip .mm{font-weight:700;word-break:break-all;}
+  .mw-chip .sep{opacity:.45;}
+  .mw-add{border:1px dashed #D9D2CA;background:#fff;color:var(--muted);}
+  .mw-add:hover{border-color:var(--brand);color:var(--brand);}
+  .mw-seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:9px;overflow:hidden;}
+  .mw-seg button{border:0;background:#fff;padding:8px 14px;font-size:13px;font-weight:700;color:var(--muted);
+    cursor:pointer;font-family:inherit;border-right:1px solid var(--line);}
+  .mw-seg button:last-child{border-right:0;}
+  .mw-seg button.on{background:var(--brand);color:#fff;}
+  .mw-tl{border-top:1px solid var(--line);margin-top:10px;padding-top:9px;max-height:170px;overflow:auto;}
+  .mw-tl .r{display:flex;gap:9px;font-size:12.5px;padding:4px 0;align-items:baseline;}
+  .mw-tl .r .d{color:var(--muted);white-space:nowrap;}
+  .mw-tl .r .w{color:var(--brand);font-weight:700;white-space:nowrap;}
+  .mw-tl .r .t{flex:1;word-break:break-all;}
+  .mw-tl .r .x{border:none;background:none;color:var(--gray);font-size:15px;line-height:1;cursor:pointer;padding:0 2px;opacity:0;}
+  .mw-tl .r:hover .x{opacity:1;}
+  .mw-tl .r .x:hover{color:var(--red);}
+  .mw-tl .none{font-size:12.5px;color:var(--muted);padding:3px 0;}
   .empty{text-align:center;color:var(--muted);padding:60px 20px;}
   .empty .big{font-size:48px;margin-bottom:8px;}
 
@@ -425,6 +447,14 @@
         <option value="archived">📦 보관함</option>
         <option value="hold">⏸️ 보류함</option>
         <option value="bjonly">보정만 넘겨받은 사건</option>
+      </select>
+      <select id="minwonSel" class="btn" onchange="renderDashboard()" style="font-weight:700;" title="민원업체(서류 발급 대행) 진행 상황으로 거르기">
+        <option value="">민원업체 전체</option>
+        <option value="any">민원 있는 사람</option>
+        <option value="의뢰함">민원 · 의뢰함</option>
+        <option value="진행중">민원 · 진행중</option>
+        <option value="발급완료">민원 · 발급완료</option>
+        <option value="none">민원 없는 사람</option>
       </select>
       <select id="stageSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
         <option value="">단계 전체</option>
@@ -990,6 +1020,7 @@ function setAppMode(m){
   if(APPMODE===m) return;
   APPMODE=m; stageFilter=(m==="bj")?"전체":"서류수집"; bjStageFilter="전체"; firmF="";
   const ss=$("#statusSel"); if(ss) ss.value="active";
+  const ms=$("#minwonSel"); if(ms) ms.value="";   /* 탭을 바꾸면 민원업체 필터도 함께 푼다 (2026-08-13) */
   const sg=$("#stageSel"); if(sg) sg.value="";
   renderDashboard(); window.scrollTo({top:0,behavior:"smooth"});
 }
@@ -1612,6 +1643,7 @@ function renderDashboard(){
   const assigneeF=($("#assigneeSel")&&$("#assigneeSel").value)||"";
   const catF=($("#catSel")&&$("#catSel").value)||"";
   const incF=($("#incomeSel")&&$("#incomeSel").value)||"";
+  const mwF=($("#minwonSel")&&$("#minwonSel").value)||"";   /* 민원업체 필터 (2026-08-13) */
   let list=state.clients.map(ensureItems).filter(c=>{
     if(q && !((c.name||"").toLowerCase().includes(q) || (c.caseNo||"").toLowerCase().includes(q) || (c.assignee||"").toLowerCase().includes(q))) return false;
     if(statusF==="archived"){ if(!c.archived) return false; }
@@ -1635,6 +1667,12 @@ function renderDashboard(){
     if(assigneeF && (c.assignee||"")!==assigneeF) return false;
     if(catF && (c.caseType||"개인회생")!==catF) return false;
     if(incF && (c.incomeType||"미정")!==incF) return false;
+    if(mwF){                                   /* 민원업체 필터 (2026-08-13) */
+      const ms=mwGet(c).step;
+      if(mwF==="any"){ if(!ms) return false; }
+      else if(mwF==="none"){ if(ms) return false; }
+      else if(ms!==mwF) return false;
+    }
     if(firmF && firmShort(c.firm)!==firmF) return false;
     return true;
   });
@@ -1689,7 +1727,7 @@ function renderDashboard(){
         : `<div class="bar"><i style="width:${p.pct}%;background:${p.rejected>0?'linear-gradient(90deg,#f87171,#dc2626)':(p.pct===100?'#059669':'linear-gradient(90deg,#e14b6f,#9B1B33)')}"></i></div>
       <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);font-weight:700;margin-top:6px">
         <span>${p.done}/${p.total} 확보</span><span style="color:${p.pct===100?'var(--green)':'var(--ink)'}">${p.pct}%</span></div>`}
-      ${chipHtml?`<div class="card-stats">${chipHtml}</div>`:""}
+      ${(mwCardChip(c)||chipHtml)?`<div class="card-stats">${mwCardChip(c)}${chipHtml}</div>`:""}
       ${(c.onHold&&(c.holdReason||"").trim())?`<div class="hold-reason" style="white-space:pre-wrap">⏸️ 보류 사유 · ${esc(c.holdReason)}</div>`:""}
       <div style="display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap">
         ${c.phone?`<a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()" style="font-size:12px;color:var(--brand);font-weight:700;text-decoration:none">📞 ${esc(c.phone)}</a>`:""}<span style="flex:1"></span>
@@ -1729,6 +1767,7 @@ function renderDetail(id){
         ${firmChip(c)}
         ${c.onHold?`<span class="badge" style="background:#fff3cd;color:#8a6d00">⏸️ 보류중</span>`:""}
         <span class="badge" style="background:${hasCert?'var(--green-soft)':'var(--amber-soft)'};color:${hasCert?'var(--green)':'var(--amber)'};cursor:pointer;font-weight:700" onclick="openCert('${c.id}')">${hasCert?'🔐 인증서 있음':'🔓 인증서 없음'}</span>
+        ${mwDetailChip(c)}
         <span style="flex:1"></span>
         <button class="badge" style="background:${stgColor}1a;color:${stgColor};border:none;cursor:pointer;font-weight:600;font-size:12.5px" onclick="toggleDetailPanel('stage')">${stg} ▾</button>
       </div>
@@ -4207,6 +4246,130 @@ function unsetHold(id){
   if(currentClientId===id) renderDetail(id); else renderDashboard();
   toast("보류를 풀었습니다 · 진행중 목록으로 돌아왔습니다");
 }
+
+/* ===== 민원업체 진행 표시 (2026-08-13) =====
+   왜: 민원업체(관공서 서류 발급 대행)에 맡긴 건이 지금 어디까지 갔는지 앱에서 바로 보기 위해서.
+   단계 3개 = 의뢰함 → 진행중 → 발급완료.
+   보이는 곳: ①상세 헤더 칩(단계+메모까지, 메모 길면 줄바꿈) ②목록 카드 칩(단계까지만) ③필터 드롭다운.
+   저장 위치: 서버 clients.app_json 안의 minwon (보류(onHold)와 같은 방식 — 표 변경·SQL 불필요). */
+const MW_STEPS=["의뢰함","진행중","발급완료"];
+function mwGet(c){
+  const m=(c && c.minwon && typeof c.minwon==="object" && !Array.isArray(c.minwon)) ? c.minwon : {};
+  return { step: MW_STEPS.includes(m.step)?m.step:"", vendor:(m.vendor||""), memo:(m.memo||""),
+           log: Array.isArray(m.log)?m.log:[] };
+}
+function mwOn(c){ return !!mwGet(c).step; }
+function mwTone(step){ return step==="발급완료" ? {bg:"var(--green-soft)",fg:"var(--green)"} : {bg:"var(--amber-soft)",fg:"var(--amber)"}; }
+/* 상세 헤더 칩 — 메모까지 붙는다. 누르면 입력창이 열린다. */
+function mwDetailChip(c){
+  const m=mwGet(c);
+  const act=`event.stopPropagation();openMinwonModal('${c.id}')`;
+  if(!m.step) return `<span class="mw-chip mw-add" onclick="${act}" title="민원업체 진행 기록하기">＋ 민원</span>`;
+  const t=mwTone(m.step), mm=(m.memo||"").trim();
+  return `<span class="mw-chip" onclick="${act}" title="민원업체 진행 기록 열기" style="background:${t.bg};color:${t.fg}">`
+    +`<span class="hd">민원 <span class="sep">·</span> ${esc(m.step)}${mm?' <span class="sep">·</span>':''}</span>`
+    +(mm?`<span class="mm">${esc(mm)}</span>`:"")+`</span>`;
+}
+/* 목록 카드 칩 — 단계까지만(메모는 붙이지 않는다) */
+function mwCardChip(c){
+  const m=mwGet(c); if(!m.step) return "";
+  const t=mwTone(m.step);
+  return `<span class="chip" style="background:${t.bg};color:${t.fg};white-space:nowrap">민원 · ${esc(m.step)}</span>`;
+}
+let _mwDraft=null;
+function mwTlHtml(){
+  const log=(_mwDraft&&Array.isArray(_mwDraft.log))?_mwDraft.log:[];
+  if(!log.length) return `<div class="none">아직 기록이 없습니다. 단계나 메모를 고치고 <b>저장</b>하면 여기에 날짜와 함께 자동으로 쌓입니다.</div>`;
+  return log.map((e,i)=>`<div class="r"><span class="d">${fmt(e.ts)}</span><span class="w">${esc(e.by||"")}</span><span class="t">${esc(e.text||"")}</span><button class="x" onclick="mwDelLog(${i})" title="이 기록 한 줄 지우기">×</button></div>`).join("");
+}
+/* 잘못 남은 기록 한 줄만 지우기 (저장을 눌러야 실제로 반영된다) */
+function mwDelLog(i){
+  if(!_mwDraft||!Array.isArray(_mwDraft.log)) return;
+  if(!confirm("이 기록 한 줄을 지울까요?\n(창 아래 저장을 눌러야 실제로 지워집니다)")) return;
+  _mwDraft.log.splice(i,1);
+  const tl=document.getElementById("mw_tl"); if(tl) tl.innerHTML=mwTlHtml();
+}
+function mwPreview(){
+  if(!_mwDraft) return;
+  const box=document.getElementById("mw_prev"); if(!box) return;
+  const me=document.getElementById("mw_memo"); if(me) _mwDraft.memo=me.value;
+  if(!_mwDraft.step){ box.innerHTML=`<span class="mw-chip mw-add">＋ 민원</span>`; return; }
+  const t=mwTone(_mwDraft.step), mm=(_mwDraft.memo||"").trim();
+  box.innerHTML=`<span class="mw-chip" style="background:${t.bg};color:${t.fg};cursor:default">`
+    +`<span class="hd">민원 <span class="sep">·</span> ${esc(_mwDraft.step)}${mm?' <span class="sep">·</span>':''}</span>`
+    +(mm?`<span class="mm">${esc(mm)}</span>`:"")+`</span>`;
+}
+function mwPickStep(v){
+  if(!_mwDraft) return;
+  _mwDraft.step=v;
+  const seg=document.getElementById("mw_seg");
+  if(seg) [].forEach.call(seg.children,b=>{ if(b.dataset) b.classList.toggle("on", (b.dataset.v||"")===v); });
+  mwPreview();
+}
+/* 저장할 때 '무엇이 바뀌었는지'를 한 줄로 만들어 자동으로 기록에 남긴다 (2026-08-13)
+   ★기록 버튼을 따로 두지 않는 이유: 단계·메모를 고치고 기록 버튼까지 눌러야 하면 같은 일을 두 번 하는 셈이라
+     바쁠 때 버튼을 빼먹고, 결국 기록이 비어 정작 필요할 때 못 쓴다. 저장만 하면 빠짐없이 남게 했다. */
+function mwChangeText(before, after){
+  const p=[];
+  if((before.step||"")!==(after.step||"")) p.push("단계 → "+(after.step||"민원 없음"));
+  if((before.vendor||"")!==(after.vendor||"")) p.push("업체: "+(after.vendor||"(지움)"));
+  if((before.memo||"")!==(after.memo||"")) p.push("메모: "+(after.memo||"(지움)"));
+  return p.join(" · ");
+}
+function openMinwonModal(id){
+  const c=findClient(id); if(!c) return;
+  const m=mwGet(c);
+  _mwDraft={ step:m.step, vendor:m.vendor, memo:m.memo, log:m.log.slice() };
+  const seg=(v,label)=>`<button data-v="${v}" class="${m.step===v?'on':''}" onclick="mwPickStep('${v}')">${label}</button>`;
+  modal(`<h3 style="margin-top:0">🏢 민원업체 진행</h3>
+    <div class="hint" style="margin:-2px 0 13px;line-height:1.65"><b>${esc(c.name||"의뢰인")}</b> 의뢰인의 민원업체(서류 발급 대행) 진행 상황입니다.<br>
+      여기 적은 <b>간단 메모</b>는 상세 화면 칩에 같이 보이고, <b>목록 카드에는 단계만</b> 보입니다.</div>
+    <div class="field"><label>단계</label>
+      <div class="mw-seg" id="mw_seg">${seg("","민원 없음")}${seg("의뢰함","의뢰함")}${seg("진행중","진행중")}${seg("발급완료","발급완료")}</div></div>
+    <div class="field"><label>업체 이름 (선택)</label>
+      <input id="mw_vendor" type="text" maxlength="40" value="${esc(m.vendor)}" placeholder="예) 한빛행정사"
+        style="width:100%;font-family:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line);border-radius:9px">
+      <div class="hint" style="margin-top:5px">업체 이름은 이 창에만 보입니다 (헤더 칩·목록 카드에는 안 나옵니다).</div></div>
+    <div class="field"><label>간단 메모 (최대 200자)</label>
+      <textarea id="mw_memo" maxlength="200" oninput="mwPreview()" placeholder="예) 지적전산만 남음"
+        style="width:100%;min-height:62px;line-height:1.6;resize:vertical;font-family:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line);border-radius:9px">${esc(m.memo)}</textarea>
+      <div class="hint" style="margin-top:7px">상세 화면에 이렇게 보입니다</div>
+      <div id="mw_prev" style="margin-top:5px"></div></div>
+    <div class="field"><label>지금까지의 기록 — 저장할 때마다 날짜·이름과 함께 자동으로 쌓입니다</label>
+      <div class="mw-tl" id="mw_tl">${mwTlHtml()}</div>
+      <div class="hint" style="margin-top:6px">진행 상황이 바뀔 때마다 메모를 고쳐 저장하면, 언제 어떻게 흘러왔는지 그대로 남습니다.</div></div>
+    <div class="modal-actions">
+      ${m.step?`<button class="btn" style="color:var(--red);border-color:#f0d3d3;margin-right:auto" onclick="mwClear('${c.id}')">민원 표시 지우기</button>`:""}
+      <button class="btn" onclick="closeModal()">취소</button>
+      <button class="btn btn-primary" onclick="saveMinwon('${c.id}')">저장</button></div>`,470);
+  setTimeout(mwPreview,40);
+}
+function saveMinwon(id){
+  const c=findClient(id); if(!c || !_mwDraft) return;
+  const ve=document.getElementById("mw_vendor"), me=document.getElementById("mw_memo");
+  const before=mwGet(c);
+  const after={ step:_mwDraft.step||"", vendor:(ve?ve.value:"").trim(), memo:(me?me.value:"").trim() };
+  const changed=mwChangeText(before, after);
+  const logRemoved=(_mwDraft.log.length!==before.log.length);
+  const log=_mwDraft.log.slice();
+  if(changed) log.unshift({ ts:now(), by:(deviceName||"미설정"), text:changed });   /* ★바뀐 것이 있을 때만 한 줄 남긴다(그냥 저장만 눌러도 기록이 늘지 않게) */
+  c.minwon={ step:after.step, vendor:after.vendor, memo:after.memo, log:log.slice(0,100) };
+  _mwDraft=null;
+  if(changed||logRemoved) touch(`[${c.name}] 민원업체 ${changed||"기록 정리"}`);
+  closeModal();
+  if(currentClientId===id) renderDetail(id); else renderDashboard();
+  toast(changed ? `저장했습니다 · 기록에 남겼습니다 ✓` : (logRemoved?"기록을 정리했습니다 ✓":"바뀐 내용이 없습니다"));
+}
+function mwClear(id){
+  const c=findClient(id); if(!c) return;
+  if(!confirm("이 의뢰인의 민원업체 표시를 지울까요?\n(지금까지 남긴 진행 기록도 함께 지워집니다)")) return;
+  c.minwon=null; _mwDraft=null;
+  touch(`[${c.name}] 민원업체 표시 지움`);
+  closeModal();
+  if(currentClientId===id) renderDetail(id); else renderDashboard();
+  toast("민원업체 표시를 지웠습니다");
+}
+
 /* ---------- 보완필요(반려) 사유 쓰기·고치기 ---------- (2026-08-11)
    왜 창으로 바꿨나: 예전에는 prompt() 한 줄이라 한 번 적으면 고칠 방법이 없었고,
    고치려면 보완필요를 풀었다가 다시 걸어야 해서 사유가 통째로 날아갔다.
@@ -5434,6 +5597,8 @@ function sbBuildClient(row, rows, docs, memos, secret){
        칸이 아직 없는 DB에서만 app_json에 넣어둔 값을 쓴다. */
     onHold: SB_HAS_HOLD ? !!row.on_hold : !!aj.onHold,
     holdReason: SB_HAS_HOLD ? (row.hold_reason||"") : (aj.holdReason||""),
+    /* 민원업체 진행 (2026-08-13) — app_json에만 저장한다(표 변경 불필요) */
+    minwon: (aj.minwon && typeof aj.minwon==="object" && !Array.isArray(aj.minwon)) ? aj.minwon : null,
     /* 단계: 케이스허브 값(row.stage)이 정답이되, 취합앱에만 있는 세부 단계(서류작성)는 app_json.stage2 로 되살린다.
        stage2를 케이스허브 값으로 바꿔 봤을 때 row.stage와 같을 때만 쓴다 — 케이스허브에서 단계를 바꿨다면 그쪽이 이긴다. */
     stage: ((aj.stage2 && STAGES.includes(aj.stage2) && SB_STAGE_FWD[aj.stage2]===row.stage) ? aj.stage2 : (SB_STAGE_BACK[row.stage]||"서류수집")), deadline: row.court_deadline||null,
@@ -5658,7 +5823,7 @@ let SB_OFFICES=[];
 function sbFirmFromOffice(oid){ const o=SB_OFFICES.find(x=>x.id===oid); if(!o) return null; const n=o.name||""; if(n.includes("블루")) return "법률사무소 블루"; if(n.includes("이준")) return "법무법인 이준 서초 분사무소"; return n; }
 function sbOfficeFromFirm(firm){ const blue=(firm||"").includes("블루"); const o=SB_OFFICES.find(x=> blue ? (x.name||"").includes("블루") : (x.name||"").includes("이준")); return o? o.id : OURS_OFFICE_ID; }
 /* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
-function sbAppJson(c){ return { stage2: clientStage(c), firm:c.firm||null, onHold:!!c.onHold, holdReason:c.holdReason||"", housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: NA_DEFAULT.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
+function sbAppJson(c){ return { stage2: clientStage(c), firm:c.firm||null, onHold:!!c.onHold, holdReason:c.holdReason||"", minwon:((c.minwon&&typeof c.minwon==="object"&&!Array.isArray(c.minwon))?c.minwon:null), housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: NA_DEFAULT.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
 function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
   stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
