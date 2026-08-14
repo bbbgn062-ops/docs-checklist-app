@@ -96,7 +96,7 @@
   .mw-tl{border-top:1px solid var(--line);margin-top:10px;padding-top:9px;max-height:170px;overflow:auto;}
   .mw-tl .r{display:flex;gap:9px;font-size:12.5px;padding:4px 0;align-items:baseline;}
   .mw-tl .r .d{color:var(--muted);white-space:nowrap;}
-  .mw-tl .r .w{color:var(--brand);font-weight:700;white-space:nowrap;}
+  .mw-tl .r .w{color:var(--brand);font-weight:700;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;}
   .mw-tl .r .t{flex:1;word-break:break-all;}
   .mw-tl .r .x{border:none;background:none;color:var(--gray);font-size:15px;line-height:1;cursor:pointer;padding:0 2px;opacity:0;}
   .mw-tl .r:hover .x{opacity:1;}
@@ -4276,11 +4276,18 @@ function mwCardChip(c){
   const t=mwTone(m.step);
   return `<span class="chip" style="background:${t.bg};color:${t.fg};white-space:nowrap">민원 · ${esc(m.step)}</span>`;
 }
+/* 기록에 남길 사람 — ⚙️설정의 '기기 이름'이 있으면 그것, 비어 있으면 로그인한 계정 이메일 (2026-08-13)
+   ★기기 이름을 안 적어둔 PC에서도 최소한 계정은 남는다. 나중에 직원별 계정을 나누면 그때부터 사람이 그대로 구분된다. */
+function mwWho(){
+  try{ const d=(typeof deviceName!=="undefined"&&deviceName)?String(deviceName).trim():""; if(d) return d; }catch(_){ }
+  try{ if(typeof sbUser!=="undefined" && sbUser && sbUser.email) return String(sbUser.email); }catch(_){ }
+  return "미설정";
+}
 let _mwDraft=null;
 function mwTlHtml(){
   const log=(_mwDraft&&Array.isArray(_mwDraft.log))?_mwDraft.log:[];
   if(!log.length) return `<div class="none">아직 기록이 없습니다. 단계나 메모를 고치고 <b>저장</b>하면 여기에 날짜와 함께 자동으로 쌓입니다.</div>`;
-  return log.map((e,i)=>`<div class="r"><span class="d">${fmt(e.ts)}</span><span class="w">${esc(e.by||"")}</span><span class="t">${esc(e.text||"")}</span><button class="x" onclick="mwDelLog(${i})" title="이 기록 한 줄 지우기">×</button></div>`).join("");
+  return log.map((e,i)=>`<div class="r"><span class="d">${fmt(e.ts)}</span><span class="w" title="${esc(e.by||"")}">${esc(e.by||"")}</span><span class="t">${esc(e.text||"")}</span><button class="x" onclick="mwDelLog(${i})" title="이 기록 한 줄 지우기">×</button></div>`).join("");
 }
 /* 잘못 남은 기록 한 줄만 지우기 (저장을 눌러야 실제로 반영된다) */
 function mwDelLog(i){
@@ -4352,7 +4359,7 @@ function saveMinwon(id){
   const changed=mwChangeText(before, after);
   const logRemoved=(_mwDraft.log.length!==before.log.length);
   const log=_mwDraft.log.slice();
-  if(changed) log.unshift({ ts:now(), by:(deviceName||"미설정"), text:changed });   /* ★바뀐 것이 있을 때만 한 줄 남긴다(그냥 저장만 눌러도 기록이 늘지 않게) */
+  if(changed) log.unshift({ ts:now(), by:mwWho(), text:changed });   /* ★바뀐 것이 있을 때만 한 줄 남긴다(그냥 저장만 눌러도 기록이 늘지 않게) */
   c.minwon={ step:after.step, vendor:after.vendor, memo:after.memo, log:log.slice(0,100) };
   _mwDraft=null;
   if(changed||logRemoved) touch(`[${c.name}] 민원업체 ${changed||"기록 정리"}`);
