@@ -438,6 +438,7 @@
     <div id="appTabs"></div>
     <div id="dashStats"></div>
     <div id="urgentBoard"></div>
+    <div id="feeBoard"></div>
     <div id="cancelMemo"></div>
     <div id="dashBoard"></div>
     <div id="dashLinks"></div>
@@ -1049,7 +1050,7 @@ let bjStageFilter="전체";
 function setBjStageFilter(v){ bjStageFilter=v; renderDashboard(); }
 function setAppMode(m){
   if(APPMODE===m) return;
-  APPMODE=m; stageFilter=(m==="bj")?"전체":"서류수집"; bjStageFilter="전체"; firmF="";
+  APPMODE=m; stageFilter=(m==="bj")?"전체":"서류수집"; bjStageFilter="전체"; firmF=""; feeOnlyF=false;   /* 탭을 바꾸면 미수금 필터도 푼다 (2026-08-19) */
   const ss=$("#statusSel"); if(ss) ss.value="active";
   const ms=$("#minwonSel"); if(ms) ms.value="";   /* 탭을 바꾸면 민원업체 필터도 함께 푼다 (2026-08-13) */
   const sg=$("#stageSel"); if(sg) sg.value="";
@@ -1722,6 +1723,7 @@ function renderDashboard(){
       else if(ms!==mwF) return false;
     }
     if(firmF && firmShort(c.firm)!==firmF) return false;
+    if(feeOnlyF && !(feeApplies(c) && feeUnpaid(c)>0)) return false;   /* 💰미수금 카드를 눌렀을 때 (2026-08-19) */
     return true;
   });
   list.sort((a,b)=>{
@@ -1735,6 +1737,7 @@ function renderDashboard(){
   });
   renderDashHeaderStatsBoard();
   renderUrgentBoard();
+  renderFeeBoard();
   renderCancelMemo();
   renderFirmChips();
   renderStagePills();
@@ -1865,6 +1868,7 @@ function renderDetail(id){
     html+=`<div class="overall memo-always" style="margin-top:-6px;margin-bottom:14px"><div class="field" style="margin:0"><label>📝 의뢰인 메모 (상황·특이사항)</label><textarea id="clientMemo" rows="1" placeholder="예: 배우자 명의 차량 있음 / 전세보증금 확인 필요 / 사업자 폐업" oninput="autoGrowMemo(this);onClientMemo('${c.id}')">${esc(c.memo||"")}</textarea></div></div>`;
   }
   html+=rejectPanel(c);   /* 보완 서류·사유 자동 표시 (메모 바로 아래) — 2026-08-14 */
+  html+=feePanel(c);      /* 수임료 1차·2차 (블루 사건만) — 2026-08-19 */
   if(detailPanel==='timeline'){
     html+=`<div class="overall" style="margin-top:-6px;margin-bottom:14px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><label style="font-size:12.5px;font-weight:800;color:var(--muted)">🗓️ 상담·연락 기록</label><button class="btn btn-sm" onclick="addTimeline('${c.id}')">+ 기록 추가</button></div>${(c.timeline&&c.timeline.length)?`<div class="tl">`+c.timeline.map((t,i)=>`<div class="tl-row"><span class="tl-date">${fmt(t.ts)}</span><span class="tl-who">${esc(t.by||'')}</span><span class="tl-txt">${esc(t.text)}</span><button class="tl-del" onclick="delTimeline('${c.id}',${i})">×</button></div>`).join("")+`</div>`:`<div style="font-size:12.5px;color:var(--muted)">아직 기록이 없습니다. "+기록 추가"로 상담·통화 내용을 남기세요.</div>`}</div>`;
   }
@@ -4511,47 +4515,185 @@ function delTimeline(cid,i){ const c=findClient(cid); if(!confirm("이 기록을
 function toggleReject(cid,id){ const c=findClient(cid); const s=c.items[id];
   if(s.rejected) clearReject(cid,id); else openRejectModal(cid,id);
   renderDetail(cid); }
-/* ---------- 7a-2. Excel 내보내기 — 사무소 + 진행과정(단계) 골라 받기 ---------- 2026-08-19 신설 */
-let _xlFirm="", _xlStages=null;
-function _xlBaseList(firm){
+/* ===== 7a-1. 수임료(원사무실 분납) — 1차·2차 받았는지 체크 ===== 2026-08-19 신설
+   왜: 블루(원사무실)에서 넘어온 사건은 접수 때 1차 25만원, 한 달 뒤 2차 20만원으로 나눠 받기로 했다.
+       누가 얼마를 아직 안 냈는지 앱에서 바로 보고, 엑셀에도 그대로 나오게 한다.
+   대상: 사무소가 '블루'인 의뢰인만 (이준 서초 사건 화면은 예전 그대로 깨끗하게 둔다).
+   금액: 250,000 / 200,000이 기본값이고 사건마다 고쳐 쓸 수 있다.
+   2차 예정일: 1차 받은 날 + 1개월 자동 계산(31일→그 달 마지막 날로 맞춤).
+   저장 위치: 서버 clients.app_json 안의 fee (민원업체·보류와 같은 방식 — 표 변경·SQL 불필요). */
+const FEE_D1=250000, FEE_D2=200000;
+function feeApplies(c){ return !!c && firmShort(c.firm)==="블루"; }
+function feeWon(n){ return (Number(n)||0).toLocaleString("ko-KR"); }
+function feeYmd(d){ const p=x=>String(x).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+function feeToday(){ return feeYmd(new Date()); }
+function feeGet(c){
+  const f=(c && c.fee && typeof c.fee==="object" && !Array.isArray(c.fee)) ? c.fee : {};
+  const one=(o,dflt)=>({ amt:(o && Number.isFinite(Number(o.amt)) && Number(o.amt)>=0) ? Math.round(Number(o.amt)) : dflt,
+                         paid:!!(o && o.paid), date:((o && o.date) || "") });
+  return { p1:one(f.p1,FEE_D1), p2:one(f.p2,FEE_D2), memo:(f.memo||"") };
+}
+function feeSave(c,f){ c.fee={ p1:f.p1, p2:f.p2, memo:f.memo||"" }; }
+/* 1개월 뒤 — 1/31 + 1개월은 2/28(윤년 2/29)로 맞춘다. 그냥 setMonth를 쓰면 3/2로 튄다. */
+function feeAddMonth(ymd){
+  if(!ymd) return "";
+  const d=new Date(ymd+"T00:00:00"); if(isNaN(d.getTime())) return "";
+  const day=d.getDate(); d.setDate(1); d.setMonth(d.getMonth()+1);
+  const last=new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  d.setDate(Math.min(day,last)); return feeYmd(d);
+}
+function feeDue2(c){ const f=feeGet(c); if(f.p2.paid) return ""; if(!f.p1.paid||!f.p1.date) return ""; return feeAddMonth(f.p1.date); }
+function feeDaysTo(ymd){ if(!ymd) return null; const t=new Date(ymd+"T00:00:00").getTime(); if(isNaN(t)) return null;
+  const today=new Date(); today.setHours(0,0,0,0); return Math.round((t-today.getTime())/86400000); }
+function feeUnpaid(c){ if(!feeApplies(c)) return 0; const f=feeGet(c); return (f.p1.paid?0:f.p1.amt)+(f.p2.paid?0:f.p2.amt); }
+function feeOverdue(c){ const d=feeDaysTo(feeDue2(c)); return d!==null && d<0; }
+function feeShortD(ymd){ if(!ymd) return ""; const p=ymd.split("-"); return p.length===3 ? (Number(p[1])+"/"+Number(p[2])) : ymd; }
+
+function feeToggle(cid,k){
+  const c=findClient(cid); if(!c) return; const f=feeGet(c);
+  const p=f[k]; p.paid=!p.paid;
+  if(p.paid && !p.date) p.date=feeToday();
+  feeSave(c,f);
+  touch(`[${c.name}] ${k==="p1"?"1차":"2차"} 수임료 ${p.paid?("받음 "+feeWon(p.amt)+"원"):"받음 해제"}`);
+  renderDetail(cid);
+}
+function feeAmt(cid,k,v){
+  const c=findClient(cid); if(!c) return; const f=feeGet(c);
+  const n=Math.max(0, parseInt(String(v).replace(/[^0-9]/g,""),10)||0);
+  if(f[k].amt===n){ renderDetail(cid); return; }
+  f[k].amt=n; feeSave(c,f);
+  touch(`[${c.name}] ${k==="p1"?"1차":"2차"} 수임료 금액 → ${feeWon(n)}원`);
+  renderDetail(cid);
+}
+function feeDate(cid,k,v){
+  const c=findClient(cid); if(!c) return; const f=feeGet(c);
+  f[k].date=v||""; if(v && !f[k].paid) f[k].paid=true;   /* 날짜를 적으면 받은 것으로 본다 */
+  feeSave(c,f);
+  touch(`[${c.name}] ${k==="p1"?"1차":"2차"} 수임료 받은 날 → ${v||"지움"}`);
+  renderDetail(cid);
+}
+/* 의뢰인 상세 화면 카드 (메모·보완 카드 아래) */
+function feePanel(c){
+  if(!feeApplies(c)) return "";
+  const f=feeGet(c), un=feeUnpaid(c), due=feeDue2(c), dd=feeDaysTo(due);
+  const badge = un>0
+    ? `<span style="background:var(--red-soft);color:var(--red);font-weight:800;font-size:12px;padding:3px 10px;border-radius:999px">미수 ${feeWon(un)}원</span>`
+    : `<span style="background:var(--green-soft);color:var(--green);font-weight:800;font-size:12px;padding:3px 10px;border-radius:999px">완납 ✓</span>`;
+  let dueChip="";
+  if(due){
+    const over=dd<0;
+    dueChip=`<span style="font-size:11.5px;font-weight:800;padding:2px 9px;border-radius:999px;white-space:nowrap;`
+      +`background:${over?"var(--red-soft)":(dd<=7?"var(--amber-soft)":"var(--gray-soft)")};`
+      +`color:${over?"var(--red)":(dd<=7?"var(--amber)":"var(--muted)")}">`
+      +`예정 ${feeShortD(due)} · ${over?("+"+(-dd)+"일 지남"):(dd===0?"오늘":"D-"+dd)}</span>`;
+  }
+  const row=(k,label,p,extra)=>`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--line)">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;min-width:74px">
+        <input type="checkbox" ${p.paid?"checked":""} onchange="feeToggle('${c.id}','${k}')" style="width:17px;height:17px;margin:0;flex:none">
+        <b style="font-size:13.5px;${p.paid?"color:var(--green)":""}">${label}</b>
+      </label>
+      <span style="display:inline-flex;align-items:center;gap:3px;font-size:13px;color:var(--muted)">
+        <input value="${feeWon(p.amt)}" onchange="feeAmt('${c.id}','${k}',this.value)" inputmode="numeric"
+          style="width:94px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;text-align:right;font-weight:700;color:var(--ink)">원
+      </span>
+      <span style="font-size:12.5px;color:var(--muted)">받은 날</span>
+      <input type="date" value="${esc(p.date||"")}" onchange="feeDate('${c.id}','${k}',this.value)"
+        style="padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px">
+      ${extra||""}
+    </div>`;
+  return `<div class="overall" style="margin-top:-6px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <span style="font-size:12.5px;font-weight:800;color:var(--muted)">💰 수임료 · 원사무실(블루) 분납</span>${badge}
+    </div>
+    ${row("p1","1차",f.p1,"")}
+    ${row("p2","2차",f.p2,dueChip)}
+    <div style="font-size:11.5px;color:var(--muted);padding-top:7px;border-top:1px solid var(--line);line-height:1.6">
+      1차를 체크하면 오늘 날짜가 자동으로 들어가고, <b>2차 예정일은 1차 받은 날에서 한 달 뒤</b>로 잡힙니다. 금액은 사건마다 고쳐도 됩니다.
+    </div>
+  </div>`;
+}
+/* 대시보드 미수금 카드 — 누르면 미수인 사람만 걸러 보여준다 */
+let feeOnlyF=false;
+function feeToggleFilter(){ feeOnlyF=!feeOnlyF; renderDashboard(); if(feeOnlyF) window.scrollTo({top:0,behavior:"smooth"}); }
+function renderFeeBoard(){
+  const el=document.getElementById("feeBoard"); if(!el) return;
+  const base=state.clients.filter(c=>!c.archived && !c.onHold && inAppMode(c) && feeApplies(c) && (!firmF||firmShort(c.firm)===firmF));
+  const unpaid=base.filter(c=>feeUnpaid(c)>0);
+  if(base.length===0){ el.innerHTML=""; return; }
+  const sum=unpaid.reduce((a,c)=>a+feeUnpaid(c),0);
+  const over=unpaid.filter(feeOverdue).length;
+  if(unpaid.length===0){
+    el.innerHTML=`<div style="background:var(--green-soft);border-radius:12px;padding:11px 15px;margin:6px 0 14px;font-size:13.5px;font-weight:800;color:var(--green)">💰 블루 수임료 — ${base.length}명 모두 완납 ✓</div>`;
+    return;
+  }
+  el.innerHTML=`<div onclick="feeToggleFilter()" title="누르면 미수인 사람만 걸러 봅니다"
+      style="cursor:pointer;background:${feeOnlyF?"#7A1427":"#B23A48"};border-radius:12px;padding:13px 16px;margin:6px 0 14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <span style="font-size:14px;font-weight:900;color:#fff">💰 블루 수임료 미수 ${unpaid.length}명 · ${feeWon(sum)}원${over?` <span style="font-weight:800;font-size:12px;background:#fff;color:#9B1B33;padding:2px 9px;border-radius:999px;margin-left:4px">2차 기한 지남 ${over}명</span>`:""}</span>
+      <span style="font-size:11.5px;font-weight:800;color:#fff;background:rgba(255,255,255,.22);padding:3px 11px;border-radius:999px;white-space:nowrap">${feeOnlyF?"✓ 미수만 보는 중 — 누르면 해제":"눌러서 미수만 보기"}</span>
+    </div>
+  </div>`;
+}
+
+/* ---------- 7a-2. Excel 내보내기 — 탭(전체사건/보정사건) + 사무소 + 진행과정 골라 받기 ----------
+   2026-08-19 신설 · 2026-08-19b 탭 구분 추가
+   ★보정사건(보정만 넘겨받은 건)은 우리가 서류를 받지 않으므로 서류 관련 칸을 빼고
+     법원 기한·사건번호 중심으로 따로 뽑는다. 단계도 보정중/개시결정/인가결정/기각 4개로 다르다. */
+let _xlKind="all", _xlFirm="", _xlStages=null;
+function _xlStageList(kind){ return (kind==="bj") ? BJ_APP_STAGES.slice() : STAGES.slice(); }
+function _xlStageOf(c,kind){ return (kind==="bj") ? bjStage(c) : clientStage(c); }
+function _xlKindName(kind){ return (kind==="bj") ? "보정사건" : "전체사건"; }
+function _xlBaseList(firm,kind){
   let list=state.clients.map(ensureItems).filter(c=>!c.archived && !c.onHold);
+  list=list.filter(c=> (kind==="bj") ? isBJOnly(c) : !isBJOnly(c) );
   if(firm) list=list.filter(c=>firmShort(c.firm)===firmShort(firm));
   return list;
 }
+function _xlWithFee(firm){ return !firm || firmShort(firm)==="블루"; }   /* 수임료 칸은 블루가 포함될 때만 */
 function exportExcelPick(){
-  _xlFirm=""; _xlStages=new Set(STAGES);
+  _xlKind=(APPMODE==="bj")?"bj":"all";              /* 지금 보고 있는 큰 탭을 기본값으로 */
+  _xlFirm=""; _xlStages=new Set(_xlStageList(_xlKind));
   modal(`<h3>📊 Excel 내보내기</h3><div id="xlPickBody"></div>`,560);
   _xlRender();
 }
 function _xlRender(){
   const box=$("#xlPickBody"); if(!box) return;
-  const list=_xlBaseList(_xlFirm);
-  const cnt={}; STAGES.forEach(s=>cnt[s]=0);
-  list.forEach(c=>{ const s=clientStage(c); cnt[s]=(cnt[s]||0)+1; });
-  const picked=list.filter(c=>_xlStages.has(clientStage(c))).length;
+  const stages=_xlStageList(_xlKind);
+  const list=_xlBaseList(_xlFirm,_xlKind);
+  const cnt={}; stages.forEach(s=>cnt[s]=0);
+  list.forEach(c=>{ const s=_xlStageOf(c,_xlKind); if(cnt[s]!==undefined) cnt[s]++; });
+  const picked=list.filter(c=>_xlStages.has(_xlStageOf(c,_xlKind))).length;
+  const kbtn=(v,label,color)=>`<button class="btn${_xlKind===v?" btn-primary":""}" style="flex:1;padding:10px;font-size:13px${(_xlKind===v)?";background:"+color+";border-color:"+color:""}" onclick="_xlSetKind('${v}')">${label}</button>`;
   const fbtn=(v,label,color)=>`<button class="btn${_xlFirm===v?" btn-primary":""}" style="flex:1;padding:10px;font-size:13px${(_xlFirm===v&&color)?";background:"+color+";border-color:"+color:""}" onclick="_xlSetFirm('${v}')">${label}</button>`;
   box.innerHTML=`
-    <p class="hint" style="margin:2px 0 6px">① 어느 사무소로 내보낼까요?</p>
+    <p class="hint" style="margin:2px 0 6px">① 어느 탭의 사건인가요? <span style="opacity:.75">(앱 위쪽 큰 탭과 같습니다)</span></p>
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      ${kbtn("all","🗂 전체사건","#9B1B33")}
+      ${kbtn("bj","📌 보정사건","#4527A0")}
+    </div>
+    <p class="hint" style="margin:0 0 6px">② 어느 사무소로 내보낼까요?</p>
     <div style="display:flex;gap:6px;margin-bottom:14px">
       ${fbtn("이준","🏛 이준 서초","")}
       ${fbtn("블루","🏛 블루","#2563EB")}
       ${fbtn("","전체 통합","")}
     </div>
-    <p class="hint" style="margin:0 0 6px">② 어느 진행과정을 넣을까요? <b style="color:var(--ink)">필요한 것만 체크</b>하세요 (여러 개 가능)</p>
+    <p class="hint" style="margin:0 0 6px">③ 어느 진행과정을 넣을까요? <b style="color:var(--ink)">필요한 것만 체크</b>하세요 (여러 개 가능)</p>
     <div style="display:flex;gap:6px;margin-bottom:8px">
       <button class="btn" style="padding:6px 10px;font-size:12px" onclick="_xlAll(1)">전체 선택</button>
       <button class="btn" style="padding:6px 10px;font-size:12px" onclick="_xlAll(0)">전체 해제</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:6px">
-      ${STAGES.map(s=>`<label style="display:flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;cursor:pointer;background:${_xlStages.has(s)?"var(--brand-soft)":"var(--panel)"};${cnt[s]?"":"opacity:.45"}">
+      ${stages.map(s=>`<label style="display:flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;cursor:pointer;background:${_xlStages.has(s)?"var(--brand-soft)":"var(--panel)"};${cnt[s]?"":"opacity:.45"}">
         <input type="checkbox" ${_xlStages.has(s)?"checked":""} onchange="_xlToggle('${s}')" style="width:16px;height:16px;flex:none;margin:0">
-        <span style="width:9px;height:9px;border-radius:50%;flex:none;background:${STAGE_COLOR[s]||"#A8A29E"}"></span>
+        <span style="width:9px;height:9px;border-radius:50%;flex:none;background:${(_xlKind==="bj")?"#4527A0":(STAGE_COLOR[s]||"#A8A29E")}"></span>
         <span style="flex:1;font-size:13px;font-weight:600">${s}</span>
         <span style="font-size:12px;color:var(--muted)">${cnt[s]||0}명</span>
       </label>`).join("")}
     </div>
     <div style="margin-top:12px;padding:10px 12px;border-radius:9px;background:var(--gray-soft);font-size:13px;line-height:1.6">
-      내보낼 의뢰인 <b>${picked}명</b> <span style="color:var(--muted)">· ${_xlFirm?firmShort(_xlFirm):"전체 통합"} 전체 ${list.length}명 중</span>
+      내보낼 의뢰인 <b>${picked}명</b> <span style="color:var(--muted)">· ${_xlKindName(_xlKind)} · ${_xlFirm?firmShort(_xlFirm):"전체 통합"} 전체 ${list.length}명 중</span>
+      ${_xlWithFee(_xlFirm)?`<br><span style="color:var(--muted);font-size:12px">· 블루 사건은 <b>수임료 1차·2차·미수금</b> 칸이 함께 들어갑니다</span>`:""}
+      ${_xlKind==="bj"?`<br><span style="color:var(--muted);font-size:12px">· 보정사건 표에는 서류 취합 칸(완료율·미확보·확보 등)이 빠지고 기한·사건번호 위주로 나옵니다</span>`:""}
     </div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
       <button class="btn btn-primary" style="padding:12px" onclick="_xlGo(0)">📥 한 파일로 받기</button>
@@ -4560,17 +4702,19 @@ function _xlRender(){
     </div>
     <p class="hint" style="margin:8px 0 0;font-size:11.5px">※ '파일 따로 받기'는 파일이 여러 개 내려받아집니다. 크롬이 <b>“여러 파일을 다운로드하시겠습니까?”</b>라고 물으면 <b>허용</b>을 눌러 주세요.</p>`;
 }
+function _xlSetKind(v){ if(_xlKind===v) return; _xlKind=v; _xlStages=new Set(_xlStageList(v)); _xlRender(); }
 function _xlSetFirm(v){ _xlFirm=v; _xlRender(); }
 function _xlToggle(s){ if(_xlStages.has(s)) _xlStages.delete(s); else _xlStages.add(s); _xlRender(); }
-function _xlAll(on){ _xlStages = on ? new Set(STAGES) : new Set(); _xlRender(); }
+function _xlAll(on){ _xlStages = on ? new Set(_xlStageList(_xlKind)) : new Set(); _xlRender(); }
 function _xlGo(each){
-  const stages=STAGES.filter(s=>_xlStages.has(s));
+  const stages=_xlStageList(_xlKind).filter(s=>_xlStages.has(s));
   if(stages.length===0){ toast("진행과정을 1개 이상 골라 주세요"); return; }
-  const firm=_xlFirm; closeModal();
-  if(each) exportExcelEach(firm,stages); else exportExcel(firm,stages);
+  const firm=_xlFirm, kind=_xlKind; closeModal();
+  if(each) exportExcelEach(firm,stages,kind); else exportExcel(firm,stages,kind);
 }
-function _xlStageTag(stages){
-  if(!stages || stages.length===0 || stages.length>=STAGES.length) return "전체단계";
+function _xlStageTag(stages,kind){
+  const all=_xlStageList(kind);
+  if(!stages || stages.length===0 || stages.length>=all.length) return "전체단계";
   if(stages.length<=3) return stages.join("·");
   return stages.length+"개단계";
 }
@@ -4581,38 +4725,68 @@ function _missingByMode(c){
   Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>push(ex.id,ex.name)));
   return {self, req};
 }
-function _xlRows(list){
-  return list.map(c=>{ const p=progress(c); const d=dDay(c); const mm=_missingByMode(c);
-    return {이름:c.name||"",사무소:firmShort(c.firm),단계:clientStage(c),완료율:(isBJOnly(c)?"보정":p.pct+"%"),"미확보(회사 직접발급)":mm.self.join(", "),"미확보(의뢰인 발급)":mm.req.join(", "),확보:p.done,전체:p.total,요청중:p.requesting,미요청:p.notReq,보완필요:p.rejected,사건종류:c.caseType||"개인회생",소득유형:c.incomeType||"미정",담당자:c.assignee||"",마감구분:c.deadlineLabel||"",마감일:c.deadline?fmtD(c.deadline):"",DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),사건번호:c.caseNo||"",연락처:c.phone||"","주민번호(앞자리)":maskRrn(c.rrnFront),메모:(c.memo||"").replace(/[\r\n]+/g," ")}; });
+/* 수임료 6칸 — 블루 사건만 값이 차고, 이준 사건은 빈칸으로 둔다 */
+function _xlFeeCells(c){
+  if(!feeApplies(c)) return {"1차 수임료":"","1차 받은날":"","2차 수임료":"","2차 받은날":"","2차 예정일":"","미수금":""};
+  const f=feeGet(c), due=feeDue2(c);
+  const cell=p=> p.paid ? (p.date||"받음") : "미납";
+  return {"1차 수임료":f.p1.amt,"1차 받은날":cell(f.p1),"2차 수임료":f.p2.amt,"2차 받은날":cell(f.p2),
+          "2차 예정일":(due||""),"미수금":feeUnpaid(c)};
+}
+function _xlRows(list,kind,withFee){
+  return list.map(c=>{ const d=dDay(c);
+    let r;
+    if(kind==="bj"){
+      r={이름:c.name||"",사무소:firmShort(c.firm),단계:bjStage(c),접수형태:"보정만",
+         사건종류:c.caseType||"개인회생",담당자:c.assignee||"",마감구분:c.deadlineLabel||"",
+         마감일:(c.deadline?fmtD(c.deadline):""),DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),
+         사건번호:c.caseNo||"",연락처:c.phone||"","주민번호(앞자리)":maskRrn(c.rrnFront),
+         메모:(c.memo||"").replace(/[\r\n]+/g," ")};
+    }else{
+      const p=progress(c), mm=_missingByMode(c);
+      r={이름:c.name||"",사무소:firmShort(c.firm),단계:clientStage(c),완료율:p.pct+"%",
+         "미확보(회사 직접발급)":mm.self.join(", "),"미확보(의뢰인 발급)":mm.req.join(", "),
+         확보:p.done,전체:p.total,요청중:p.requesting,미요청:p.notReq,보완필요:p.rejected,
+         사건종류:c.caseType||"개인회생",소득유형:c.incomeType||"미정",담당자:c.assignee||"",
+         마감구분:c.deadlineLabel||"",마감일:(c.deadline?fmtD(c.deadline):""),
+         DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),사건번호:c.caseNo||"",연락처:c.phone||"",
+         "주민번호(앞자리)":maskRrn(c.rrnFront),메모:(c.memo||"").replace(/[\r\n]+/g," ")};
+    }
+    if(withFee){ const fc=_xlFeeCells(c); const out={};
+      Object.keys(r).forEach(k=>{ out[k]=r[k]; if(k==="단계") Object.keys(fc).forEach(fk=>out[fk]=fc[fk]); });
+      return out; }
+    return r; });
 }
 function _xlSave(rows,fname){
   const cols=Object.keys(rows[0]);
   let table=`<table border="1"><tr>${cols.map(h=>`<th>${h}</th>`).join("")}</tr>`;
-  rows.forEach(r=>{ table+=`<tr>${cols.map(h=>`<td>${esc(String(r[h]))}</td>`).join("")}</tr>`; });
+  rows.forEach(r=>{ table+=`<tr>${cols.map(h=>`<td>${esc(String(r[h]===undefined?"":r[h]))}</td>`).join("")}</tr>`; });
   table+=`</table>`;
   const blob=new Blob(["﻿<html><head><meta charset='utf-8'></head><body>"+table+"</body></html>"],{type:"application/vnd.ms-excel"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download=fname; a.click();
   setTimeout(()=>{ try{URL.revokeObjectURL(url);}catch(_){ } },4000);
 }
-function exportExcel(firm,stages){
-  const sel=(stages&&stages.length)?stages:STAGES.slice();
-  const list=_xlBaseList(firm).filter(c=>sel.indexOf(clientStage(c))>=0);
+function exportExcel(firm,stages,kind){
+  kind=(kind==="bj")?"bj":"all";
+  const sel=(stages&&stages.length)?stages:_xlStageList(kind);
+  const list=_xlBaseList(firm,kind).filter(c=>sel.indexOf(_xlStageOf(c,kind))>=0);
   if(list.length===0){ toast("고른 조건에 해당하는 의뢰인이 없습니다"); return; }
-  const tag=firm?firmShort(firm):"전체통합", st=_xlStageTag(sel);
-  _xlSave(_xlRows(list),"서류취합_현황_"+tag+"_"+st+"_"+fmtD(now()).replace(/\//g,"-")+".xls");
-  toast(`Excel(${tag} · ${st}) ${list.length}명 내보냈습니다`);
+  const tag=firm?firmShort(firm):"전체통합", st=_xlStageTag(sel,kind), kn=_xlKindName(kind);
+  _xlSave(_xlRows(list,kind,_xlWithFee(firm)),"서류취합_현황_"+tag+"_"+kn+"_"+st+"_"+fmtD(now()).replace(/\//g,"-")+".xls");
+  toast(`Excel(${tag} · ${kn} · ${st}) ${list.length}명 내보냈습니다`);
 }
-function exportExcelEach(firm,stages){
-  const sel=(stages&&stages.length)?stages:STAGES.slice();
-  const tag=firm?firmShort(firm):"전체통합", dt=fmtD(now()).replace(/\//g,"-");
-  const base=_xlBaseList(firm);
+function exportExcelEach(firm,stages,kind){
+  kind=(kind==="bj")?"bj":"all";
+  const sel=(stages&&stages.length)?stages:_xlStageList(kind);
+  const tag=firm?firmShort(firm):"전체통합", kn=_xlKindName(kind), dt=fmtD(now()).replace(/\//g,"-");
+  const base=_xlBaseList(firm,kind), withFee=_xlWithFee(firm);
   let files=0, people=0; const empty=[];
   sel.forEach(s=>{
-    const list=base.filter(c=>clientStage(c)===s);
+    const list=base.filter(c=>_xlStageOf(c,kind)===s);
     if(list.length===0){ empty.push(s); return; }
-    const rows=_xlRows(list);
-    setTimeout(()=>{ _xlSave(rows,"서류취합_현황_"+tag+"_"+s+"_"+dt+".xls"); }, files*400);
+    const rows=_xlRows(list,kind,withFee);
+    setTimeout(()=>{ _xlSave(rows,"서류취합_현황_"+tag+"_"+kn+"_"+s+"_"+dt+".xls"); }, files*400);
     files++; people+=list.length;
   });
   if(files===0){ toast("고른 조건에 해당하는 의뢰인이 없습니다"); return; }
@@ -5737,6 +5911,8 @@ function sbBuildClient(row, rows, docs, memos, secret){
     holdReason: SB_HAS_HOLD ? (row.hold_reason||"") : (aj.holdReason||""),
     /* 민원업체 진행 (2026-08-13) — app_json에만 저장한다(표 변경 불필요) */
     minwon: (aj.minwon && typeof aj.minwon==="object" && !Array.isArray(aj.minwon)) ? aj.minwon : null,
+    /* 수임료 1차·2차 (2026-08-19) — app_json에만 저장한다(표 변경 불필요) */
+    fee: (aj.fee && typeof aj.fee==="object" && !Array.isArray(aj.fee)) ? aj.fee : null,
     /* 단계: 케이스허브 값(row.stage)이 정답이되, 취합앱에만 있는 세부 단계(서류작성)는 app_json.stage2 로 되살린다.
        stage2를 케이스허브 값으로 바꿔 봤을 때 row.stage와 같을 때만 쓴다 — 케이스허브에서 단계를 바꿨다면 그쪽이 이긴다. */
     stage: ((aj.stage2 && STAGES.includes(aj.stage2) && SB_STAGE_FWD[aj.stage2]===row.stage) ? aj.stage2 : (SB_STAGE_BACK[row.stage]||"서류수집")), deadline: row.court_deadline||null,
@@ -5961,7 +6137,7 @@ let SB_OFFICES=[];
 function sbFirmFromOffice(oid){ const o=SB_OFFICES.find(x=>x.id===oid); if(!o) return null; const n=o.name||""; if(n.includes("블루")) return "법률사무소 블루"; if(n.includes("이준")) return "법무법인 이준 서초 분사무소"; return n; }
 function sbOfficeFromFirm(firm){ const blue=(firm||"").includes("블루"); const o=SB_OFFICES.find(x=> blue ? (x.name||"").includes("블루") : (x.name||"").includes("이준")); return o? o.id : OURS_OFFICE_ID; }
 /* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
-function sbAppJson(c){ return { stage2: clientStage(c), firm:c.firm||null, onHold:!!c.onHold, holdReason:c.holdReason||"", minwon:((c.minwon&&typeof c.minwon==="object"&&!Array.isArray(c.minwon))?c.minwon:null), housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: NA_DEFAULT.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
+function sbAppJson(c){ return { stage2: clientStage(c), firm:c.firm||null, onHold:!!c.onHold, holdReason:c.holdReason||"", minwon:((c.minwon&&typeof c.minwon==="object"&&!Array.isArray(c.minwon))?c.minwon:null), fee:((c.fee&&typeof c.fee==="object"&&!Array.isArray(c.fee))?c.fee:null), housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: NA_DEFAULT.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
 function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
   stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
