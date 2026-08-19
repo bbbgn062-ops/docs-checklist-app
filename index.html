@@ -4511,6 +4511,69 @@ function delTimeline(cid,i){ const c=findClient(cid); if(!confirm("이 기록을
 function toggleReject(cid,id){ const c=findClient(cid); const s=c.items[id];
   if(s.rejected) clearReject(cid,id); else openRejectModal(cid,id);
   renderDetail(cid); }
+/* ---------- 7a-2. Excel 내보내기 — 사무소 + 진행과정(단계) 골라 받기 ---------- 2026-08-19 신설 */
+let _xlFirm="", _xlStages=null;
+function _xlBaseList(firm){
+  let list=state.clients.map(ensureItems).filter(c=>!c.archived && !c.onHold);
+  if(firm) list=list.filter(c=>firmShort(c.firm)===firmShort(firm));
+  return list;
+}
+function exportExcelPick(){
+  _xlFirm=""; _xlStages=new Set(STAGES);
+  modal(`<h3>📊 Excel 내보내기</h3><div id="xlPickBody"></div>`,560);
+  _xlRender();
+}
+function _xlRender(){
+  const box=$("#xlPickBody"); if(!box) return;
+  const list=_xlBaseList(_xlFirm);
+  const cnt={}; STAGES.forEach(s=>cnt[s]=0);
+  list.forEach(c=>{ const s=clientStage(c); cnt[s]=(cnt[s]||0)+1; });
+  const picked=list.filter(c=>_xlStages.has(clientStage(c))).length;
+  const fbtn=(v,label,color)=>`<button class="btn${_xlFirm===v?" btn-primary":""}" style="flex:1;padding:10px;font-size:13px${(_xlFirm===v&&color)?";background:"+color+";border-color:"+color:""}" onclick="_xlSetFirm('${v}')">${label}</button>`;
+  box.innerHTML=`
+    <p class="hint" style="margin:2px 0 6px">① 어느 사무소로 내보낼까요?</p>
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      ${fbtn("이준","🏛 이준 서초","")}
+      ${fbtn("블루","🏛 블루","#2563EB")}
+      ${fbtn("","전체 통합","")}
+    </div>
+    <p class="hint" style="margin:0 0 6px">② 어느 진행과정을 넣을까요? <b style="color:var(--ink)">필요한 것만 체크</b>하세요 (여러 개 가능)</p>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn" style="padding:6px 10px;font-size:12px" onclick="_xlAll(1)">전체 선택</button>
+      <button class="btn" style="padding:6px 10px;font-size:12px" onclick="_xlAll(0)">전체 해제</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:6px">
+      ${STAGES.map(s=>`<label style="display:flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;cursor:pointer;background:${_xlStages.has(s)?"var(--brand-soft)":"var(--panel)"};${cnt[s]?"":"opacity:.45"}">
+        <input type="checkbox" ${_xlStages.has(s)?"checked":""} onchange="_xlToggle('${s}')" style="width:16px;height:16px;flex:none;margin:0">
+        <span style="width:9px;height:9px;border-radius:50%;flex:none;background:${STAGE_COLOR[s]||"#A8A29E"}"></span>
+        <span style="flex:1;font-size:13px;font-weight:600">${s}</span>
+        <span style="font-size:12px;color:var(--muted)">${cnt[s]||0}명</span>
+      </label>`).join("")}
+    </div>
+    <div style="margin-top:12px;padding:10px 12px;border-radius:9px;background:var(--gray-soft);font-size:13px;line-height:1.6">
+      내보낼 의뢰인 <b>${picked}명</b> <span style="color:var(--muted)">· ${_xlFirm?firmShort(_xlFirm):"전체 통합"} 전체 ${list.length}명 중</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+      <button class="btn btn-primary" style="padding:12px" onclick="_xlGo(0)">📥 한 파일로 받기</button>
+      <button class="btn" style="padding:12px" onclick="_xlGo(1)">🗂 고른 단계마다 파일 따로 받기</button>
+      <button class="btn" style="padding:10px" onclick="closeModal()">닫기</button>
+    </div>
+    <p class="hint" style="margin:8px 0 0;font-size:11.5px">※ '파일 따로 받기'는 파일이 여러 개 내려받아집니다. 크롬이 <b>“여러 파일을 다운로드하시겠습니까?”</b>라고 물으면 <b>허용</b>을 눌러 주세요.</p>`;
+}
+function _xlSetFirm(v){ _xlFirm=v; _xlRender(); }
+function _xlToggle(s){ if(_xlStages.has(s)) _xlStages.delete(s); else _xlStages.add(s); _xlRender(); }
+function _xlAll(on){ _xlStages = on ? new Set(STAGES) : new Set(); _xlRender(); }
+function _xlGo(each){
+  const stages=STAGES.filter(s=>_xlStages.has(s));
+  if(stages.length===0){ toast("진행과정을 1개 이상 골라 주세요"); return; }
+  const firm=_xlFirm; closeModal();
+  if(each) exportExcelEach(firm,stages); else exportExcel(firm,stages);
+}
+function _xlStageTag(stages){
+  if(!stages || stages.length===0 || stages.length>=STAGES.length) return "전체단계";
+  if(stages.length<=3) return stages.join("·");
+  return stages.length+"개단계";
+}
 function _missingByMode(c){
   const self=[], req=[];
   const push=(id,name)=>{ const s=c.items[id]; if(!s||s.mode==="na"||s.done) return; if(s.mode==="self") self.push(name); else if(s.mode==="request") req.push(name); };
@@ -4518,30 +4581,42 @@ function _missingByMode(c){
   Object.keys(c.extra||{}).forEach(bid=>(c.extra[bid]||[]).forEach(ex=>push(ex.id,ex.name)));
   return {self, req};
 }
-function exportExcelPick(){
-  modal(`<h3>📊 Excel 내보내기</h3>
-    <p class="hint">어느 사무소 의뢰인으로 내보낼까요?</p>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-      <button class="btn btn-primary" style="padding:12px" onclick="closeModal();exportExcel('이준')">🏛 법무법인 이준 서초 분사무소만</button>
-      <button class="btn btn-primary" style="padding:12px;background:#2563EB;border-color:#2563EB" onclick="closeModal();exportExcel('블루')">🏛 법률사무소 블루만</button>
-      <button class="btn" style="padding:12px" onclick="closeModal();exportExcel('')">전체 통합</button>
-      <button class="btn" style="padding:10px" onclick="closeModal()">닫기</button>
-    </div>`);
-}
-function exportExcel(firm){
-  let list=state.clients.map(ensureItems).filter(c=>!c.archived && !c.onHold);
-  if(firm) list=list.filter(c=>firmShort(c.firm)===firmShort(firm));
-  if(list.length===0){ toast("내보낼 의뢰인이 없습니다"); return; }
-  const rows=list.map(c=>{ const p=progress(c); const d=dDay(c); const mm=_missingByMode(c);
+function _xlRows(list){
+  return list.map(c=>{ const p=progress(c); const d=dDay(c); const mm=_missingByMode(c);
     return {이름:c.name||"",사무소:firmShort(c.firm),단계:clientStage(c),완료율:(isBJOnly(c)?"보정":p.pct+"%"),"미확보(회사 직접발급)":mm.self.join(", "),"미확보(의뢰인 발급)":mm.req.join(", "),확보:p.done,전체:p.total,요청중:p.requesting,미요청:p.notReq,보완필요:p.rejected,사건종류:c.caseType||"개인회생",소득유형:c.incomeType||"미정",담당자:c.assignee||"",마감구분:c.deadlineLabel||"",마감일:c.deadline?fmtD(c.deadline):"",DDay:(d===null?"":(d<0?`+${-d}일`:"D-"+d)),사건번호:c.caseNo||"",연락처:c.phone||"","주민번호(앞자리)":maskRrn(c.rrnFront),메모:(c.memo||"").replace(/[\r\n]+/g," ")}; });
+}
+function _xlSave(rows,fname){
   const cols=Object.keys(rows[0]);
   let table=`<table border="1"><tr>${cols.map(h=>`<th>${h}</th>`).join("")}</tr>`;
   rows.forEach(r=>{ table+=`<tr>${cols.map(h=>`<td>${esc(String(r[h]))}</td>`).join("")}</tr>`; });
   table+=`</table>`;
   const blob=new Blob(["﻿<html><head><meta charset='utf-8'></head><body>"+table+"</body></html>"],{type:"application/vnd.ms-excel"});
-  const tag=firm?firmShort(firm):"전체통합";
-  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="서류취합_현황_"+tag+"_"+fmtD(now()).replace(/\//g,"-")+".xls"; a.click();
-  toast(`Excel(${tag}) ${list.length}명 내보냈습니다`);
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download=fname; a.click();
+  setTimeout(()=>{ try{URL.revokeObjectURL(url);}catch(_){ } },4000);
+}
+function exportExcel(firm,stages){
+  const sel=(stages&&stages.length)?stages:STAGES.slice();
+  const list=_xlBaseList(firm).filter(c=>sel.indexOf(clientStage(c))>=0);
+  if(list.length===0){ toast("고른 조건에 해당하는 의뢰인이 없습니다"); return; }
+  const tag=firm?firmShort(firm):"전체통합", st=_xlStageTag(sel);
+  _xlSave(_xlRows(list),"서류취합_현황_"+tag+"_"+st+"_"+fmtD(now()).replace(/\//g,"-")+".xls");
+  toast(`Excel(${tag} · ${st}) ${list.length}명 내보냈습니다`);
+}
+function exportExcelEach(firm,stages){
+  const sel=(stages&&stages.length)?stages:STAGES.slice();
+  const tag=firm?firmShort(firm):"전체통합", dt=fmtD(now()).replace(/\//g,"-");
+  const base=_xlBaseList(firm);
+  let files=0, people=0; const empty=[];
+  sel.forEach(s=>{
+    const list=base.filter(c=>clientStage(c)===s);
+    if(list.length===0){ empty.push(s); return; }
+    const rows=_xlRows(list);
+    setTimeout(()=>{ _xlSave(rows,"서류취합_현황_"+tag+"_"+s+"_"+dt+".xls"); }, files*400);
+    files++; people+=list.length;
+  });
+  if(files===0){ toast("고른 조건에 해당하는 의뢰인이 없습니다"); return; }
+  toast(`Excel ${files}개 파일(${people}명) 내려받는 중…`+(empty.length?` · 0명이라 뺀 단계: ${empty.join(", ")}`:""));
 }
 
 /* ---------- 7b. 요청 메시지 / 진행상황 복사 ---------- */
