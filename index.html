@@ -4526,7 +4526,6 @@ const FEE_D1=250000, FEE_D2=200000;
 function feeApplies(c){ return !!c && firmShort(c.firm)==="블루"; }
 function feeWon(n){ return (Number(n)||0).toLocaleString("ko-KR"); }
 function feeYmd(d){ const p=x=>String(x).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
-function feeToday(){ return feeYmd(new Date()); }
 function feeGet(c){
   const f=(c && c.fee && typeof c.fee==="object" && !Array.isArray(c.fee)) ? c.fee : {};
   const one=(o,dflt)=>({ amt:(o && Number.isFinite(Number(o.amt)) && Number(o.amt)>=0) ? Math.round(Number(o.amt)) : dflt,
@@ -4552,7 +4551,9 @@ function feeShortD(ymd){ if(!ymd) return ""; const p=ymd.split("-"); return p.le
 function feeToggle(cid,k){
   const c=findClient(cid); if(!c) return; const f=feeGet(c);
   const p=f[k]; p.paid=!p.paid;
-  if(p.paid && !p.date) p.date=feeToday();
+  /* ★2026-08-19c 혜림 요청: 체크는 "받았다" 표시일 뿐이고 날짜는 선택사항.
+     예전엔 체크하면 오늘 날짜가 자동으로 들어갔는데, 그 날짜가 실제 입금일과 달라 혼란스러웠다.
+     이제 날짜는 적고 싶을 때만 적는다(적으면 2차 예정일 계산에만 쓰인다). */
   feeSave(c,f);
   touch(`[${c.name}] ${k==="p1"?"1차":"2차"} 수임료 ${p.paid?("받음 "+feeWon(p.amt)+"원"):"받음 해제"}`);
   renderDetail(cid);
@@ -4596,7 +4597,7 @@ function feePanel(c){
         <input value="${feeWon(p.amt)}" onchange="feeAmt('${c.id}','${k}',this.value)" inputmode="numeric"
           style="width:94px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;text-align:right;font-weight:700;color:var(--ink)">원
       </span>
-      <span style="font-size:12.5px;color:var(--muted)">받은 날</span>
+      <span style="font-size:12.5px;color:var(--muted)">받은 날<span style="opacity:.7">(선택)</span></span>
       <input type="date" value="${esc(p.date||"")}" onchange="feeDate('${c.id}','${k}',this.value)"
         style="padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px">
       ${extra||""}
@@ -4608,7 +4609,7 @@ function feePanel(c){
     ${row("p1","1차",f.p1,"")}
     ${row("p2","2차",f.p2,dueChip)}
     <div style="font-size:11.5px;color:var(--muted);padding-top:7px;border-top:1px solid var(--line);line-height:1.6">
-      1차를 체크하면 오늘 날짜가 자동으로 들어가고, <b>2차 예정일은 1차 받은 날에서 한 달 뒤</b>로 잡힙니다. 금액은 사건마다 고쳐도 됩니다.
+      받았으면 <b>체크만</b> 하면 됩니다. 날짜는 적어도 되고 안 적어도 됩니다 — <b>1차 날짜를 적으면</b> 그 날에서 한 달 뒤가 2차 예정일로 표시됩니다. 금액은 사건마다 고쳐도 됩니다.
     </div>
   </div>`;
 }
@@ -4692,7 +4693,7 @@ function _xlRender(){
     </div>
     <div style="margin-top:12px;padding:10px 12px;border-radius:9px;background:var(--gray-soft);font-size:13px;line-height:1.6">
       내보낼 의뢰인 <b>${picked}명</b> <span style="color:var(--muted)">· ${_xlKindName(_xlKind)} · ${_xlFirm?firmShort(_xlFirm):"전체 통합"} 전체 ${list.length}명 중</span>
-      ${_xlWithFee(_xlFirm)?`<br><span style="color:var(--muted);font-size:12px">· 블루 사건은 <b>수임료 1차·2차·미수금</b> 칸이 함께 들어갑니다</span>`:""}
+      ${_xlWithFee(_xlFirm)?`<br><span style="color:var(--muted);font-size:12px">· 블루 사건은 <b>수임료 1차·2차 받음 여부와 미수금</b> 칸이 함께 들어갑니다 (날짜는 안 들어감)</span>`:""}
       ${_xlKind==="bj"?`<br><span style="color:var(--muted);font-size:12px">· 보정사건 표에는 서류 취합 칸(완료율·미확보·확보 등)이 빠지고 기한·사건번호 위주로 나옵니다</span>`:""}
     </div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
@@ -4727,11 +4728,11 @@ function _missingByMode(c){
 }
 /* 수임료 6칸 — 블루 사건만 값이 차고, 이준 사건은 빈칸으로 둔다 */
 function _xlFeeCells(c){
-  if(!feeApplies(c)) return {"1차 수임료":"","1차 받은날":"","2차 수임료":"","2차 받은날":"","2차 예정일":"","미수금":""};
-  const f=feeGet(c), due=feeDue2(c);
-  const cell=p=> p.paid ? (p.date||"받음") : "미납";
-  return {"1차 수임료":f.p1.amt,"1차 받은날":cell(f.p1),"2차 수임료":f.p2.amt,"2차 받은날":cell(f.p2),
-          "2차 예정일":(due||""),"미수금":feeUnpaid(c)};
+  /* ★2026-08-19c 혜림 요청: 엑셀에는 날짜를 넣지 않는다. 받았는지(받음/미납)와 금액·미수금만. */
+  if(!feeApplies(c)) return {"1차 수임료":"","1차":"","2차 수임료":"","2차":"","미수금":""};
+  const f=feeGet(c);
+  const cell=p=> p.paid ? "받음" : "미납";
+  return {"1차 수임료":f.p1.amt,"1차":cell(f.p1),"2차 수임료":f.p2.amt,"2차":cell(f.p2),"미수금":feeUnpaid(c)};
 }
 function _xlRows(list,kind,withFee){
   return list.map(c=>{ const d=dDay(c);
