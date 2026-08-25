@@ -932,6 +932,8 @@ function gotoHoldBox(){
   renderDashboard(); window.scrollTo(0,0);
 }
 function toggleAdvFilters(){ const el=document.getElementById("advFilters"); const b=document.getElementById("advBtn"); if(!el)return; const open=el.classList.toggle("hidden")===false; if(b) b.textContent= open?"필터 ▴":"필터 ▾"; }
+/* 검색어 정규화(2026-08-25): 띄어쓰기·대소문자 무시. "홍 길동"으로 쳐도 "홍길동"이 나오게 한다. 반각/전각 공백·탭·줄바꿈 모두 제거. */
+function sqz(s){ return String(s==null?"":s).replace(/[\s\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000\uFEFF]+/g,"").toLowerCase(); }
 let docSearch = "";             // 서류 탭 내 서류명 검색어
 let focusBundle = "";           // 좌측 탭에서 고른 묶음(빈값=전체)
 let navOpen = (typeof window!=="undefined" && window.innerWidth>900); // 좌측 묶음 탭 열림
@@ -1685,7 +1687,7 @@ function renderDashboard(){
   const assignees=[...new Set(state.clients.map(c=>c.assignee).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
   const aSel=$("#assigneeSel");
   if(aSel){ const cur=aSel.value; aSel.innerHTML='<option value="">담당 전체</option>'+assignees.map(a=>`<option ${cur===a?"selected":""}>${esc(a)}</option>`).join(""); }
-  const q=($("#searchBox").value||"").trim().toLowerCase();
+  const q=sqz($("#searchBox").value);
   const sort=$("#sortSel").value;
   const statusF=($("#statusSel")&&$("#statusSel").value)||"active";
   const stageF=($("#stageSel")&&$("#stageSel").value)||"";
@@ -1694,7 +1696,7 @@ function renderDashboard(){
   const incF=($("#incomeSel")&&$("#incomeSel").value)||"";
   const mwF=($("#minwonSel")&&$("#minwonSel").value)||"";   /* 민원업체 필터 (2026-08-13) */
   let list=state.clients.map(ensureItems).filter(c=>{
-    if(q && !((c.name||"").toLowerCase().includes(q) || (c.caseNo||"").toLowerCase().includes(q) || (c.assignee||"").toLowerCase().includes(q))) return false;
+    if(q && !(sqz(c.name).includes(q) || sqz(c.caseNo).includes(q) || sqz(c.assignee).includes(q))) return false;
     if(statusF==="archived"){ if(!c.archived) return false; }
     else if(statusF==="hold"){ if(!c.onHold || c.archived) return false; }   /* ⏸️ 보류함: 보류된 의뢰인만 보여준다 */
     else if(statusF==="bjonly"){ if(!isBJOnly(c) || c.archived) return false; }  /* 보정만 넘겨받은 사건만 (2026-08-11) */
@@ -1913,7 +1915,7 @@ function renderDetail(id){
   html+=`<div class="drawer-back ${navOpen?'show':''}" onclick="toggleNav()"></div>`;
   html+=`<div class="detail-grid ${navOpen?'navopen':'navclosed'}">`;
 
-  const showItem=(id)=>{ const s=c.items[id]; if(!s) return false; if(s.mode==="na" && !showNa) return false; if(detailFilter!=="all" && !passFilter(s)) return false; if(docSearch && !itemName(id,c).toLowerCase().includes(docSearch.toLowerCase())) return false; return true; };
+  const showItem=(id)=>{ const s=c.items[id]; if(!s) return false; if(s.mode==="na" && !showNa) return false; if(detailFilter!=="all" && !passFilter(s)) return false; if(sqz(docSearch) && !sqz(itemName(id,c)).includes(sqz(docSearch))) return false; return true; };
 
   if(groupMode==='sample'){ html+=renderSampleLibrary()+`</div>`; v.innerHTML=html; return; }
   if(groupMode==='site'){
@@ -3858,11 +3860,11 @@ function pvbMoveRenderChips(){
 }
 function pvbMoveRender(){
   const ctx=_pvbMoveCtx; if(!ctx) return; const c=findClient(ctx.cid); const list=document.getElementById("pvbMlist"); if(!list) return;
-  const q=(ctx.q||"").toLowerCase();
+  const q=sqz(ctx.q);
   if(q){
     let rows="";
-    TEMPLATE.forEach(b=>{ b.groups.forEach(g=>g.items.forEach(it=>{ if(it.name.toLowerCase().includes(q)) rows+=_pvbSlotRow(it,c,ctx.srcId,b.title); })); });
-    try{ Object.values(c.extra||{}).forEach(arr=>arr.forEach(ex=>{ if((ex.name||"").toLowerCase().includes(q)) rows+=_pvbSlotRow(ex,c,ctx.srcId,"추가서류"); })); }catch(_){ }
+    TEMPLATE.forEach(b=>{ b.groups.forEach(g=>g.items.forEach(it=>{ if(sqz(it.name).includes(q)) rows+=_pvbSlotRow(it,c,ctx.srcId,b.title); })); });
+    try{ Object.values(c.extra||{}).forEach(arr=>arr.forEach(ex=>{ if(sqz(ex.name).includes(q)) rows+=_pvbSlotRow(ex,c,ctx.srcId,"추가서류"); })); }catch(_){ }
     list.innerHTML=`<div class="pm-flat">${rows||'<div class="pm-foot" style="border:none">검색 결과가 없어요</div>'}</div>`;
     return;
   }
@@ -5520,11 +5522,11 @@ function _ibRender(){
 
 /* ---- 서류 선택(검색) 모달 ---- */
 function _ibSlotsHtml(q){
-  q=(q||"").trim().toLowerCase(); const c=_ibCli(); let body="";
+  q=sqz(q); const c=_ibCli(); let body="";
   TEMPLATE.forEach(b=>{
     const rows=[];
-    b.groups.forEach(g=>g.items.forEach(it=>{ if(!q||it.name.toLowerCase().includes(q)) rows.push({id:it.id,name:it.name,note:it.note}); }));
-    (((c&&c.extra&&c.extra[b.id]))||[]).forEach(ex=>{ if(!q||(ex.name||"").toLowerCase().includes(q)) rows.push({id:ex.id,name:ex.name,note:"추가서류"}); });
+    b.groups.forEach(g=>g.items.forEach(it=>{ if(!q||sqz(it.name).includes(q)) rows.push({id:it.id,name:it.name,note:it.note}); }));
+    (((c&&c.extra&&c.extra[b.id]))||[]).forEach(ex=>{ if(!q||sqz(ex.name).includes(q)) rows.push({id:ex.id,name:ex.name,note:"추가서류"}); });
     if(!rows.length) return;
     body+=`<div class="ib-sgrp">${esc(b.title)}</div>`;
     rows.forEach(it=>{ const nt=(it.note||"").slice(0,16); body+=`<div class="ib-sitem" data-s="${esc(it.id)}"><span>${esc(it.name)}</span>${nt?`<span class="nt">${esc(nt)}</span>`:""}</div>`; });
