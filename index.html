@@ -1038,6 +1038,9 @@ const DUAL_PART_GROUPS={ job:["b4g1","b3g5"], biz:["b4g2","b3g6"], pen:["b4g4"] 
 const TAG_CONTROLLED=["b4g1","b4g2","b4g4","b3g5","b3g6","b3g1","b3g2","b3g4"];
 const ASSET_GROUPS=["b3g5","b3g6","b3g1","b3g2","b3g4"]; // 재산(자산) 묶음 — 자동 '해당없음' 숨김 금지(놓침 방지)
 const NA_DEFAULT=["b3-7","b3-12","b3-1","b3-15","b3-13","b3-14","b4-6","b4-8","b4-17","b6-1","b6-2","b6-3","b2-6","b2-7"]; // 세트 부활 예외 — 항상 기본 '해당없음'(파일·받음·수동변경 시엔 살림): 보험해약환급금·비품시가표·자동차보험증서·이륜자동차·퇴직금세트·매입매출·월평균소득산정표·폐업사실증명·은행/카드거래내역·신용인증송부서·채권자변동조회서
+/* ★자동으로 '해당없음'이 될 수 있는 서류 목록 (2026-08-25). NA_DEFAULT(항상 기본 해당없음) + b7-2(주거형태가 무상거주가 아니면 자동 숨김).
+   이 목록에 든 서류는 직원이 손으로 켠 것(manual)을 서버에 반드시 저장해야 한다. 안 그러면 새로고침 때 자동규칙이 다시 숨겨 버린다. */
+const AUTO_NA_IDS = NA_DEFAULT.concat(["b7-2"]);
 const ASSET_OPTS=["자가","임차보증금","차량","토지","사업용재산","기타재산"];
 /* 보정만 넘겨받은 사건인가 (2026-08-11)
    — 우리가 서류취합을 하지 않는 사건이라 취합률 대신 '보정'으로 표시하고, 미완료·리마인더 같은 할일 목록에서 뺀다. */
@@ -1107,6 +1110,16 @@ function applyTags(c){
   TEMPLATE.forEach(b=>b.groups.forEach(g=>{ if(!_groupActive(c,g)) return; g.items.forEach(it=>{ if(NA_DEFAULT.includes(it.id)) return; const s=c.items[it.id]; if(!s||s.manual) return; if(s.mode==="na") s.mode="self"; }); }));
   // 무상거주 사실확인서(b7-2): 무상거주일 때만 표시 (단, 수동 변경했으면 유지)
   const s2=c.items["b7-2"]; if(s2 && !s2.manual){ if(c.housing==="무상거주"){ if(s2.mode==="na") s2.mode="request"; } else if(c.housing && c.housing!=="미정") s2.mode="na"; }
+  /* ★안전망 (2026-08-25, 장혜림 의뢰인 무상거주 사실확인서 신고): 파일이 실제로 들어 있는 서류는
+     어떤 자동 숨김 규칙으로도 '해당없음'이 되지 않는다. 파일이 있다는 건 실제로 받았다는 뜻이라
+     자동 판단보다 항상 우선한다. 이게 없으면 자동으로 붙은 '해당없음'이 자가치유를 타고
+     서버의 '받음' 기록까지 덮어써 버린다. */
+  Object.keys(c.items).forEach(id=>{ const s=c.items[id];
+    if(!s || s.mode!=="na" || !(s.files&&s.files.length)) return;
+    const t=ITEM_BY_ID[id];
+    s.mode = (t && t.mode && t.mode!=="na") ? t.mode : "self";
+    s.manual = true;
+  });
   // ★파일 없이 '받음'만 남은 서류가 숨겨질(해당없음) 때 받음도 함께 해제 — 유형 바꿔 숨겼다 다시 켜면 옛 '받음'이 되살아나던 버그 방지. 파일 있으면 그대로 둔다.
   Object.keys(c.items).forEach(id=>{ const s=c.items[id]; if(s && s.mode==="na" && s.done && !(s.files&&s.files.length)){ s.done=false; s.recvDate=null; s.rejected=false; if(s.reqTag==="received") s.reqTag="none"; } });
 }
@@ -5933,7 +5946,7 @@ function sbBuildClient(row, rows, docs, memos, secret){
       sbApplyStatus(c.items[id], r.status, r.reject_reason);
       if(r.doc_key&&r.doc_key.indexOf("bj_")===0) c.items[id]._bj=true; // 보정처리(송달앱)에서 넣은 서류 표시
       /* (수정 2026-07-20) status==='해당없음'만 보고 manual=true를 찍던 로직 제거. 태그(소득·주거·재산)로 자동 숨김돼 서버에 '해당없음'으로 저장된 서류까지 '사람이 손으로 숨긴 것'으로 오인해 동결시켜, 나중에 재산·주거를 바꿔도 서류가 안 살아나던 버그의 원인이었다. 손으로 숨긴 서류는 app_json.manualNa로 정확히 복원한다(아래 manualNa 복원 줄). */
-      if((r.status==="요청중"||r.status==="받음"||r.status==="보완필요") && NA_DEFAULT.indexOf(id)>=0) c.items[id].manual=true; // ★기본 '해당없음'인 서류(해약환급금 등)에 활성 상태가 서버에 저장돼 있으면 = 사람이 손으로 켠 것 → 새로고침해도 자동으로 '해당없음'으로 안 되돌림(기존 데이터 보호)
+      if((r.status==="요청중"||r.status==="받음"||r.status==="보완필요") && AUTO_NA_IDS.indexOf(id)>=0) c.items[id].manual=true; // ★기본 '해당없음'인 서류(해약환급금 등)에 활성 상태가 서버에 저장돼 있으면 = 사람이 손으로 켠 것 → 새로고침해도 자동으로 '해당없음'으로 안 되돌림(기존 데이터 보호)
       if(r.memo) c.items[id].memo=r.memo;
       c.items[id]._sbRow=r.id;
     } else {                       // 템플릿에 없는 서류 → 추가서류(extra)로
@@ -5953,7 +5966,7 @@ function sbBuildClient(row, rows, docs, memos, secret){
   });
   ensureItems(c);
   (aj.manualNa||[]).forEach(id=>{ const s=c.items[id]; if(s && !(s.files&&s.files.length)){ s.mode="na"; s.manual=true; } }); // 손으로 감춘 서류 복원 — 새로고침해도 해당없음 유지(파일 있으면 받음이 우선)
-  (aj.manualOn||[]).forEach(o=>{ const id=(o&&typeof o==="object")?o.id:o; const s=id&&c.items[id]; if(s && !(s.files&&s.files.length) && !s.done){ s.manual=true; if(s.mode==="na") s.mode=(o&&o.mode)||"request"; } }); // ★손으로 '의뢰인요청/직접발급'으로 켠 서류 복원(manualNa의 반대 짝) — 기본 '해당없음'이라도 상세에서 바꾼 값을 새로고침해도 유지. 파일·받음이 있으면 그쪽이 우선.
+  (aj.manualOn||[]).forEach(o=>{ const id=(o&&typeof o==="object")?o.id:o; const s=id&&c.items[id]; if(!s) return; s.manual=true; if(s.mode==="na") s.mode=(o&&o.mode)||"request"; });   /* (2026-08-25 수정) 파일이 있거나 이미 받음이어도 "손으로 켠 표시"는 반드시 되살린다 — 예전엔 파일이 있으면 건너뛰어서, 주거·소득 자동규칙이 그 서류를 다시 해당없음으로 숨겨 버렸다 */ // ★손으로 '의뢰인요청/직접발급'으로 켠 서류 복원(manualNa의 반대 짝) — 기본 '해당없음'이라도 상세에서 바꾼 값을 새로고침해도 유지.
   applyTags(c);   // 파일 붙인 뒤 다시 정리 — 파일 있으면 받음, 파일 있는 그룹은 세트로 숨김없이
   /* 의뢰인 메모 / 인증서 붙이기 */
   const _memo=(memos||[]).find(x=>x.kind!=="접수")||null; if(_memo){ c.memo=_memo.body||""; c._sbMemoId=_memo.id; }
@@ -6140,7 +6153,7 @@ let SB_OFFICES=[];
 function sbFirmFromOffice(oid){ const o=SB_OFFICES.find(x=>x.id===oid); if(!o) return null; const n=o.name||""; if(n.includes("블루")) return "법률사무소 블루"; if(n.includes("이준")) return "법무법인 이준 서초 분사무소"; return n; }
 function sbOfficeFromFirm(firm){ const blue=(firm||"").includes("블루"); const o=SB_OFFICES.find(x=> blue ? (x.name||"").includes("블루") : (x.name||"").includes("이준")); return o? o.id : OURS_OFFICE_ID; }
 /* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
-function sbAppJson(c){ return { stage2: clientStage(c), firm:c.firm||null, onHold:!!c.onHold, holdReason:c.holdReason||"", minwon:((c.minwon&&typeof c.minwon==="object"&&!Array.isArray(c.minwon))?c.minwon:null), fee:((c.fee&&typeof c.fee==="object"&&!Array.isArray(c.fee))?c.fee:null), housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: NA_DEFAULT.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
+function sbAppJson(c){ return { stage2: clientStage(c), firm:c.firm||null, onHold:!!c.onHold, holdReason:c.holdReason||"", minwon:((c.minwon&&typeof c.minwon==="object"&&!Array.isArray(c.minwon))?c.minwon:null), fee:((c.fee&&typeof c.fee==="object"&&!Array.isArray(c.fee))?c.fee:null), housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: AUTO_NA_IDS.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
 function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
   stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
