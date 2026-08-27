@@ -2159,7 +2159,7 @@ const MSG_TEMPLATES = {
 받으신 서류는 저희에게 보내주시면 됩니다.` }
   ],
   "b2-2": [
-    { id:"b2-2-1", title:"지방세 체납 — 소액 직접납부 안내", varLabel:"금액", name:"80,000",
+    { id:"b2-2-1", title:"지방세 체납 — 소액 직접납부 안내", varLabel:"금액", name:"",
       body:`지방세 체납내역이 확인되어 사진으로 보내드립니다. (총 [금액]원)
 
 금액이 소액이라 법적 절차에 넣으면 인지대·송달료가 오히려 10만원 이상 나옵니다.
@@ -2180,7 +2180,7 @@ const MSG_TEMPLATES = {
 · 납부하시면 바로 "납부 완료"라고 알려주시고, 영수증 사진을 보내주세요.
 · 법원 접수 전에 납부가 끝나야 합니다. 납부된 상태로 증명서를 다시 발급받아 접수해야 해서, 미납으로 남아 있으면 접수가 그만큼 미뤄집니다.` },
 
-    { id:"b2-2-2", title:"과태료 체납 — 소액 직접납부 안내", varLabel:"금액", name:"50,000",
+    { id:"b2-2-2", title:"과태료 체납 — 소액 직접납부 안내", varLabel:"금액", name:"",
       body:`과태료 체납내역이 확인되어 사진으로 보내드립니다. (총 [금액]원)
 
 금액이 소액이라 법적 절차에 넣으면 인지대·송달료가 오히려 10만원 이상 나옵니다.
@@ -2203,7 +2203,7 @@ const MSG_TEMPLATES = {
 · 법원 접수 전에 납부가 끝나야 합니다. 미납으로 남아 있으면 서류를 다시 떼야 해서 접수가 그만큼 미뤄집니다.` }
   ],
   "b4-13": [
-    { id:"b4-13-1", title:"국세 체납 — 소액 직접납부 안내", varLabel:"금액", name:"60,000",
+    { id:"b4-13-1", title:"국세 체납 — 소액 직접납부 안내", varLabel:"금액", name:"",
       body:`국세 체납내역이 확인되어 사진으로 보내드립니다. (총 [금액]원)
 
 금액이 소액이라 법적 절차에 넣으면 인지대·송달료가 오히려 10만원 이상 나옵니다.
@@ -2225,7 +2225,7 @@ const MSG_TEMPLATES = {
 · 법원 접수 전에 납부가 끝나야 합니다. 납부된 상태로 납세증명서를 다시 발급받아 접수해야 해서, 미납으로 남아 있으면 접수가 그만큼 미뤄집니다.` }
   ],
   "b2-4": [
-    { id:"b2-4-1", title:"건강보험료 체납 — 소액 직접납부 안내", varLabel:"금액", name:"70,000",
+    { id:"b2-4-1", title:"건강보험료 체납 — 소액 직접납부 안내", varLabel:"금액", name:"",
       body:`건강보험료 체납내역이 확인되어 사진으로 보내드립니다. (총 [금액]원)
 
 금액이 소액이라 법적 절차에 넣으면 인지대·송달료가 오히려 10만원 이상 나옵니다.
@@ -2268,7 +2268,7 @@ function msgTplBoxHtml(c,itemId){
     return `<div class="mtpl-card">
       <div class="mtpl-title">📨 ${esc(d.title||"메시지 템플릿")}${savedName?`<span class="mtpl-edited">이 의뢰인 저장됨</span>`:""}</div>
       ${hasVar?`<label class="mtpl-lab">${esc(d.varLabel)} <span class="mtpl-hint">(이 의뢰인에만 저장 · 모든 기기 동기화)</span></label>
-      <input class="mtpl-name" id="mtpl-name-${t.id}" value="${esc(nm)}" placeholder="예: ${esc(d.name||"")}" oninput="msgTplPreview('${t.id}')">`:""}
+      <input class="mtpl-name" id="mtpl-name-${t.id}" value="${esc(nm)}" placeholder="${d.name?('예: '+esc(d.name)):(esc(d.varLabel||'')+' 입력')}" oninput="msgTplPreview('${t.id}')">`:""}
       <label class="mtpl-lab">메시지 내용 <span class="mtpl-hint">(공용 문구${hasVar?` · [${esc(d.varLabel)}] 자리는 위 입력값으로 자동 치환`:""})</span></label>
       <textarea class="mtpl-body" id="mtpl-body-${t.id}" rows="4" oninput="msgTplPreview('${t.id}')">${esc(d.body||"")}</textarea>
       <div class="mtpl-prev-wrap"><div class="mtpl-prev-lab">미리보기 — 실제 복사되는 내용</div><div class="mtpl-prev" id="mtpl-prev-${t.id}">${esc(msgTplFill(t.id, d.body, nm))}</div></div>
@@ -2290,7 +2290,11 @@ function msgTplPreview(tplId){
 function msgTplCopy(tplId){
   const nameEl=document.getElementById("mtpl-name-"+tplId), bodyEl=document.getElementById("mtpl-body-"+tplId);
   if(!bodyEl) return;
-  copyText(msgTplFill(tplId, bodyEl.value, nameEl?nameEl.value:"")).then(ok=>toast(ok?"메시지를 복사했습니다 ✓":"복사 실패 — 미리보기를 직접 선택해 복사하세요"));
+  const d=msgTplDefault(tplId)||{}, tk=msgTplToken(d);
+  const txt=msgTplFill(tplId, bodyEl.value, nameEl?nameEl.value:"");
+  /* 입력칸을 안 채우면 [금액] 같은 자리표시자가 그대로 남아 의뢰인에게 갈 수 있다 -> 복사 전에 한 번 묻는다 (2026-08-27) */
+  if(tk && txt.indexOf(tk)>=0){ if(!confirm((d.varLabel||"입력값")+" 칸이 비어 있습니다.\n"+tk+" 가 그대로 들어간 채로 복사할까요?")){ if(nameEl) nameEl.focus(); return; } }
+  copyText(txt).then(ok=>toast(ok?"메시지를 복사했습니다 ✓":"복사 실패 — 미리보기를 직접 선택해 복사하세요"));
 }
 function msgTplSaveName(cid,tplId){
   const c=findClient(cid); if(!c) return;
