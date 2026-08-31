@@ -90,6 +90,8 @@
  .bt.on{color:var(--brand);border-bottom-color:var(--brand)} .bt.on .cnt{background:#FDECEF;color:var(--brand)}
  .bt.bj.on{color:#4527A0;border-bottom-color:#4527A0} .bt.bj.on .cnt{background:#EDE7F6;color:#4527A0}
  .amend{font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:999px;background:#FCE4E4;color:var(--red);white-space:nowrap}
+ .stgd{font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:999px;background:#EFEDEA;color:#6b635c;white-space:nowrap}
+ .stgd.warm{background:#FBEEDD;color:#9a5b00} .stgd.hot{background:#F6E7E6;color:var(--red)}
  .dday{font-size:12px;font-weight:800;padding:4px 10px;border-radius:999px;white-space:nowrap}
  .dday.soon{background:#FCE4E4;color:var(--red)}.dday.warn{background:#FBEEDD;color:var(--amber)}.dday.norm{background:#eef0f2;color:#57534e}
  .mk{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px}
@@ -579,6 +581,17 @@
      finally{ btn.disabled=false; }
    }else{ view.textContent=maskRrn(c.rrn_front); btn.textContent="보기"; }
  }
+ /* ===== 이 단계로 넘어온 지 며칠째인가 (2026-08-31) =====
+    clients.stage_at 은 앱이 아니라 DB가 찍는다(트리거 trg_clients_stage_at: stage 값이 실제로 바뀔 때만).
+    그래서 취합앱에서 넘기든 케이스허브에서 넘기든 SQL로 고치든 똑같이 기록된다.
+    ★2026-08-31 이전에 이미 그 단계에 있던 사람은 값이 비어 있다 → 아무것도 표시하지 않고 정렬에서 맨 뒤로 보낸다. */
+ function stageDays(c){ if(!c||!c.stage_at) return null;
+   const t=new Date(c.stage_at); if(isNaN(t.getTime())) return null;
+   const d=Math.floor((Date.now()-t.getTime())/86400000)+1;   /* 넘어온 당일을 1일째로 센다 */
+   return d>0?d:1; }
+ function stageDayBadge(c){ const d=stageDays(c); if(!d) return "";
+   const cls = d>=30 ? "hot" : (d>=14 ? "warm" : "");
+   return `<span class="stgd ${cls}" title="'${esc(c.stage)}' 단계로 넘어온 지 ${d}일째">${d}일째</span>`; }
  function dday(ds){ if(!ds) return null; const today=new Date(new Date().toDateString()); const d=Math.ceil((new Date(ds+"T00:00:00")-today)/86400000);
    return {d,cls:d<=3?"soon":(d<=7?"warn":"norm"),txt:d>=0?("D-"+d):("D+"+(-d))}; }
 
@@ -628,7 +641,8 @@
    const CLI_HOLD=",on_hold,hold_reason";  // 보류(나중으로 미룸) — 취합앱과 같은 칸을 본다
    const CLI_BJ=",intake_type";            // 접수 형태(전체/보정만) — 칸이 없는 DB에서도 화면이 뜨도록 폴백을 둔다
    const CLI_MW=",app_json";               // 민원업체 진행 — 취합앱이 app_json 안 minwon에 적는다 (2026-08-13)
-   const CLI_SEL=CLI_COLS+CLI_HOLD+CLI_BJ+",rrn_front"+CLI_MW;   // 앞 7자리(동명이인 구분용). 전체 번호는 여기 없다 — 서버 함수로만 본다.
+   const CLI_STG=",stage_at";              // 이 단계로 넘어온 시각 — DB 트리거(trg_clients_stage_at)가 자동으로 찍는다 (2026-08-31)
+   const CLI_SEL=CLI_COLS+CLI_HOLD+CLI_BJ+",rrn_front"+CLI_MW+CLI_STG;   // 앞 7자리(동명이인 구분용). 전체 번호는 여기 없다 — 서버 함수로만 본다.
    let [offRes,cliRes,progRes,itemRes]=await Promise.all([
      db.from("offices").select("id,name").order("name"),
      chSelectPaged("clients",CLI_SEL),
@@ -764,7 +778,7 @@
    renderDash(active);
    const offIds=[...new Set(CLIENTS.map(c=>c.office_id))];
    const offOpts=offIds.map(id=>`<option value="${id}" ${officeF===id?"selected":""}>${esc(OFFNAME[id]||"")}</option>`).join("");
-   const sortSel=`<select class="sel" onchange="setSort(this.value)" title="정렬">`+[["smart","기본 정렬"],["new","신규 등록순"],["pctHigh","취합률 높은순"],["pctLow","취합률 낮은순"],["urgent","급건순"]].map(o=>`<option value="${o[0]}" ${SORTMODE===o[0]?"selected":""}>${o[1]}</option>`).join("")+`</select>`;
+   const sortSel=`<select class="sel" onchange="setSort(this.value)" title="정렬">`+[["smart","기본 정렬"],["new","신규 등록순"],["stageOld","이 단계 오래 머무른 순"],["stageNew","이 단계로 최근 옮긴 순"],["pctHigh","취합률 높은순"],["pctLow","취합률 낮은순"],["urgent","급건순"]].map(o=>`<option value="${o[0]}" ${SORTMODE===o[0]?"selected":""}>${o[1]}</option>`).join("")+`</select>`;
    $("#toolbar").innerHTML = (canEdit()
      ? `<button class="tbtn" onclick="openNewClient()" style="background:var(--primary);color:#fff;border-color:var(--primary)">+ 새 의뢰인</button><select class="sel" onchange="onOffice(this.value)"><option value="">전체 원사무실</option>${offOpts}</select><button class="tbtn" onclick="exportXlsx()">엑셀 내보내기</button><button class="tbtn" onclick="copySummary()">현황 요약 복사</button>` : "")+sortSel;
    let arr=baseAll.filter(c=> MODE==="bj" ? isBJ(c) : !isBJ(c))
@@ -780,6 +794,9 @@
    const _cmp={
      smart:(a,b)=>(b.urgent-a.urgent)||a.name.localeCompare(b.name,"ko"),
      new:(a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")),
+     /* 이 단계로 넘어온 순 (2026-08-31) — stage_at 이 빈 사람(예전부터 그 단계에 있던 사람)은 항상 맨 뒤 */
+     stageOld:(a,b)=>{const x=a.stage_at||"",y=b.stage_at||""; if(!x&&!y) return a.name.localeCompare(b.name,"ko"); if(!x) return 1; if(!y) return -1; return x.localeCompare(y)||a.name.localeCompare(b.name,"ko");},
+     stageNew:(a,b)=>{const x=a.stage_at||"",y=b.stage_at||""; if(!x&&!y) return a.name.localeCompare(b.name,"ko"); if(!x) return 1; if(!y) return -1; return y.localeCompare(x)||a.name.localeCompare(b.name,"ko");},
      pctHigh:(a,b)=>((PCT[b.id]||0)-(PCT[a.id]||0))||a.name.localeCompare(b.name,"ko"),
      pctLow:(a,b)=>((PCT[a.id]||0)-(PCT[b.id]||0))||a.name.localeCompare(b.name,"ko"),
      urgent:(a,b)=>(b.urgent-a.urgent)||(_dd(a)-_dd(b))||a.name.localeCompare(b.name,"ko")
@@ -816,7 +833,7 @@
      card.className="card";card.style.background=col.bg;card.style.border="1px solid "+col.dash;
      card.innerHTML=`<div class="ch"><div><div class="nm">${esc(c.name)} <span class="ctype">${esc(c.case_type||"개인회생")}</span>${c.case_no?`<span style="display:inline-block;margin-left:6px;padding:2px 9px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:11.5px;font-weight:800;border:1px solid #cfd8ef;vertical-align:middle">사건 ${esc(c.case_no)}</span>`:""}</div>`+
        `<div class="of"><span class="ofchip" style="background:#fff;border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span>${c.assignee?" · "+esc(c.assignee):""}${canEdit()?`<label class="sw" style="margin-left:8px;vertical-align:-5px" title="원사무실 공개 여부"><input type="checkbox" ${c.is_public?"checked":""} onclick="event.stopPropagation()" onchange="setFlag('${c.id}','is_public',this.checked)"><span></span></label><span style="font-size:12px;font-weight:700;color:${c.is_public?"#0A7D3C":"#9a948c"};margin-left:5px;vertical-align:middle">${c.is_public?"공개":"비공개"}</span>`:""}</div></div>`+
-       `<div class="chr"><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${bjBadge}${holdBadge}${mwBadge(c)}${amBadge}${ddBadge}${marks?`<div>${marks}</div>`:""}</div></div>`+
+       `<div class="chr"><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${stageDayBadge(c)}${bjBadge}${holdBadge}${mwBadge(c)}${amBadge}${ddBadge}${marks?`<div>${marks}</div>`:""}</div></div>`+
        (isBJ(c)
         /* 보정만 사건: 서류취합을 안 하므로 0%가 아니라 '보정'으로 표시한다 (2026-08-11) */
         ? `<div class="bodyc"><div class="ring" style="background:#EDE7F6"><div class="hole"><b style="font-size:15px;color:#4527A0">보정</b><small>취합 없음</small></div></div>`
@@ -884,7 +901,7 @@
 
    let html=`<button class="back" onclick="goList()">목록으로</button>`;
    html+=`<div class="dhead"><div><div class="dn">${esc(c.name)} <span class="ctype">${esc(c.case_type||"개인회생")}</span></div>`+
-     `<div class="dmeta"><span class="ofchip" style="background:${col.bg};border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${c.case_no?`<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:12px;font-weight:800;border:1px solid #cfd8ef;margin-left:4px">사건 ${esc(c.case_no)}</span>`:""}`+
+     `<div class="dmeta"><span class="ofchip" style="background:${col.bg};border:1px solid ${col.dash}"><span class="odot" style="background:${col.dot}"></span>${esc(OFFNAME[c.office_id]||"사무소")}</span><span class="pill ${esc(c.stage)}">${esc(c.stage)}</span>${stageDayBadge(c)}${c.case_no?`<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#EEF1F8;color:#2b3a67;font-size:12px;font-weight:800;border:1px solid #cfd8ef;margin-left:4px">사건 ${esc(c.case_no)}</span>`:""}`+
      (isBJ(c)?`<span class="bjonly">보정만 넘겨받은 사건</span>`:"")+
      (c.on_hold?`<span class="mk hold">⏸ 보류중</span>`:"")+
      mwBadge(c)+
