@@ -1075,8 +1075,8 @@ function renderAppTabs(){
   el.innerHTML=t("all","전체 사건",nAll,"#9B1B33")+t("bj","보정 사건",nBJ,"#4527A0");
 }
 const FIRMS=["법무법인 이준 서초 분사무소","법률사무소 블루"]; // 소속 사무소 구분 (요청 메시지·태그에 반영)
-function firmShort(f){ if(!f) return "사무소"; if(f.includes("블루")) return "블루"; if(f.includes("이준")) return "이준"; return f.length>6?f.slice(0,6):f; }
-function firmColor(f){ return (f&&f.includes("블루"))?"#2563EB":"#9B1B33"; }
+function firmShort(f){ if(!f) return "사무소"; if(f.includes("블루")) return "블루"; if(f.includes("남부")) return "남부"; if(f.includes("이준")) return "이준"; return f.length>6?f.slice(0,6):f; }   /* 2026-08-31: 사무소가 3개가 되어 남부를 따로 센다. ★남부 검사가 이준보다 먼저여야 한다(남부 이름에도 '이준'이 들어 있다) */
+function firmColor(f){ if(f&&f.includes("블루")) return "#2563EB"; if(f&&f.includes("남부")) return "#6D28D9"; return "#9B1B33"; }
 function firmChip(c){ const f=(c&&c.firm)||""; return `<span class="tagchip" style="background:${firmColor(f)};color:#fff;font-weight:800">🏛 ${esc(firmShort(f))}</span>`; }
 function activeGroups(c){ const set=new Set();
   if(c.incomeType==="이중소득" && Array.isArray(c.dualParts) && c.dualParts.length){
@@ -1569,7 +1569,7 @@ function renderDashHeaderStatsBoard(){
     ? `<div style="display:flex;border-top:2.5px solid #4527A0;border-bottom:1px solid var(--line);padding:16px 0;margin-bottom:6px">${kpb(received,"보정 사건","전체",false)}${kpb(bcnt("보정중"),"보정 중","보정중",true)}${kpb(bcnt("개시결정"),"개시결정","개시결정",false)}${kpb(bcnt("인가결정"),"인가결정","인가결정",false,true)}</div>`
     : `<div style="display:flex;border-top:2.5px solid var(--ink);border-bottom:1px solid var(--line);padding:16px 0;margin-bottom:6px">${kp(received,"받은 사건","전체",false)}${kp(inG,"취합 중","서류수집",true)}${kp(doneG,"취합 완료","검토,서류작성",false)}${kp(filed,"접수 완료","법원접수",false,true)}</div>`;
   let bh="";
-  const offDefs=[["이준","법무법인 이준 서초","var(--brand)"],["블루","법률사무소 블루","#2563EB"]];
+  const offDefs=[["이준","법무법인 이준 서초","var(--brand)"],["남부","법무법인 이준 남부","#6D28D9"],["블루","법률사무소 블루","#2563EB"]];
   const offs=offDefs.map(d=>({name:d[1],col:d[2],n:active.filter(c=>firmShort(c.firm)===d[0]).length})).filter(o=>o.n>0);
   if(offs.length){
     const mo=Math.max(1,...offs.map(o=>o.n));
@@ -1689,13 +1689,13 @@ async function renderDocxPreview(bytes, container){
 function renderFirmChips(){
   const el=document.getElementById("firmChips"); if(!el) return;
   const act=state.clients.filter(c=>!c.archived && !c.onHold && inAppMode(c));
-  const nAll=act.length, nJun=act.filter(c=>firmShort(c.firm)==="이준").length, nBlue=act.filter(c=>firmShort(c.firm)==="블루").length;
-  // 블루(다른 사무소) 의뢰인이 하나도 없으면 칩을 숨김(섞일 때만 의미 있음)
-  if(nBlue===0 && firmF===""){ el.innerHTML=""; el.style.display="none"; return; }
+  const nAll=act.length, nJun=act.filter(c=>firmShort(c.firm)==="이준").length, nBlue=act.filter(c=>firmShort(c.firm)==="블루").length, nNam=act.filter(c=>firmShort(c.firm)==="남부").length;
+  // 다른 사무소(블루·남부) 의뢰인이 하나도 없으면 칩을 숨김(섞일 때만 의미 있음)
+  if(nBlue===0 && nNam===0 && firmF===""){ el.innerHTML=""; el.style.display="none"; return; }
   // 시안 3: 세그먼트 컨트롤 (전체/이준/블루 연결형, 활성 칸은 사무소 색)
   el.style.cssText="display:inline-flex;flex-wrap:wrap;border:0.5px solid var(--line);border-radius:999px;overflow:hidden;margin-bottom:12px";
   const seg=(val,label,n,color,first)=>{const on=firmF===val;return `<button onclick="setFirmF('${val}')" style="cursor:pointer;font-size:13px;border:none;${first?'':'border-left:0.5px solid var(--line);'}padding:7px 15px;font-weight:700;background:${on?color:'#fff'};color:${on?'#fff':'var(--ink)'}">${label} ${n}</button>`;};
-  el.innerHTML = seg("","전체",nAll,"#5b524c",true) + seg("이준","이준",nJun,"#9B1B33",false) + seg("블루","블루",nBlue,"#2563EB",false);
+  el.innerHTML = seg("","전체",nAll,"#5b524c",true) + seg("이준","서초",nJun,"#9B1B33",false) + (nNam?seg("남부","남부",nNam,"#6D28D9",false):"") + seg("블루","블루",nBlue,"#2563EB",false);
 }
 function renderDashboard(){
   renderAppTabs();
@@ -6032,7 +6032,7 @@ function sbBuildClient(row, rows, docs, memos, secret){
     stage: ((aj.stage2 && STAGES.includes(aj.stage2) && SB_STAGE_FWD[aj.stage2]===row.stage) ? aj.stage2 : (SB_STAGE_BACK[row.stage]||"서류수집")), deadline: row.court_deadline||null,
     deadlineLabel: row.deadline_kind||"보정기한", amending:!!(row.amending||row.correcting),
     memo:"", items:{}, extra:{}, cert:{files:[],pw:""}, timeline:Array.isArray(aj.timeline)?aj.timeline:[], msgLog:Array.isArray(aj.msgLog)?aj.msgLog:[], msgTpl:(aj.msgTpl&&typeof aj.msgTpl==="object"&&!Array.isArray(aj.msgTpl))?aj.msgTpl:{},
-    firm: aj.firm || sbFirmFromOffice(row.office_id) || cfg.firmName, isPublic:!!row.is_public, createdAt: row.created_at, updatedAt: row.updated_at, _sbId: row.id, office_id: row.office_id,
+    firm: sbFirmFromOffice(row.office_id) || aj.firm || cfg.firmName,   /* 2026-08-31: 소속의 정답은 office_id 다. app_json 안의 옛 이름이 이기면 남부가 계속 서초로 보인다 */ isPublic:!!row.is_public, createdAt: row.created_at, updatedAt: row.updated_at, _sbId: row.id, office_id: row.office_id,
     intakeType: (row.intake_type||"전체"),   /* 접수 형태: 전체 / 보정만 (2026-08-11) */
     rawStage: row.stage||null,               /* 케이스허브에 적힌 원래 단계. 보정 사건은 이걸 그대로 보여준다 */
     _srvPct: (typeof row.collect_pct==="number") ? row.collect_pct : null };  /* ★서버에 실제 적혀 있던 취합률(자가치유 비교용) */
@@ -6250,8 +6250,15 @@ function sbItemMeta(c,id){
 function sbItemSig(c,id,s){ const m=sbItemMeta(c,id)||{}; return sbStatusFwd(s)+"|"+(s.rejectReason||"")+"|"+(s.memo||"")+"|"+(m.bundle||"")+"|"+(m.name||""); }
 /* 사무소(이준/블루) ↔ office_id 매핑 (SB_OFFICES는 pull에서 채움) */
 let SB_OFFICES=[];
-function sbFirmFromOffice(oid){ const o=SB_OFFICES.find(x=>x.id===oid); if(!o) return null; const n=o.name||""; if(n.includes("블루")) return "법률사무소 블루"; if(n.includes("이준")) return "법무법인 이준 서초 분사무소"; return n; }
-function sbOfficeFromFirm(firm){ const blue=(firm||"").includes("블루"); const o=SB_OFFICES.find(x=> blue ? (x.name||"").includes("블루") : (x.name||"").includes("이준")); return o? o.id : OURS_OFFICE_ID; }
+function sbFirmFromOffice(oid){ const o=(SB_OFFICES||[]).find(x=>x.id===oid); return (o&&o.name)?o.name:null; }   /* 2026-08-31: 예전에는 이름에 '이준'만 있으면 무조건 "서초"로 바꿔 돌려줬다. 그래서 남부 사건이 화면에서 서초로 보였고, 저장할 때 실제 소속까지 서초로 끌려갔다. 이제 사무소 이름을 있는 그대로 돌려준다. */
+function sbOfficeFromFirm(firm){ const f=String(firm||"").trim();
+  const ex=(SB_OFFICES||[]).find(x=>String(x.name||"").trim()===f); if(ex) return ex.id;   /* 이름이 똑같으면 그걸로 */
+  const want = f.includes("블루") ? "블루" : (f.includes("남부") ? "남부" : "이준");
+  const o=(SB_OFFICES||[]).find(x=>{ const n=String(x.name||"");
+    if(want==="블루") return n.includes("블루");
+    if(want==="남부") return n.includes("남부");
+    return n.includes("이준") && !n.includes("남부"); });   /* 서초를 고를 때 남부를 집지 않도록 */
+  return o? o.id : OURS_OFFICE_ID; }
 /* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
 function sbAppJson(c){ return { stage2: clientStage(c), firm:c.firm||null, onHold:!!c.onHold, holdReason:c.holdReason||"", minwon:((c.minwon&&typeof c.minwon==="object"&&!Array.isArray(c.minwon))?c.minwon:null), fee:((c.fee&&typeof c.fee==="object"&&!Array.isArray(c.fee))?c.fee:null), housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: AUTO_NA_IDS.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
 function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
@@ -6274,9 +6281,15 @@ function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:
   /* ★사무소 동기화(2026-07-20): firm(블루/이준 토글)이 정해져 있으면 office_id도 그 사무소로 맞춰 저장한다.
      예전엔 office_id를 '수정 시 제외'해, 토글만 블루로 바꿔도 office_id는 이준에 남는 어긋남이 생겼다(최혁진 사건 — 케이스허브·원사무실에서 안 보임).
      단, SB_OFFICES에서 실제 매칭 사무소를 찾았을 때만 동기화한다(로딩 전 등 못 찾으면 기존 office_id 보존 → 잘못 덮어씀 방지). */
-  if(c.firm){ const _blue=c.firm.indexOf("블루")>=0, _jun=c.firm.indexOf("이준")>=0;
-    if(_blue||_jun){ const _o=(SB_OFFICES||[]).find(x=> _blue ? String(x.name||"").indexOf("블루")>=0 : String(x.name||"").indexOf("이준")>=0);
-      if(_o && _o.id) __p.office_id=_o.id; } }
+  /* ★2026-08-31 수정 — 남부 사건이 서초로 넘어가던 원인.
+     사무소가 3개(서초·남부·블루)가 되었는데 위 방식은 이름에 '이준'이 든 "첫 번째" 사무소(=서초)를 골랐다.
+     남부 의뢰인을 취합앱에서 한 번 저장할 때마다 소속이 서초로 바뀌었다(조미희·황성용 실제 발생).
+     이제는 지금 소속이 이미 맞으면 손대지 않고, 정말 다를 때만 옮긴다. */
+  if(c.firm && SB_OFFICES && SB_OFFICES.length){
+    const _cur=SB_OFFICES.find(x=>x.id===c.office_id);
+    if(_cur && firmShort(_cur.name)===firmShort(c.firm)){ /* 이미 맞는 사무소 — 그대로 둔다 */ }
+    else { const _oid=sbOfficeFromFirm(c.firm); if(_oid) __p.office_id=_oid; }
+  }
   return __p; }
 /* office_id 동기화는 위 sbClientPayload에서 firm 기준으로 처리(수정·생성 공통). 신규 생성 경로에서도 아래에서 한 번 더 보정한다. */
 function sbClientSig(c){ return JSON.stringify(sbClientPayload(c)); }
