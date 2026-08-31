@@ -62,6 +62,8 @@
  .pill.서류취합중{background:#FBEEDD;color:var(--amber)} .pill.취합완료{background:#E9EDFB;color:var(--blue)}
  .pill.접수완료,.pill.개시결정,.pill.인가결정{background:#DDF3EA;color:var(--green)}
  .pill.기각{background:#F6E7E6;color:var(--red)}
+ .pill.소송구조신청{background:#E0F2FE;color:#0369A1} .pill.채권자집회{background:#EDE7F6;color:#4527A0}
+ .pill.면책허가결정{background:#DDF3EA;color:#0F766E} .pill.폐지결정{background:#FDF0E3;color:#B45309} .pill.종결{background:#F1EFED;color:#57534E}
  /* 보정 사건 전용 단계 (2026-08-11) */
  .pill.보정중{background:#EDE7F6;color:#4527A0} .pill.기각{background:#F1F2F5;color:#5B6270}
  .bigtabs{display:flex;border-bottom:2px solid var(--line);margin:0 0 14px}
@@ -494,10 +496,10 @@
  const ROLE_KO={master:"관리자",staff:"직원",office:"원사무실"};
  /* 2026-08-11 '기각' 추가 — 취합앱에도 같은 단계를 만들었고, clients.stage 검사 규칙(clients_stage_check)이
     이미 '기각'을 허용하고 있어 SQL 없이 그대로 쓸 수 있다. */
- const STAGES=["서류취합중","취합완료","접수완료","개시결정","인가결정","기각"];
+ const STAGES=["서류취합중","취합완료","접수완료","소송구조신청","개시결정","채권자집회","인가결정","면책허가결정","폐지결정","기각","종결"];   /* 2026-08-31: 8/30 시트 이관 때 새로 생긴 5단계를 여기서도 알게 한다 */
  /* 보정만 넘겨받은 사건 전용 단계 (2026-08-11 혜림 확정)
     — 우리가 접수한 사건이 아니므로 서류취합중·취합완료·접수완료를 쓰지 않는다. */
- const BJ_STAGES=["보정중","개시결정","인가결정","기각"];
+ const BJ_STAGES=["보정중","개시결정","채권자집회","인가결정","면책허가결정","폐지결정","기각","종결"];   /* 2026-08-31 신설 4개 추가 */
  let MODE="all";   /* "all" = 전체 사건 탭 / "bj" = 보정 사건 탭 */
  function curStages(){ return MODE==="bj" ? BJ_STAGES : STAGES; }
  function stagesFor(c){ return isBJ(c) ? BJ_STAGES : STAGES; }
@@ -753,7 +755,7 @@
        `<div class="db-kpis"><div class="db-kpi"><div class="v">${active.length}</div><div class="l">보정 사건</div></div><div class="db-kpi"><div class="v">${stN["보정중"]||0}</div><div class="l">보정 중</div></div><div class="db-kpi"><div class="v">${dueSoon}</div><div class="l">기한 임박</div></div></div>`+
        `<div class="db-h">단계별 사건</div><div class="db-pipe">`+ST.map(x=>`<div class="db-st ${(x===maxS&&stN[x]>0)?'hot':''}" onclick="dbFilter('${x}')"><div class="n">${stN[x]}</div><div class="x">${esc(x)}</div></div>`).join("")+`</div>`;
    } else {
-     const inProg=stN["서류취합중"]||0, filed=(stN["접수완료"]||0)+(stN["개시결정"]||0)+(stN["인가결정"]||0);
+     const inProg=stN["서류취합중"]||0, filed=["접수완료","소송구조신청","개시결정","채권자집회","인가결정","면책허가결정","폐지결정","종결"].reduce((a,k)=>a+(stN[k]||0),0);   /* 2026-08-31: 법원에 접수된 뒤의 단계는 전부 "접수 완료"로 센다 */
      $("#board").innerHTML=
        `<div class="db-kpis"><div class="db-kpi"><div class="v">${active.length}</div><div class="l">받은 사건</div></div><div class="db-kpi"><div class="v">${inProg}</div><div class="l">취합 중</div></div><div class="db-kpi"><div class="v">${filed}</div><div class="l">접수 완료</div></div></div>`+
        `<div class="db-h">단계별 사건</div><div class="db-pipe">`+ST.map(x=>`<div class="db-st ${(x===maxS&&stN[x]>0)?'hot':''}" onclick="dbFilter('${x}')"><div class="n">${stN[x]}</div><div class="x">${esc(x)}</div></div>`).join("")+`</div>`;
