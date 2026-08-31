@@ -449,6 +449,7 @@
       </div>
       <select id="sortSel" class="btn" onchange="renderDashboard()" style="font-weight:700;">
         <option value="reg">신규 등록순</option>
+        <option value="stage_at">이 단계로 옮긴 순</option>
         <option value="recent">최근 수정순</option>
         <option value="name">이름순</option>
         <option value="progress_desc">완료율 높은순</option>
@@ -869,6 +870,18 @@ function renderQuickLinks(){
 const STAGES = ["상담","서류수집","검토","서류작성","법원접수","소송구조신청","개시결정","채권자집회","인가결정","면책허가결정","폐지결정","기각","종결","완료"];   /* 2026-08-11 '서류작성'·'인가결정'·'기각' 신설 / 2026-08-31 '소송구조신청'·'채권자집회'·'면책허가결정'·'폐지결정'·'종결' 5개 신설 — 이 5개가 없어서 케이스허브의 해당 사건 190건이 전부 '서류수집'으로 떨어져 있었다 */
 const STAGE_COLOR = { "상담":"#857D76","서류수집":"#D97706","검토":"#9B1B33","서류작성":"#7C3AED","법원접수":"#2563eb","소송구조신청":"#0891B2","개시결정":"#059669","채권자집회":"#6D28D9","인가결정":"#047857","면책허가결정":"#0F766E","폐지결정":"#B45309","기각":"#B3261E","종결":"#78716C","완료":"#A8A29E" };
 function clientStage(c){ return STAGES.includes(c.stage)?c.stage:"서류수집"; }
+/* ===== 이 단계로 넘어온 지 며칠째인가 (2026-08-31) =====
+   clients.stage_at 은 앱이 아니라 DB가 찍는다(트리거 trg_clients_stage_at: 케이스허브 단계 값이 실제로 바뀔 때만).
+   그래서 취합앱에서 넘기든 케이스허브에서 넘기든 똑같이 기록된다.
+   ★단, 취합앱의 '검토'↔'서류작성' 처럼 케이스허브 단계가 같은(둘 다 취합완료) 이동은 날짜가 안 바뀐다 — 실제로 안 옮긴 것이 맞다.
+   ★2026-08-31 이전부터 그 단계에 있던 사람은 값이 비어 있다 → 아무것도 표시하지 않고 정렬에서 맨 뒤로 보낸다. */
+function stageDays(c){ if(!c||!c.stageAt) return null;
+  const t=new Date(c.stageAt); if(isNaN(t.getTime())) return null;
+  const d=Math.floor((Date.now()-t.getTime())/86400000)+1;   /* 넘어온 당일을 1일째로 센다 */
+  return d>0?d:1; }
+function stageDayBadge(c){ const d=stageDays(c); if(!d) return "";
+  const col = d>=30 ? ["#F6E7E6","#B3261E"] : (d>=14 ? ["#FBEEDD","#9a5b00"] : ["#EFEDEA","#6b635c"]);
+  return `<span style="display:inline-block;margin-left:5px;padding:1px 7px;border-radius:999px;background:${col[0]};color:${col[1]};font-size:11px;font-weight:800;white-space:nowrap" title="'${esc(clientStage(c))}' 단계로 넘어온 지 ${d}일째">${d}일째</span>`; }
 
 /* ---------- 2. 상태 ---------- */
 const LS_DATA="ksdocs_data_v1", LS_CFG="ksdocs_cfg_v1", LS_DEVICE="ksdocs_device_v1";
@@ -1751,6 +1764,12 @@ function renderDashboard(){
     if(sort==="progress") return progress(a).pct - progress(b).pct;
     if(sort==="deadline"){ const da=dDay(a), db=dDay(b); return (da===null?99999:da)-(db===null?99999:db); }
     if(sort==="reg") return String(b.createdAt||"").localeCompare(String(a.createdAt||"")) || String(a.id||"").localeCompare(String(b.id||"")); // 신규 등록순(등록일 최신 위) — 등록일은 안 바뀌어 위치 고정
+    /* 이 단계로 옮긴 순 (2026-08-31) — 최근에 넘어온 사람이 위.
+       stage_at 이 빈 사람(08-31 이전부터 그 단계에 있던 사람)은 항상 맨 뒤, 그들끼리는 이름순 */
+    if(sort==="stage_at"){ const x=a.stageAt||"", y=b.stageAt||"";
+      if(!x&&!y) return (a.name||"").localeCompare(b.name||"","ko");
+      if(!x) return 1; if(!y) return -1;
+      return y.localeCompare(x) || (a.name||"").localeCompare(b.name||"","ko"); }
     return (b.updatedAt||"").localeCompare(a.updatedAt||"");
   });
   renderDashHeaderStatsBoard();
@@ -1789,7 +1808,7 @@ function renderDashboard(){
         <span style="flex:1;min-width:4px"></span>
         <span style="display:inline-flex;align-items:center;gap:6px;flex:0 0 auto">${urgentToggle(c)}
         <span class="badge" style="background:${firmColor(c.firm)};color:#fff;margin-left:6px;white-space:nowrap">${esc(firmShort(c.firm))}</span> <label class="sw" title="원사무실 공개" onclick="event.stopPropagation()"><input type="checkbox" ${c.isPublic?"checked":""} onchange="togglePublic('${c.id}')"><span></span></label><span style="font-size:11px;color:var(--muted);margin-left:4px;vertical-align:3px;white-space:nowrap">${c.isPublic?"공개":"비공개"}</span></span></div>
-      <div class="meta">${esc(c.caseType||"개인회생")} · <span style="color:${stgColor};font-weight:700">${stg}</span>${c.assignee?(" · 담당 "+esc(c.assignee)):""}${c.caseNo?(" · "+esc(c.caseNo)):""} · 수정 ${fmt(c.updatedAt)}</div>
+      <div class="meta">${esc(c.caseType||"개인회생")} · <span style="color:${stgColor};font-weight:700">${stg}</span>${stageDayBadge(c)}${c.assignee?(" · 담당 "+esc(c.assignee)):""}${c.caseNo?(" · "+esc(c.caseNo)):""} · 수정 ${fmt(c.updatedAt)}</div>
       ${isBJOnly(c)
         /* 보정만 사건: 서류취합을 안 하므로 진행 막대·% 대신 안내를 보여준다 (2026-08-11) */
         ? `<div style="margin-top:8px;padding:7px 10px;border-radius:8px;background:#EDE7F6;color:#4527A0;font-size:12.5px;font-weight:700">보정만 넘겨받은 사건 · 서류취합 없음</div>`
@@ -6031,6 +6050,7 @@ function sbBuildClient(row, rows, docs, memos, secret){
        stage2를 케이스허브 값으로 바꿔 봤을 때 row.stage와 같을 때만 쓴다 — 케이스허브에서 단계를 바꿨다면 그쪽이 이긴다. */
     stage: ((aj.stage2 && STAGES.includes(aj.stage2) && SB_STAGE_FWD[aj.stage2]===row.stage) ? aj.stage2 : (SB_STAGE_BACK[row.stage]||"서류수집")), deadline: row.court_deadline||null,
     deadlineLabel: row.deadline_kind||"보정기한", amending:!!(row.amending||row.correcting),
+    stageAt: row.stage_at||null,
     memo:"", items:{}, extra:{}, cert:{files:[],pw:""}, timeline:Array.isArray(aj.timeline)?aj.timeline:[], msgLog:Array.isArray(aj.msgLog)?aj.msgLog:[], msgTpl:(aj.msgTpl&&typeof aj.msgTpl==="object"&&!Array.isArray(aj.msgTpl))?aj.msgTpl:{},
     firm: sbFirmFromOffice(row.office_id) || aj.firm || cfg.firmName,   /* 2026-08-31: 소속의 정답은 office_id 다. app_json 안의 옛 이름이 이기면 남부가 계속 서초로 보인다 */ isPublic:!!row.is_public, createdAt: row.created_at, updatedAt: row.updated_at, _sbId: row.id, office_id: row.office_id,
     intakeType: (row.intake_type||"전체"),   /* 접수 형태: 전체 / 보정만 (2026-08-11) */
@@ -6102,7 +6122,7 @@ async function pullFromSupabase(silent){
     for(const withHold of [true,false]){
       for(const withRrn of [true,false]){
         const BASE = BASE_CORE + (withBJ?",intake_type":"") + (withHold?",on_hold,hold_reason":"") + (withRrn?",rrn_front":"");
-        cRes=await sbSelectPaged("clients",BASE+",is_public,app_json,collect_pct"); SB_HAS_PCT=!cRes.error;
+        cRes=await sbSelectPaged("clients",BASE+",is_public,app_json,collect_pct,stage_at"); SB_HAS_PCT=!cRes.error;   /* stage_at = 이 단계로 넘어온 시각(DB 트리거가 찍음). 칸이 없으면 아래 폴백에서 같이 빠진다 */
         if(cRes.error) cRes=await sbSelectPaged("clients",BASE+",is_public,app_json"); // collect_pct 칸 없을 때
         if(cRes.error) cRes=await sbSelectPaged("clients",BASE+",app_json");           // is_public 칸 없을 때
         if(cRes.error) cRes=await sbSelectPaged("clients",BASE);                       // app_json 칸도 없을 때
