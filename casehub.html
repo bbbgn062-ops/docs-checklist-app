@@ -778,7 +778,7 @@
    renderDash(active);
    const offIds=[...new Set(CLIENTS.map(c=>c.office_id))];
    const offOpts=offIds.map(id=>`<option value="${id}" ${officeF===id?"selected":""}>${esc(OFFNAME[id]||"")}</option>`).join("");
-   const sortSel=`<select class="sel" onchange="setSort(this.value)" title="정렬">`+[["smart","기본 정렬"],["new","신규 등록순"],["stageOld","이 단계 오래 머무른 순"],["stageNew","이 단계로 최근 옮긴 순"],["pctHigh","취합률 높은순"],["pctLow","취합률 낮은순"],["urgent","급건순"]].map(o=>`<option value="${o[0]}" ${SORTMODE===o[0]?"selected":""}>${o[1]}</option>`).join("")+`</select>`;
+   const sortSel=`<select class="sel" onchange="setSort(this.value)" title="정렬">`+[["smart","기본 정렬"],["new","신규 등록순"],["stageNew","이 단계로 옮긴 순"],["pctHigh","취합률 높은순"],["pctLow","취합률 낮은순"],["urgent","급건순"]].map(o=>`<option value="${o[0]}" ${SORTMODE===o[0]?"selected":""}>${o[1]}</option>`).join("")+`</select>`;
    $("#toolbar").innerHTML = (canEdit()
      ? `<button class="tbtn" onclick="openNewClient()" style="background:var(--primary);color:#fff;border-color:var(--primary)">+ 새 의뢰인</button><select class="sel" onchange="onOffice(this.value)"><option value="">전체 원사무실</option>${offOpts}</select><button class="tbtn" onclick="exportXlsx()">엑셀 내보내기</button><button class="tbtn" onclick="copySummary()">현황 요약 복사</button>` : "")+sortSel;
    let arr=baseAll.filter(c=> MODE==="bj" ? isBJ(c) : !isBJ(c))
@@ -795,7 +795,6 @@
      smart:(a,b)=>(b.urgent-a.urgent)||a.name.localeCompare(b.name,"ko"),
      new:(a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")),
      /* 이 단계로 넘어온 순 (2026-08-31) — stage_at 이 빈 사람(예전부터 그 단계에 있던 사람)은 항상 맨 뒤 */
-     stageOld:(a,b)=>{const x=a.stage_at||"",y=b.stage_at||""; if(!x&&!y) return a.name.localeCompare(b.name,"ko"); if(!x) return 1; if(!y) return -1; return x.localeCompare(y)||a.name.localeCompare(b.name,"ko");},
      stageNew:(a,b)=>{const x=a.stage_at||"",y=b.stage_at||""; if(!x&&!y) return a.name.localeCompare(b.name,"ko"); if(!x) return 1; if(!y) return -1; return y.localeCompare(x)||a.name.localeCompare(b.name,"ko");},
      pctHigh:(a,b)=>((PCT[b.id]||0)-(PCT[a.id]||0))||a.name.localeCompare(b.name,"ko"),
      pctLow:(a,b)=>((PCT[a.id]||0)-(PCT[b.id]||0))||a.name.localeCompare(b.name,"ko"),
