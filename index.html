@@ -914,7 +914,9 @@ let firmF = "";                 // 사무소 필터 ("" 전체 / "이준" / "블
 function setFirmF(v){ firmF=v; renderDashboard(); }
 let stageFilter = "서류수집";    // 단계(과정) 필터 — 기본값: 서류수집(서류취합)
 let stageExpanded = false;      // 단계 알약 더보기 펼침 상태
-function setStageFilter(s){ stageFilter=s; renderDashboard(); }
+let reviewF = "";              // 🔎 검토 필터 ("" 없음 / "requested" 검토요청만 / "returned" 반려만) — 2026-09-03
+function setReviewF(v){ reviewF=(reviewF===v)?"":v; if(reviewF) stageFilter="전체"; renderDashboard(); window.scrollTo(0,0); }
+function setStageFilter(s){ stageFilter=s; reviewF=""; renderDashboard(); }
 /* 단계 필터는 "검토,서류작성" 처럼 여러 단계를 한 번에 가리킬 수 있다 (대시보드 '취합 완료' 칸). */
 function stageFilterHas(f,s){ return String(f||"").split(",").includes(s); }
 function stageFilterHit(c,f){ if(!f||f==="전체") return true; return stageFilterHas(f,clientStage(c)); }
@@ -936,7 +938,14 @@ function renderStagePills(){
   const holdN=state.clients.filter(c=>!c.archived && c.onHold && (!firmF || firmShort(c.firm)===firmF)).length;
   const holdOn=(($("#statusSel")&&$("#statusSel").value)||"active")==="hold";
   const holdPill=(holdN||holdOn)?`<button onclick="gotoHoldBox()" title="보류로 미뤄둔 의뢰인 보기" style="cursor:pointer;font-size:13px;border:0.5px solid ${holdOn?'#c9a227':'#e5d089'};background:${holdOn?'#c9a227':'#fff8e1'};color:${holdOn?'#fff':'#7a6100'};border-radius:999px;padding:6px 13px;font-weight:800">${holdOn?'↩ 진행중으로 돌아가기':`⏸️ 보류 <span style="opacity:.8">${holdN}</span>`}</button>`:"";
-  el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">${list.map(pill).join("")}${more}${holdPill}</div>`;
+  /* 🔎 검토요청·↩반려 알약 (2026-09-03) — 검토·서류작성 단계에만 쓰이므로 보정 탭에서는 그리지 않는다.
+     0건이면 알약 자체를 숨겨서 평소 화면은 지금과 똑같다. */
+  const revBase=(APPMODE==="bj")?[]:base.filter(c=>revApplies(c));
+  const nReq=revBase.filter(c=>revCur(c).state==="requested").length;
+  const nRet=revBase.filter(c=>revCur(c).state==="returned").length;
+  const revPill=(n,key,txt,u)=>{ const on=(reviewF===key); return (n||on)?`<button onclick="setReviewF('${key}')" title="검토·서류작성 단계만 해당" style="cursor:pointer;font-size:13px;border:0.5px solid ${on?u.fg:u.bd};background:${on?u.fg:u.bg};color:${on?'#fff':u.fg};border-radius:999px;padding:6px 13px;font-weight:800">${txt} <span style="opacity:.8">${n}</span></button>`:""; };
+  const revPills=(APPMODE==="bj")?"":(revPill(nReq,"requested","🔎 검토요청",REV_UI.requested)+revPill(nRet,"returned","↩ 반려",REV_UI.returned));
+  el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">${list.map(pill).join("")}${more}${holdPill}${revPills}</div>`;
 }
 /* ⏸️ 보류함 열기/닫기 — 필터 상자를 자동으로 펼치고 상태를 '보류'로 맞춘다(비개발자도 바로 찾게) */
 function gotoHoldBox(){
@@ -1064,6 +1073,140 @@ function isBJOnly(c){ return !!c && c.intakeType==="보정만"; }
 /* 보정 사건 전용 단계 (케이스허브와 같은 이름을 그대로 쓴다) */
 const BJ_APP_STAGES=["보정중","개시결정","인가결정","기각"];
 function bjStage(c){ const v=c&&c.rawStage; return BJ_APP_STAGES.includes(v)?v:"보정중"; }
+
+/* ═══════════════ 🔎 검토 요청 (2026-09-03) ═══════════════
+   왜 만들었나: '검토'·'서류작성' 단계에서 직원이 자기 몫을 끝냈다는 것을 알릴 자리가 없었다.
+   흐름: ①직원이 체크(할 말은 선택 입력) → ②관리자(master) 화면에 '🔎 검토요청'으로 뜸
+        → ③관리자가 [✅ 검토완료] 또는 [↩ 다시 해주세요(반려·사유 필수)]
+        → ④그 결과는 관리자·직원 모두에게 똑같이 보인다.
+   보이는 단계: '검토','서류작성' 두 개뿐. 다른 단계에서는 아예 그리지 않는다.
+   저장 위치: clients.app_json.review — ★케이스허브는 app_json 중 minwon 하나만 읽으므로
+             케이스허브 화면에는 절대 나오지 않는다. 표 변경·SQL 불필요.
+   단계가 검토 ↔ 서류작성으로 바뀌면 그 단계의 검토는 새로 시작한다(지난 결과는 🗓 기록에 남는다). */
+const REVIEW_STAGES=["검토","서류작성"];
+const REV_UI={ requested:{icon:"🔎",label:"검토요청",bg:"#EEF2FF",fg:"#3730A3",bd:"#C7D2FE"},
+               done:     {icon:"✅",label:"검토완료",bg:"#E8F5EE",fg:"#047857",bd:"#A7F3D0"},
+               returned: {icon:"↩",label:"반려",    bg:"#FDECEC",fg:"#B3261E",bd:"#FECACA"} };
+function revApplies(c){ return !!c && !isBJOnly(c) && REVIEW_STAGES.includes(clientStage(c)); }
+/* 지금 단계의 검토 상태. 적혀 있는 단계가 지금 단계와 다르면 '아직 안 함'으로 본다. */
+function revCur(c){
+  const r=(c&&c.review&&typeof c.review==="object"&&!Array.isArray(c.review))?c.review:{};
+  const st=["requested","done","returned"].includes(r.state)?r.state:"none";
+  const blank={ state:"none",by:"",at:"",memo:"",adminBy:"",adminAt:"",adminMemo:"",stage:"" };
+  if(st==="none") return blank;
+  if(r.stage && r.stage!==clientStage(c)) return blank;
+  return { state:st, by:r.by||"", at:r.at||"", memo:r.memo||"", adminBy:r.adminBy||"", adminAt:r.adminAt||"", adminMemo:r.adminMemo||"", stage:r.stage||"" };
+}
+function revSet(c,patch){ c.review=Object.assign({},revCur(c),patch); }
+function revLog(c,text){ if(!Array.isArray(c.timeline)) c.timeline=[]; c.timeline.unshift({ts:now(), by:whoNow(), text:text}); }
+function revRepaint(cid){ if(currentClientId===cid) renderDetail(cid); else renderDashboard(); }
+
+/* 직원: 체크 → 남길 말(선택) → 검토 요청 */
+function revAsk(cid){
+  const c=findClient(cid); if(!c) return; const r=revCur(c);
+  modal(`<h3 style="margin-top:0">🔎 검토 요청</h3>
+    <div class="hint" style="margin:-2px 0 13px;line-height:1.65"><b>${esc(c.name||"의뢰인")}</b> · 지금 단계 <b>${esc(clientStage(c))}</b><br>
+      체크하면 관리자 화면에 <b>🔎 검토요청</b>으로 뜹니다. 남길 말이 없으면 그냥 아래 버튼을 누르세요.</div>
+    <div class="field"><label>관리자에게 남길 말 (선택 · 최대 300자)</label>
+      <textarea id="rev_memo" maxlength="300" placeholder="예) 변제금 계산만 한 번 봐주세요" style="width:100%;min-height:80px;line-height:1.6;resize:vertical;font-family:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line);border-radius:9px">${esc(r.memo||"")}</textarea></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">취소</button>
+      <button class="btn btn-primary" onclick="revSubmit('${c.id}')">🔎 검토 요청</button></div>`,430);
+  setTimeout(()=>{ const e=document.getElementById("rev_memo"); if(e) e.focus(); },60);
+}
+function revSubmit(cid){
+  const c=findClient(cid); if(!c) return;
+  const el=document.getElementById("rev_memo"); const memo=el?String(el.value||"").trim():"";
+  revSet(c,{ state:"requested", by:whoNow(), at:now(), memo:memo, stage:clientStage(c), adminBy:"", adminAt:"", adminMemo:"" });
+  closeModal();
+  revLog(c,`🔎 검토 요청 (${clientStage(c)})${memo?" — "+memo:""}`);
+  touch(`[${c.name}] 🔎 검토 요청`); toast("관리자에게 검토 요청을 보냈습니다"); revRepaint(cid);
+}
+/* 직원: 잘못 눌렀을 때 체크 풀기 */
+function revUnask(cid){
+  const c=findClient(cid); if(!c) return;
+  if(!confirm("검토 요청을 취소할까요? 관리자 화면에서 사라집니다.")) return;
+  revSet(c,{ state:"none", by:"", at:"", memo:"", stage:"" });
+  revLog(c,"검토 요청 취소"); touch(`[${c.name}] 검토 요청 취소`); toast("검토 요청을 취소했습니다"); revRepaint(cid);
+}
+/* 관리자: 검토완료 */
+function revDone(cid){
+  const c=findClient(cid); if(!c) return;
+  if(!isAdminUser()){ toast("검토완료는 관리자(master)만 누를 수 있습니다"); return; }
+  revSet(c,{ state:"done", adminBy:whoNow(), adminAt:now(), adminMemo:"", stage:clientStage(c) });
+  revLog(c,`✅ 검토완료 (${clientStage(c)})`); touch(`[${c.name}] ✅ 검토완료`); toast("검토완료로 표시했습니다"); revRepaint(cid);
+}
+/* 관리자: 반려(다시 해주세요) — 사유는 반드시 적어야 한다 */
+function revReturnModal(cid){
+  const c=findClient(cid); if(!c) return;
+  if(!isAdminUser()){ toast("반려는 관리자(master)만 누를 수 있습니다"); return; }
+  const presets=["서류 누락 — 다시 확인","금액·계산 다시 확인","사건번호·인적사항 확인","스캔 상태 불량 — 다시 받기"];
+  modal(`<h3 style="margin-top:0">↩ 다시 해주세요 (반려)</h3>
+    <div class="hint" style="margin:-2px 0 13px;line-height:1.65"><b>${esc(c.name||"의뢰인")}</b> · 직원 화면에 <b>빨간 띠</b>로 사유가 뜹니다.<br>직원이 고친 뒤 다시 검토 요청을 하면 됩니다.</div>
+    <div class="field"><label>반려 사유 (필수 · 최대 300자)</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${presets.map(t=>`<button class="btn btn-sm" onclick="var e=document.getElementById('rev_rmemo'); e.value=(e.value.trim()?e.value.trim()+'\n':'')+'${t}'; e.focus();">${t}</button>`).join("")}</div>
+      <textarea id="rev_rmemo" maxlength="300" placeholder="예) 부채증명서 2곳이 빠졌습니다. 받고 다시 요청해주세요" style="width:100%;min-height:88px;line-height:1.6;resize:vertical;font-family:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line);border-radius:9px"></textarea></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">취소</button>
+      <button class="btn btn-primary" style="background:var(--red)" onclick="revReturn('${c.id}')">↩ 반려</button></div>`,440);
+  setTimeout(()=>{ const e=document.getElementById("rev_rmemo"); if(e) e.focus(); },60);
+}
+function revReturn(cid){
+  const c=findClient(cid); if(!c) return;
+  const el=document.getElementById("rev_rmemo"); const why=el?String(el.value||"").trim():"";
+  if(!why){ toast("반려 사유를 적어주세요"); if(el) el.focus(); return; }
+  revSet(c,{ state:"returned", adminBy:whoNow(), adminAt:now(), adminMemo:why, stage:clientStage(c) });
+  closeModal(); revLog(c,`↩ 반려 — ${why}`); touch(`[${c.name}] ↩ 검토 반려`); toast("반려했습니다"); revRepaint(cid);
+}
+
+/* 의뢰인 카드(목록 화면) 한 줄 — 체크박스이자 배지 */
+function revCardBar(c){
+  if(!revApplies(c)) return "";
+  const r=revCur(c);
+  const chip=(u,txt)=>`<span style="font-size:12px;font-weight:800;color:${u.fg};background:${u.bg};border:1px solid ${u.bd};border-radius:8px;padding:4px 10px;white-space:nowrap">${txt}</span>`;
+  const box=(txt,col)=>`<button onclick="event.stopPropagation();revAsk('${c.id}')" style="cursor:pointer;font-size:12px;font-weight:800;border:1px solid ${col};background:#fff;color:${col};border-radius:8px;padding:4px 10px;white-space:nowrap">${txt}</button>`;
+  let inner="";
+  if(r.state==="none")           inner=box("☐ 검토 요청","var(--brand)");
+  else if(r.state==="requested") inner=chip(REV_UI.requested,`☑ 검토요청${r.by?" · "+esc(r.by):""}${r.at?" · "+fmtD(r.at):""}`);
+  else if(r.state==="done")      inner=chip(REV_UI.done,`✅ 검토완료${r.adminBy?" · "+esc(r.adminBy):""}${r.adminAt?" · "+fmtD(r.adminAt):""}`);
+  else                           inner=chip(REV_UI.returned,`↩ 반려${r.adminAt?" · "+fmtD(r.adminAt):""}`)+box("☐ 다시 요청",REV_UI.returned.fg);
+  return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px">${inner}</div>`;
+}
+
+/* 의뢰인 상세 위쪽 띠 */
+function revDetailBand(c){
+  if(!revApplies(c)) return "";
+  const r=revCur(c), adm=isAdminUser();
+  const solid=(txt,act,bg)=>`<button onclick="${act}" style="cursor:pointer;border:none;border-radius:9px;padding:9px 15px;font-size:13px;font-weight:800;color:#fff;background:${bg};white-space:nowrap">${txt}</button>`;
+  const ghost=(txt,act,col)=>`<button onclick="${act}" style="cursor:pointer;border:1px solid ${col};background:#fff;color:${col};border-radius:9px;padding:9px 15px;font-size:13px;font-weight:800;white-space:nowrap">${txt}</button>`;
+  const wrap=(bg,bd,body)=>`<div style="margin-top:13px;padding:12px 14px;border-radius:11px;background:${bg};border:1px solid ${bd}"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">${body}</div></div>`;
+  const head=(col,t)=>`<div style="flex:1;min-width:190px"><div style="font-size:13.5px;font-weight:800;color:${col};line-height:1.5">${t}</div>`;
+  if(r.state==="none")
+    return wrap("#FAFAF9","var(--line)",
+      head("var(--ink)","🔎 검토 요청")+
+      `<div style="font-size:12px;color:var(--muted);margin-top:3px">${esc(clientStage(c))} 단계 일을 마쳤으면 체크하세요. 관리자에게 검토 요청이 갑니다.</div></div>`+
+      ghost("☐ 검토 요청하기",`revAsk('${c.id}')`,"var(--brand)"));
+  if(r.state==="requested"){
+    const u=REV_UI.requested;
+    return wrap(u.bg,u.bd,
+      head(u.fg,`☑ 검토 요청됨 · ${esc(r.by||"-")} · ${fmt(r.at)}`)+
+      (r.memo?`<div style="font-size:12.5px;color:${u.fg};margin-top:5px;white-space:pre-wrap;opacity:.92">💬 ${esc(r.memo)}</div>`:"")+
+      `<div style="font-size:12px;color:${u.fg};opacity:.75;margin-top:4px">${adm?"검토하신 뒤 오른쪽 버튼을 눌러주세요.":"관리자 검토를 기다리는 중입니다."}</div></div>`+
+      (adm ? solid("✅ 검토완료",`revDone('${c.id}')`,"#047857")+solid("↩ 다시 해주세요",`revReturnModal('${c.id}')`,"var(--red)")
+           : ghost("요청 취소",`revUnask('${c.id}')`,u.fg)));
+  }
+  if(r.state==="done"){
+    const u=REV_UI.done;
+    return wrap(u.bg,u.bd,
+      head(u.fg,`✅ 검토완료 · ${esc(r.adminBy||"-")} · ${fmt(r.adminAt)}`)+
+      `<div style="font-size:12px;color:${u.fg};opacity:.8;margin-top:4px">${esc(clientStage(c))} 단계 검토가 끝났습니다.${r.by?` (요청 ${esc(r.by)})`:""}</div></div>`+
+      ghost("다시 검토 요청",`revAsk('${c.id}')`,u.fg));
+  }
+  const u=REV_UI.returned;
+  return wrap(u.bg,u.bd,
+    head(u.fg,`↩ 반려 · ${esc(r.adminBy||"-")} · ${fmt(r.adminAt)}`)+
+    `<div style="font-size:12.5px;color:${u.fg};margin-top:5px;white-space:pre-wrap;font-weight:700">사유 · ${esc(r.adminMemo||"")}</div></div>`+
+    ghost("고쳤어요 · 다시 검토 요청",`revAsk('${c.id}')`,u.fg));
+}
+
 /* 큰 탭: "all" = 전체 사건 / "bj" = 보정 사건 (2026-08-11) */
 let APPMODE="all";
 function inAppMode(c){ return APPMODE==="bj" ? isBJOnly(c) : !isBJOnly(c); }
@@ -1071,7 +1214,7 @@ let bjStageFilter="전체";
 function setBjStageFilter(v){ bjStageFilter=v; renderDashboard(); }
 function setAppMode(m){
   if(APPMODE===m) return;
-  APPMODE=m; stageFilter=(m==="bj")?"전체":"서류수집"; bjStageFilter="전체"; firmF=""; feeOnlyF=false;   /* 탭을 바꾸면 미수금 필터도 푼다 (2026-08-19) */
+  APPMODE=m; stageFilter=(m==="bj")?"전체":"서류수집"; bjStageFilter="전체"; firmF=""; feeOnlyF=false; reviewF="";   /* 탭을 바꾸면 미수금 필터도 푼다 (2026-08-19) */
   const ss=$("#statusSel"); if(ss) ss.value="active";
   const ms=$("#minwonSel"); if(ms) ms.value="";   /* 탭을 바꾸면 민원업체 필터도 함께 푼다 (2026-08-13) */
   const sg=$("#stageSel"); if(sg) sg.value="";
@@ -1743,6 +1886,8 @@ function renderDashboard(){
     if(stageF && clientStage(c)!==stageF) return false;
     if(!inAppMode(c)) return false;   /* ★큰 탭으로 먼저 가름 (2026-08-11) */
     if(APPMODE==="bj"){ if(bjStageFilter && bjStageFilter!=="전체" && bjStage(c)!==bjStageFilter) return false; }
+    else if(reviewF){ /* 🔎 검토 필터가 켜져 있으면 단계 알약은 무시하고 검토 상태로만 거른다 (2026-09-03) */
+      if(!revApplies(c) || revCur(c).state!==reviewF) return false; }
     else if(stageFilter && stageFilter!=="전체" && !stageFilterHit(c,stageFilter)) return false;
     if(assigneeF && (c.assignee||"")!==assigneeF) return false;
     if(catF && (c.caseType||"개인회생")!==catF) return false;
@@ -1816,6 +1961,7 @@ function renderDashboard(){
       <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);font-weight:700;margin-top:6px">
         <span>${p.done}/${p.total} 확보</span><span style="color:${p.pct===100?'var(--green)':'var(--ink)'}">${p.pct}%</span></div>`}
       ${(mwCardChip(c)||chipHtml)?`<div class="card-stats">${mwCardChip(c)}${chipHtml}</div>`:""}
+      ${revCardBar(c)}
       ${(c.onHold&&(c.holdReason||"").trim())?`<div class="hold-reason" style="white-space:pre-wrap">⏸️ 보류 사유 · ${esc(c.holdReason)}</div>`:""}
       <div style="display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap">
         ${c.phone?`<a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()" style="font-size:12px;color:var(--brand);font-weight:700;text-decoration:none">📞 ${esc(c.phone)}</a>`:""}<span style="flex:1"></span>
@@ -1880,6 +2026,7 @@ function renderDetail(id){
         <span style="font-size:13px;color:var(--muted);white-space:nowrap">${p.done}/${p.total} · <b style="color:${p.pct===100?'var(--green)':'var(--ink)'};font-weight:600">${p.pct}%</b></span>`}
         ${dd!==null?`<span class="chip" style="background:${dd<0?'var(--red-soft)':'var(--amber-soft)'};color:${dd<0?'var(--red)':'var(--amber)'};font-weight:600;white-space:nowrap">${dd<0?`마감 ${-dd}일`:dd===0?"D-DAY":"D-"+dd}</span>`:""}
       </div>
+      ${revDetailBand(c)}
       ${primaryBtn}
       ${c.onHold?`<div class="hold-reason" style="margin-top:14px;font-size:12.5px;white-space:pre-wrap">⏸️ <b>보류 중인 의뢰인입니다.</b>${(c.holdReason||"").trim()?`<br>사유 · ${esc(c.holdReason)}`:""}
         <div style="margin-top:7px;display:flex;gap:14px;flex-wrap:wrap">
@@ -6046,6 +6193,8 @@ function sbBuildClient(row, rows, docs, memos, secret){
     minwon: (aj.minwon && typeof aj.minwon==="object" && !Array.isArray(aj.minwon)) ? aj.minwon : null,
     /* 수임료 1차·2차 (2026-08-19) — app_json에만 저장한다(표 변경 불필요) */
     fee: (aj.fee && typeof aj.fee==="object" && !Array.isArray(aj.fee)) ? aj.fee : null,
+    /* 🔎 검토 요청 (2026-09-03) — app_json에만 저장한다. ★케이스허브는 app_json 중 minwon만 읽으므로 그쪽엔 안 보인다 */
+    review: (aj.review && typeof aj.review==="object" && !Array.isArray(aj.review)) ? aj.review : null,
     /* 단계: 케이스허브 값(row.stage)이 정답이되, 취합앱에만 있는 세부 단계(서류작성)는 app_json.stage2 로 되살린다.
        stage2를 케이스허브 값으로 바꿔 봤을 때 row.stage와 같을 때만 쓴다 — 케이스허브에서 단계를 바꿨다면 그쪽이 이긴다. */
     stage: ((aj.stage2 && STAGES.includes(aj.stage2) && SB_STAGE_FWD[aj.stage2]===row.stage) ? aj.stage2 : (SB_STAGE_BACK[row.stage]||"서류수집")), deadline: row.court_deadline||null,
@@ -6280,7 +6429,7 @@ function sbOfficeFromFirm(firm){ const f=String(firm||"").trim();
     return n.includes("이준") && !n.includes("남부"); });   /* 서초를 고를 때 남부를 집지 않도록 */
   return o? o.id : OURS_OFFICE_ID; }
 /* 화면 전용 항목(케이스허브 칸 없음)을 보존: 사무소·주거유형·보낸메시지·상담기록 */
-function sbAppJson(c){ return { stage2: clientStage(c), firm:c.firm||null, onHold:!!c.onHold, holdReason:c.holdReason||"", minwon:((c.minwon&&typeof c.minwon==="object"&&!Array.isArray(c.minwon))?c.minwon:null), fee:((c.fee&&typeof c.fee==="object"&&!Array.isArray(c.fee))?c.fee:null), housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: AUTO_NA_IDS.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
+function sbAppJson(c){ return { stage2: clientStage(c), firm:c.firm||null, onHold:!!c.onHold, holdReason:c.holdReason||"", minwon:((c.minwon&&typeof c.minwon==="object"&&!Array.isArray(c.minwon))?c.minwon:null), fee:((c.fee&&typeof c.fee==="object"&&!Array.isArray(c.fee))?c.fee:null), review:((c.review&&typeof c.review==="object"&&!Array.isArray(c.review))?c.review:null), housing:c.housing||"미정", pensionKind:c.pensionKind||null, dualParts:(Array.isArray(c.dualParts)?c.dualParts:[]), msgLog:Array.isArray(c.msgLog)?c.msgLog:[], timeline:Array.isArray(c.timeline)?c.timeline:[], manualNa: Object.keys(c.items||{}).filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode==="na"; }), manualOn: AUTO_NA_IDS.filter(id=>{ const s=c.items[id]; return s && s.manual && s.mode!=="na"; }).map(id=>({ id, mode:c.items[id].mode })), msgTpl:(c.msgTpl&&typeof c.msgTpl==="object")?c.msgTpl:{} }; }
 function sbClientPayload(c){ const __p={ name:c.name||"이름없음", case_type:c.caseType||"개인회생", assignee:c.assignee||null,
   stage: SB_STAGE_FWD[clientStage(c)]||"서류취합중", phone:c.phone||null, income_type:c.incomeType||null,
   asset_type:(c.assets&&c.assets.length)?c.assets.join(","):null, court_deadline:c.deadline||null, deadline_kind:c.deadlineLabel||null,
